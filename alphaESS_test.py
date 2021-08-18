@@ -2,8 +2,14 @@ from os import stat
 from alphaess_api import AlphaESSAPI
 import json
 import time
+import usersettings as s
+import paho.mqtt.client as mqtt
 
-AlphaESS = AlphaESSAPI("www.alphaess.com", "charlesgillanders", "iNwkjCVdzfL6LiYFwC7")
+client = mqtt.Client("Power") #create new instance
+
+client.connect(s.BROKER, s.PORT) #connect to broker
+
+AlphaESS = AlphaESSAPI("www.alphaess.com", s.USER, s.PASS)
 
 # print (AlphaESS._host)
 
@@ -54,6 +60,11 @@ if AlphaESS.connect():
                        grid = grid + statistics["pmeter_l3"]
                        load = load + statistics["pmeter_l3"]
                print (f"power pv : {ppv} W, State of Charge : {soc} %, Battery : {pbat} W, Load :  {load} W, Grid : {grid} W")
+               client.publish(s.PV, ppv)
+               client.publish(s.SOC, soc)
+               client.publish(s.BAT, pbat)
+               client.publish(s.GD, grid)
+               client.publish(s.LD, load)
 
                time.sleep(10)
 
