@@ -1,6 +1,5 @@
 # homeassistant-alphaESS
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
-![Project Stage](https://img.shields.io/badge/project%20stage-development-yellow.svg?style=plastic)
+![Project Stage](https://img.shields.io/badge/project%20stage-integration%20testing-green.svg?style=plastic)
 
 Monitor your energy generation, storage, and usage data using an unofficial API from Alpha ESS
 
