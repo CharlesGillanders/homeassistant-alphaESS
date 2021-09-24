@@ -1,0 +1,11 @@
+{
+  "domain": "alphaess",
+  "name": "Alpha ESS",
+  "documentation": "https://github.com/CharlesGillanders/homeassistant-alphaESS",
+  "after_dependencies": ["rest"],
+  "codeowners": ["@CharlesGillanders"],
+  "requirements": ["alphaess==0.0.1"],
+  "config_flow": true,
+  "iot_class": "cloud_polling",
+  "version": "0.0.1"
+}
