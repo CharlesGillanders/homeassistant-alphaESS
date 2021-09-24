@@ -39,8 +39,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = alphaess.alphaess()
     client.username = entry.data.get("username")
     client.password = entry.data.get("password")
-#    session = async_get_clientsession(hass)
-
 
     coordinator = AlphaESSDataUpdateCoordinator(hass, client=client)
     await coordinator.async_config_entry_first_refresh()
@@ -55,17 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
-    # for platform in PLATFORMS:
-    #     if entry.options.get(platform, True):
-    #         coordinator.platforms.append(platform)
-    #         hass.async_add_job(
-    #             hass.config_entries.async_forward_entry_setup(entry, platform)
-    #         )
-
-    #entry.add_update_listener(async_reload_entry)
-
     return True
-
 
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
@@ -95,28 +83,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
-
-# async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-#     """Handle removal of an entry."""
-#     coordinator = hass.data[DOMAIN][entry.entry_id]
-#     unloaded = all(
-#         await asyncio.gather(
-#             *[
-#                 hass.config_entries.async_forward_entry_unload(entry, platform)
-#                 for platform in PLATFORMS
-#                 if platform in coordinator.platforms
-#             ]
-#         )
-#     )
-#     if unloaded:
-#         hass.data[DOMAIN].pop(entry.entry_id)
-
-#     return unloaded
-
-# async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-#     """Reload config entry."""
-#     await async_unload_entry(hass, entry)
-#     await async_setup_entry(hass, entry)
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options."""

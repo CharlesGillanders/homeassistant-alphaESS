@@ -18,23 +18,21 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# TODO adjust the data schema to the data that you need
 STEP_USER_DATA_SCHEMA = vol.Schema({vol.Required(CONF_USERNAME): str, vol.Required(CONF_PASSWORD): str})
 
+# class PlaceholderHub:
+#     """Placeholder class to make tests pass.
 
-class PlaceholderHub:
-    """Placeholder class to make tests pass.
+#     TODO Remove this placeholder class and replace with things from your PyPI package.
+#     """
 
-    TODO Remove this placeholder class and replace with things from your PyPI package.
-    """
+#     def __init__(self, host: str) -> None:
+#         """Initialize."""
+#         self.host = host
 
-    def __init__(self, host: str) -> None:
-        """Initialize."""
-        self.host = host
-
-    async def authenticate(self, username: str, password: str) -> bool:
-        """Test if we can authenticate with the host."""
-        return True
+#     async def authenticate(self, username: str, password: str) -> bool:
+#         """Test if we can authenticate with the host."""
+#         return True
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
@@ -44,20 +42,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     
     if not await client.authenticate(data["username"],data["password"]):
-        raise InvalidAuth
-    
-
-
-
-    #if not await hub.authenticate(data["username"], data["password"]):
-    #    raise InvalidAuth
-
-    # If you cannot connect:
-    # throw CannotConnect
-    # If the authentication is wrong:
-    # InvalidAuth
-
-    # Return info that you want to store in the config entry.
+        raise InvalidAuth 
     return {"AlphaESS": data["username"]}
 
 

@@ -1,8 +1,0 @@
-{
-  "name": "Alpha ESS",
-  "render_readme": true,
-  "domains": ["sensor"],
-  "zip_release": true,
-  "filename": "alphaess.zip",
-  "country": "IE"
-}

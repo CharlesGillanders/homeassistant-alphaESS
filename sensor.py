@@ -1,4 +1,4 @@
-from homeassistant.exceptions import InvalidStateError
+#from homeassistant.exceptions import InvalidStateError
 from homeassistant.components.sensor import (
     STATE_CLASS_TOTAL_INCREASING,
     SensorEntity,
@@ -8,10 +8,10 @@ from homeassistant.const import (
     DEVICE_CLASS_ENERGY,
     ENERGY_KILO_WATT_HOUR
 )
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import StateType
+#from homeassistant.config_entries import ConfigEntry
+#from homeassistant.core import HomeAssistant
+#from homeassistant.helpers.entity_platform import AddEntitiesCallback
+#from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -36,7 +36,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
 
-    allsensors = []
+    #allsensors = []
 
     for invertor in coordinator.data:
         serial = invertor["sys_sn"]
@@ -88,7 +88,6 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     def unique_id(self):
         """Return a unique ID to use for this entity."""
         return f"{self._config.entry_id}_{self._name}"
-        #return f"{DOMAIN}.{self._serial}.{self._name}"
 
     @property
     def name(self):
