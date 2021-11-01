@@ -117,13 +117,11 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                 if self._name == "Solar Production":
                     return invertor["statistics"]["EpvT"]
                 elif self._name == "Solar to Battery":
-                    return invertor["statistics"]["Echarge"]
+                    return invertor["statistics"]["Epvcharge"]
                 elif self._name == "Solar to Grid":
                         return invertor["statistics"]["Eout"]
                 elif self._name == "Solar to Load":
                         return invertor["statistics"]["Epv2load"]
-                elif self._name == "Battery to Load":
-                        return invertor["statistics"]["Ebat"]
                 elif self._name == "Total Load":
                         return invertor["statistics"]["EHomeLoad"]
                 elif self._name == "Grid to Load":
