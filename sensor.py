@@ -49,7 +49,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 AlphaESSSensor(coordinator,entry,serial,"Grid to Battery"),
                 AlphaESSSensor(coordinator,entry,serial,"State of Charge"),
                 AlphaESSSensor(coordinator,entry,serial,"Charge"),
-                AlphaESSSensor(coordinator,entry,serial,"Discharge")
+                AlphaESSSensor(coordinator,entry,serial,"Discharge"),
+                AlphaESSSensor(coordinator,entry,serial,"EV Charger")
             ]
         )
 
@@ -134,3 +135,5 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                         return  invertor["system_statistics"]["ECharge"][index]
                 elif self._name == "Discharge":
                         return  invertor["system_statistics"]["EDischarge"][index]
+                elif self._name == "EV Charger":
+                        return  invertor["statistics"]["EChargingPile"][index]
