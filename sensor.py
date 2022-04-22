@@ -136,4 +136,4 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                 elif self._name == "Discharge":
                         return  invertor["system_statistics"]["EDischarge"][index]
                 elif self._name == "EV Charger":
-                        return  invertor["statistics"]["EChargingPile"][index]
+                        return  invertor["statistics"]["EChargingPile"]
