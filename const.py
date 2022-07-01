@@ -1,7 +1,7 @@
 """Constants for the Alpha ESS integration."""
 
 NAME = "Alpha ESS"
-VERSION = "0.0.2"
+VERSION = "0.0.4"
 ISSUE_URL = "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues"
 
 DOMAIN = "alphaess"
