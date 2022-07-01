@@ -1,9 +1,4 @@
 {
     "name": "alphaess",
-    "content_in_root": false,
-    "zip_release": false,
-    "render_readme": false,
-    "domains": ["sensor"],
-    "country": "DE",
-    "homeassistant": "2021.12"
+    "content_in_root": false
 }
