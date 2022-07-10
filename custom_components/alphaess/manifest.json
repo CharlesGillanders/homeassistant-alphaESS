@@ -4,7 +4,7 @@
   "documentation": "https://github.com/CharlesGillanders/homeassistant-alphaESS",
   "after_dependencies": ["rest"],
   "codeowners": ["@CharlesGillanders"],
-  "requirements": ["git+https://github.com/2000game/alphaess.git@dev#alphaess==0.0.4"],
+  "requirements": ["git+https://github.com/2000game/alphaess.git@master#alphaess==0.0.5"],
   "config_flow": true,
   "iot_class": "cloud_polling",
   "version": "0.0.4"
