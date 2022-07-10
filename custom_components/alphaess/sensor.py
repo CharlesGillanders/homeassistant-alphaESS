@@ -1,4 +1,6 @@
 
+from keyword import kwlist
+import re
 from homeassistant.components.sensor import (
     STATE_CLASS_MEASUREMENT,
     STATE_CLASS_TOTAL_INCREASING,
@@ -9,6 +11,7 @@ from homeassistant.const import (
     DEVICE_CLASS_BATTERY,
     DEVICE_CLASS_ENERGY,
     ENERGY_KILO_WATT_HOUR,
+    POWER_KILO_WATT,
     PERCENTAGE
 )
 
@@ -40,25 +43,25 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         serial = invertor["sys_sn"]
         async_add_entities(
             [
-                AlphaESSSensor(coordinator,entry,serial,"Solar Production"),
-                AlphaESSSensor(coordinator,entry,serial,"Solar to Battery"),
-                AlphaESSSensor(coordinator,entry,serial,"Solar to Grid"),
-                AlphaESSSensor(coordinator,entry,serial,"Solar to Load"),
-                AlphaESSSensor(coordinator,entry,serial,"Total Load"),
-                AlphaESSSensor(coordinator,entry,serial,"Grid to Load"),
-                AlphaESSSensor(coordinator,entry,serial,"Grid to Battery"),
-                AlphaESSSensor(coordinator,entry,serial,"State of Charge"),
-                AlphaESSSensor(coordinator,entry,serial,"Charge"),
-                AlphaESSSensor(coordinator,entry,serial,"Discharge"),
-                AlphaESSSensor(coordinator,entry,serial,"EV Charger"),
-                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L1"),
-                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L2"),
-                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L3"),
-                AlphaESSSensor(coordinator,entry,serial,"Generation"),
-                AlphaESSSensor(coordinator,entry,serial,"Battery SOC"),
-                AlphaESSSensor(coordinator,entry,serial,"Battery I/O"),
-                AlphaESSSensor(coordinator,entry,serial,"Grid Total"),
-                AlphaESSSensor(coordinator,entry,serial,"Total Load"),
+                AlphaESSSensor(coordinator,entry,serial,"Solar Production", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"Solar to Battery", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"Solar to Grid", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"Solar to Load", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"Total Load Consumption", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"Grid to Load", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"Grid to Battery", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"State of Charge", PERCENTAGE),
+                AlphaESSSensor(coordinator,entry,serial,"Charge", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"Discharge", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"EV Charger", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L1", POWER_KILO_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L2", POWER_KILO_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L3", POWER_KILO_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Generation", POWER_KILO_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Battery SOC", POWER_KILO_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Battery I/O", POWER_KILO_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Grid I/O Total", POWER_KILO_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Load", POWER_KILO_WATT),
 
             ]
         )
@@ -70,13 +73,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class AlphaESSSensor(CoordinatorEntity, SensorEntity):
 
 
-    def __init__(self, coordinator, config,serial, name):
+    def __init__(self, coordinator, config,serial, name, unit_of_measurement=None):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._config = config
         self._name = name
         self._serial = serial
         self._coordinator = coordinator
+        self._unit_of_measurement = unit_of_measurement
 
         for invertor in self._coordinator.data:
             serial = invertor["sys_sn"]
@@ -111,10 +115,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self):
         """Return the unit the value is expressed in."""
-        if self._name == "State of Charge":
-            return PERCENTAGE
-        else: 
-            return ENERGY_KILO_WATT_HOUR
+        return self._unit_of_measurement
         
 
     @property
@@ -132,7 +133,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                         return invertor["statistics"]["Eout"]
                 elif self._name == "Solar to Load":
                         return invertor["statistics"]["Epv2load"]
-                elif self._name == "Total Load":
+                elif self._name == "Total Load Consumption":
                         return invertor["statistics"]["EHomeLoad"]
                 elif self._name == "Grid to Load":
                         return invertor["statistics"]["EGrid2Load"]
@@ -158,7 +159,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                         return  invertor["powerdata"]["soc"]
                 elif self._name == "Battery I/O":
                         return  invertor["powerdata"]["pbat"]
-                elif self._name == "Grid Total":
+                elif self._name == "Grid I/O Total":
                         return  invertor["powerdata"]["pmeter_l1"] + invertor["powerdata"]["pmeter_l2"] + invertor["powerdata"]["pmeter_l3"]
-                elif self._name == "Total Load":
+                elif self._name == "Load":
                         return  invertor["powerdata"]["ppv1"] + invertor["powerdata"]["ppv2"] + invertor["powerdata"]["pmeter_dc"] + invertor["powerdata"]["pbat"] + invertor["powerdata"]["pmeter_l1"] + invertor["powerdata"]["pmeter_l2"] + invertor["powerdata"]["pmeter_l3"] 
