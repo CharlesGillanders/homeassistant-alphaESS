@@ -12,6 +12,7 @@ from homeassistant.const import (
     DEVICE_CLASS_ENERGY,
     ENERGY_KILO_WATT_HOUR,
     POWER_KILO_WATT,
+    POWER_WATT,
     PERCENTAGE
 )
 
@@ -54,14 +55,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 AlphaESSSensor(coordinator,entry,serial,"Charge", ENERGY_KILO_WATT_HOUR),
                 AlphaESSSensor(coordinator,entry,serial,"Discharge", ENERGY_KILO_WATT_HOUR),
                 AlphaESSSensor(coordinator,entry,serial,"EV Charger", ENERGY_KILO_WATT_HOUR),
-                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L1", POWER_KILO_WATT),
-                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L2", POWER_KILO_WATT),
-                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L3", POWER_KILO_WATT),
-                AlphaESSSensor(coordinator,entry,serial,"Generation", POWER_KILO_WATT),
-                AlphaESSSensor(coordinator,entry,serial,"Battery SOC", POWER_KILO_WATT),
-                AlphaESSSensor(coordinator,entry,serial,"Battery I/O", POWER_KILO_WATT),
-                AlphaESSSensor(coordinator,entry,serial,"Grid I/O Total", POWER_KILO_WATT),
-                AlphaESSSensor(coordinator,entry,serial,"Load", POWER_KILO_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L1", POWER_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L2", POWER_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Grid I/O L3", POWER_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Generation", POWER_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Battery SOC", PERCENTAGE),
+                AlphaESSSensor(coordinator,entry,serial,"Battery I/O", POWER_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Grid I/O Total", POWER_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Load", POWER_WATT),
 
             ]
         )
