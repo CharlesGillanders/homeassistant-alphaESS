@@ -58,7 +58,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 AlphaESSSensor(coordinator,entry,serial,"Grid I/O L2", POWER_KILO_WATT),
                 AlphaESSSensor(coordinator,entry,serial,"Grid I/O L3", POWER_KILO_WATT),
                 AlphaESSSensor(coordinator,entry,serial,"Generation", POWER_KILO_WATT),
-                AlphaESSSensor(coordinator,entry,serial,"Battery SOC", POWER_KILO_WATT),
+                AlphaESSSensor(coordinator,entry,serial,"Battery SOC", PERCENTAGE),
                 AlphaESSSensor(coordinator,entry,serial,"Battery I/O", POWER_KILO_WATT),
                 AlphaESSSensor(coordinator,entry,serial,"Grid I/O Total", POWER_KILO_WATT),
                 AlphaESSSensor(coordinator,entry,serial,"Load", POWER_KILO_WATT),
