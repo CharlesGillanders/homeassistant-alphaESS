@@ -51,6 +51,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 AlphaESSSensor(coordinator,entry,serial,"Total Load Consumption", ENERGY_KILO_WATT_HOUR),
                 AlphaESSSensor(coordinator,entry,serial,"Grid to Load", ENERGY_KILO_WATT_HOUR),
                 AlphaESSSensor(coordinator,entry,serial,"Grid to Battery", ENERGY_KILO_WATT_HOUR),
+                AlphaESSSensor(coordinator,entry,serial,"State of Charge", PERCENTAGE),
                 AlphaESSSensor(coordinator,entry,serial,"Charge", ENERGY_KILO_WATT_HOUR),
                 AlphaESSSensor(coordinator,entry,serial,"Discharge", ENERGY_KILO_WATT_HOUR),
                 AlphaESSSensor(coordinator,entry,serial,"EV Charger", ENERGY_KILO_WATT_HOUR),
@@ -101,7 +102,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         else:
             self._attr_state_class = STATE_CLASS_TOTAL_INCREASING
             self._attr_device_class = DEVICE_CLASS_ENERGY
-
+    
     @property
     def unique_id(self):
         """Return a unique ID to use for this entity."""
@@ -116,7 +117,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     def native_unit_of_measurement(self):
         """Return the unit the value is expressed in."""
         return self._unit_of_measurement
-
+        
 
     @property
     def native_value(self):
@@ -139,6 +140,8 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                         return invertor["statistics"]["EGrid2Load"]
                 elif self._name == "Grid to Battery":
                         return invertor["statistics"]["EGridCharge"]
+                elif self._name == "State of Charge":
+                        return invertor["statistics"]["Soc"]
                 elif self._name == "Charge":
                         return  invertor["system_statistics"]["ECharge"][index]
                 elif self._name == "Discharge":
@@ -160,4 +163,4 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                 elif self._name == "Grid I/O Total":
                         return  invertor["powerdata"]["pmeter_l1"] + invertor["powerdata"]["pmeter_l2"] + invertor["powerdata"]["pmeter_l3"]
                 elif self._name == "Load":
-                        return  invertor["powerdata"]["ppv1"] + invertor["powerdata"]["ppv2"] + invertor["powerdata"]["pmeter_dc"] + invertor["powerdata"]["pbat"] + invertor["powerdata"]["pmeter_l1"] + invertor["powerdata"]["pmeter_l2"] + invertor["powerdata"]["pmeter_l3"]
+                        return  invertor["powerdata"]["ppv1"] + invertor["powerdata"]["ppv2"] + invertor["powerdata"]["pmeter_dc"] + invertor["powerdata"]["pbat"] + invertor["powerdata"]["pmeter_l1"] + invertor["powerdata"]["pmeter_l2"] + invertor["powerdata"]["pmeter_l3"] 
