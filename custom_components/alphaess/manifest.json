@@ -2,10 +2,18 @@
   "domain": "alphaess",
   "name": "Alpha ESS",
   "documentation": "https://github.com/CharlesGillanders/homeassistant-alphaESS",
-  "after_dependencies": ["rest"],
-  "codeowners": ["@CharlesGillanders" ],
-  "requirements": ["git+https://github.com/2000game/alphaess.git@main#alphaess==0.0.5"],
-  "issue_tracker": ["https://github.com/2000game/homeassistant-alphaESS/issues"],
+  "after_dependencies": [
+    "rest"
+  ],
+  "codeowners": [
+    "@CharlesGillanders"
+  ],
+  "requirements": [
+    "git+https://github.com/2000game/alphaess.git@main#alphaess==0.0.5"
+  ],
+  "issue_tracker": [
+    "https://github.com/2000game/homeassistant-alphaESS/issues"
+  ],
   "config_flow": true,
   "iot_class": "cloud_polling",
   "version": "0.0.4"
