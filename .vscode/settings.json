@@ -1,10 +1,8 @@
 {
-    "python.linting.pylintEnabled": false,
-    "python.linting.enabled": false,
+    "python.linting.pylintEnabled": true,
+    "python.linting.enabled": true,
     "python.pythonPath": "/usr/local/bin/python",
     "files.associations": {
         "*.yaml": "home-assistant"
-    },
-    "editor.formatOnSave": false,
-    "editor.codeActionsOnSave": {}
+    }
 }
