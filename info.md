@@ -49,5 +49,5 @@ Monitor your energy generation, storage, and usage data using an unofficial API 
 [user_profile]: https://github.com/CharlesGillanders
 [download-all]: https://img.shields.io/github/downloads/CharlesGillanders/homeassistant-alphaESS/total?style=for-the-badge
 [download-latest]: https://img.shields.io/github/downloads/CharlesGillanders/homeassistant-alphaESS/latest/total?style=for-the-badge
-[add-integration]: https://my.home-assistant.io/redirect/config_flow_start?domain=tesla_custom
+[add-integration]: https://my.home-assistant.io/redirect/config_flow_start?domain=alphaess
 [add-integration-badge]: https://my.home-assistant.io/badges/config_flow_start.svg
