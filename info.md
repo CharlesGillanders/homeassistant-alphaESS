@@ -13,14 +13,14 @@ Monitor your energy generation, storage, and usage data using an unofficial API 
 ## Setup integration
 
 1. Enable Advanced Mode using Profile (click on your username at the bottom of the navigation column) -> Advanced Mode -> On
-2. Setup this integration for your Alpha ESS energy storage system in Home Assistant via `Configuration -> Integrations -> Add -> Alpha ESS`
+2. [![Add Integration][add-integration-badge]][add-integration] or in the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Alpha ESS"
 3. You will be prompted for the username and password for your account on the Alpha ESS website/app
 
 {% if not installed %}
 
 ## Installation
 
-1. Click install.
+1. Click Download.
 2. Reboot Home Assistant.
 3. Enable Advanced Mode using Profile (click on your username at the bottom of the navigation column) -> Advanced Mode -> On
 4. Hard refresh browser cache.
