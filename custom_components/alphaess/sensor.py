@@ -1,94 +1,150 @@
+"""Alpha ESS Sensor definitions."""
+from typing import List
 
 from homeassistant.components.sensor import (
-    STATE_CLASS_MEASUREMENT,
-    STATE_CLASS_TOTAL_INCREASING,
+    SensorDeviceClass,
     SensorEntity,
+    SensorStateClass,
 )
-
-from homeassistant.const import (
-    DEVICE_CLASS_BATTERY,
-    DEVICE_CLASS_ENERGY,
-    ENERGY_KILO_WATT_HOUR,
-    PERCENTAGE
-)
-
+from homeassistant.const import ENERGY_KILO_WATT_HOUR, PERCENTAGE
+from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    DOMAIN,
-    ATTR_ENTRY_TYPE,
-    ENTRY_TYPE_SERVICE
-)
+from .const import DOMAIN
+from .coordinator import AlphaESSDataUpdateCoordinator
+from .entity import AlphaESSSensorDescription
+from .enums import AlphaESSNames
 
-from homeassistant.const import (
-    ATTR_IDENTIFIERS,
-    ATTR_MANUFACTURER,
-    ATTR_MODEL,
-    ATTR_NAME
-)
+SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.SolarProduction,
+        name="Solar Production",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.SolarToBattery,
+        name="Solar to Battery",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.SolarToGrid,
+        name="Solar to Grid",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.SolarToLoad,
+        name="Solar to Load",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.TotalLoad,
+        name="Total Load",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.GridToLoad,
+        name="Grid to Load",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.GridToBattery,
+        name="Grid to Battery",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.StateOfCharge,
+        name="State of Charge",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.Charge,
+        name="Charge",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.Discharge,
+        name="Discharge",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.EVCharger,
+        name="EV Charger",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+]
 
-import logging
-import datetime
-
-_LOGGER: logging.Logger = logging.getLogger(__package__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Defer sensor setup to the shared sensor module."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
 
-    for invertor in coordinator.data:
-        serial = invertor["sys_sn"]
-        async_add_entities(
-            [
-                AlphaESSSensor(coordinator,entry,serial,"Solar Production"),
-                AlphaESSSensor(coordinator,entry,serial,"Solar to Battery"),
-                AlphaESSSensor(coordinator,entry,serial,"Solar to Grid"),
-                AlphaESSSensor(coordinator,entry,serial,"Solar to Load"),
-                AlphaESSSensor(coordinator,entry,serial,"Total Load"),
-                AlphaESSSensor(coordinator,entry,serial,"Grid to Load"),
-                AlphaESSSensor(coordinator,entry,serial,"Grid to Battery"),
-                AlphaESSSensor(coordinator,entry,serial,"State of Charge"),
-                AlphaESSSensor(coordinator,entry,serial,"Charge"),
-                AlphaESSSensor(coordinator,entry,serial,"Discharge"),
-                AlphaESSSensor(coordinator,entry,serial,"EV Charger")
-            ]
-        )
+    coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    return True
+    entities: List[AlphaESSSensor] = []
 
+    key_supported_states = {
+        description.key: description for description in SENSOR_DESCRIPTIONS
+    }
+
+    for serial in coordinator.data:
+        for description in key_supported_states:
+            entities.append(
+                AlphaESSSensor(
+                    coordinator, entry, serial, key_supported_states[description]
+                )
+            )
+    async_add_entities(entities)
+
+    return
 
 
 class AlphaESSSensor(CoordinatorEntity, SensorEntity):
+    """Alpha ESS Base Sensor."""
 
-
-    def __init__(self, coordinator, config,serial, name):
+    def __init__(self, coordinator, config, serial, key_supported_states):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._config = config
-        self._name = name
+        self._name = key_supported_states.name
+        self._native_unit_of_measurement = key_supported_states.native_unit_of_measurement
+        self._device_class=key_supported_states.device_class
+        self._state_class=key_supported_states.state_class
         self._serial = serial
         self._coordinator = coordinator
 
-        for invertor in self._coordinator.data:
-            serial = invertor["sys_sn"]
+        for invertor in coordinator.data:
+            serial = invertor
             if self._serial == serial:
-                model = invertor["minv"]
+                self._attr_device_info = DeviceInfo(
+                    entry_type=DeviceEntryType.SERVICE,
+                    identifiers={(DOMAIN, serial)},
+                    manufacturer="AlphaESS",
+                    model=coordinator.data[invertor]["Model"],
+                    name=f"Alpha ESS Energy Statistics : {serial}",
+                )
 
-        self._attr_device_info = {
-            ATTR_IDENTIFIERS: {(DOMAIN,serial)},
-            ATTR_NAME: f"Alpha ESS Energy Statistics : {serial}",
-            ATTR_MANUFACTURER: "AlphaESS",
-            ATTR_MODEL: model,
-            ATTR_ENTRY_TYPE: ENTRY_TYPE_SERVICE,
-        }
-
-        if name == "State of Charge":
-            self._attr_state_class = STATE_CLASS_MEASUREMENT
-            self._attr_device_class = DEVICE_CLASS_BATTERY
-        else:
-            self._attr_state_class = STATE_CLASS_TOTAL_INCREASING
-            self._attr_device_class = DEVICE_CLASS_ENERGY
-    
     @property
     def unique_id(self):
         """Return a unique ID to use for this entity."""
@@ -97,43 +153,24 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f"{self._serial} - {self._name}"
-
-    @property
-    def native_unit_of_measurement(self):
-        """Return the unit the value is expressed in."""
-        if self._name == "State of Charge":
-            return PERCENTAGE
-        else: 
-            return ENERGY_KILO_WATT_HOUR
-        
+        return f"{self._serial}_{self._name}"
 
     @property
     def native_value(self):
         """Return the state of the resources."""
-        for invertor in self._coordinator.data:
-            serial = invertor["sys_sn"]
-            if self._serial == serial:
-                index = int(datetime.date.today().strftime("%d")) - 1
-                if self._name == "Solar Production":
-                    return invertor["statistics"]["EpvT"]
-                elif self._name == "Solar to Battery":
-                    return invertor["statistics"]["Epvcharge"]
-                elif self._name == "Solar to Grid":
-                        return invertor["statistics"]["Eout"]
-                elif self._name == "Solar to Load":
-                        return invertor["statistics"]["Epv2load"]
-                elif self._name == "Total Load":
-                        return invertor["statistics"]["EHomeLoad"]
-                elif self._name == "Grid to Load":
-                        return invertor["statistics"]["EGrid2Load"]
-                elif self._name == "Grid to Battery":
-                        return invertor["statistics"]["EGridCharge"]
-                elif self._name == "State of Charge":
-                        return invertor["statistics"]["Soc"]
-                elif self._name == "Charge":
-                        return  invertor["system_statistics"]["ECharge"][index]
-                elif self._name == "Discharge":
-                        return  invertor["system_statistics"]["EDischarge"][index]
-                elif self._name == "EV Charger":
-                        return  invertor["statistics"]["EChargingPile"]
+        return self._coordinator.data[self._serial][self._name]
+
+    @property
+    def native_unit_of_measurement(self):
+        """Return the native unit of measurement of the sensor."""
+        return self._native_unit_of_measurement
+
+    @property
+    def device_class(self):
+        """Return the device_class of the sensor."""
+        return self._device_class
+
+    @property
+    def state_class(self):
+        """Return the state_class of the sensor."""
+        return self._state_class

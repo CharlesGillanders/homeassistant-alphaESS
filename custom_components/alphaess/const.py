@@ -1,13 +1,16 @@
 """Constants for the Alpha ESS integration."""
 
+from datetime import timedelta
+
+from homeassistant.const import Platform
+
+DOMAIN = "alphaess"
+PLATFORMS = [Platform.SENSOR]
+SCAN_INTERVAL = timedelta(minutes=5)
+
 NAME = "Alpha ESS"
 VERSION = "0.0.6"
 ISSUE_URL = "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues"
-
-DOMAIN = "alphaess"
-
-ATTR_ENTRY_TYPE = "entry_type"
-ENTRY_TYPE_SERVICE = "service"
 
 STARTUP_MESSAGE = f"""
 -------------------------------------------------------------------
