@@ -21,7 +21,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate the user input allows us to connect."cd ""
+    """Validate the user input allows us to connect."""
 
     client = alphaess.alphaess()
 
