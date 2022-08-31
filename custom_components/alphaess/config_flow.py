@@ -49,9 +49,10 @@ class AlphaESSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
-        if user_input:
 
-            errors = {}
+        errors = {}
+
+        if user_input:
 
             try:
                 await validate_input(self.hass, user_input)
