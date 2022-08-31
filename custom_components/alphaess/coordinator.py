@@ -43,6 +43,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 inverterdata.update({"Charge": invertor["system_statistics"]["ECharge"][index]})
                 inverterdata.update({"Discharge": invertor["system_statistics"]["EDischarge"][index]})
                 inverterdata.update({"EV Charger": invertor["statistics"]["EChargingPile"]})
+                inverterdata.update({"Instantaneous Grid I/O L1": invertor["powerdata"]["pmeter_l1"]})
+                inverterdata.update({"Instantaneous Grid I/O L2": invertor["powerdata"]["pmeter_l2"]})
+                inverterdata.update({"Instantaneous Grid I/O L3": invertor["powerdata"]["pmeter_l3"]})
+                inverterdata.update({"Instantaneous Generation": invertor["powerdata"]["ppv1"] + invertor["powerdata"]["ppv2"] + invertor["powerdata"]["pmeter_dc"]})
+                inverterdata.update({"Instantaneous Battery SOC": invertor["powerdata"]["soc"]})
+                inverterdata.update({"Instantaneous Battery I/O": invertor["powerdata"]["pbat"]})
+                inverterdata.update({"Instantaneous Grid I/O Total": invertor["powerdata"]["pmeter_l1"] + invertor["powerdata"]["pmeter_l2"] + invertor["powerdata"]["pmeter_l3"]})
+                inverterdata.update({"Instantaneous Load": invertor["powerdata"]["ppv1"] + invertor["powerdata"]["ppv2"] + invertor["powerdata"]["pmeter_dc"] + invertor["powerdata"]["pbat"] + invertor["powerdata"]["pmeter_l1"] + invertor["powerdata"]["pmeter_l2"] + invertor["powerdata"]["pmeter_l3"] })
                 self.data.update({invertor["sys_sn"]: inverterdata})
             return self.data
         except (

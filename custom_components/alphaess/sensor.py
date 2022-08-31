@@ -6,7 +6,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import ENERGY_KILO_WATT_HOUR, PERCENTAGE
+from homeassistant.const import ENERGY_KILO_WATT_HOUR, PERCENTAGE, POWER_WATT
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -94,8 +94,63 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
     ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.GridIOL1,
+        name="Instantaneous Grid I/O L1",
+        native_unit_of_measurement=POWER_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.GridIOL2,
+        name="Instantaneous Grid I/O L2",
+        native_unit_of_measurement=POWER_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.GridIOL3,
+        name="Instantaneous Grid I/O L3",
+        native_unit_of_measurement=POWER_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.Generation,
+        name="Instantaneous Generation",
+        native_unit_of_measurement=POWER_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.BatterySOC,
+        name="Instantaneous Battery SOC",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.BatteryIO,
+        name="Instantaneous Battery I/O",
+        native_unit_of_measurement=POWER_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.GridIOTotal,
+        name="Instantaneous Grid I/O Total",
+        native_unit_of_measurement=POWER_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.Load,
+        name="Instantaneous Load",
+        native_unit_of_measurement=POWER_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
 ]
-
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Defer sensor setup to the shared sensor module."""
