@@ -25,4 +25,6 @@ class AlphaESSNames(str, Enum):
     BatteryIO = "Instantaneous Battery I/O"
     GridIOTotal = "Instantaneous Grid I/O Total"
     Load = "Instantaneous Load"
+    PPV1 = "Instantaneous PPV1"
+    PPV2 = "Instantaneous PPV2"
 
