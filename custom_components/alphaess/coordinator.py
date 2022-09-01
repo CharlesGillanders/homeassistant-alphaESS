@@ -51,6 +51,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 inverterdata.update({"Instantaneous Battery I/O": invertor["powerdata"]["pbat"]})
                 inverterdata.update({"Instantaneous Grid I/O Total": invertor["powerdata"]["pmeter_l1"] + invertor["powerdata"]["pmeter_l2"] + invertor["powerdata"]["pmeter_l3"]})
                 inverterdata.update({"Instantaneous Load": invertor["powerdata"]["ppv1"] + invertor["powerdata"]["ppv2"] + invertor["powerdata"]["pmeter_dc"] + invertor["powerdata"]["pbat"] + invertor["powerdata"]["pmeter_l1"] + invertor["powerdata"]["pmeter_l2"] + invertor["powerdata"]["pmeter_l3"] })
+                inverterdata.update({"Instantaneous PPV1": invertor["powerdata"]["ppv1"]})
+                inverterdata.update({"Instantaneous PPV2": invertor["powerdata"]["ppv2"]})
                 self.data.update({invertor["sys_sn"]: inverterdata})
             return self.data
         except (
