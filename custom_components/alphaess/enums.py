@@ -27,4 +27,3 @@ class AlphaESSNames(str, Enum):
     Load = "Instantaneous Load"
     PPV1 = "Instantaneous PPV1"
     PPV2 = "Instantaneous PPV2"
-
