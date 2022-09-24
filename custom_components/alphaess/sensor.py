@@ -53,6 +53,27 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         state_class=SensorStateClass.TOTAL_INCREASING,
     ),
     AlphaESSSensorDescription(
+        key=AlphaESSNames.HomeLoad,
+        name="Home Load",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.BatteryToLoad,
+        name="Battery to Load",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.BatteryStored,
+        name="Battery Stored",
+        native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    AlphaESSSensorDescription(
         key=AlphaESSNames.GridToLoad,
         name="Grid to Load",
         native_unit_of_measurement=ENERGY_KILO_WATT_HOUR,

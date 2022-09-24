@@ -31,12 +31,26 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             for invertor in jsondata:
                 index = int(datetime.date.today().strftime("%d")) - 1
                 inverterdata: dict[str, any] = {}
+                """unable to calculate this from alpha ess web site
+                Eout is both PV feed in and battery feed in
+                at this point assume there is no battery to grid - means weird number when Virtual Power Plant sell to grid occurs
+                """
+                battToGrid = 0
                 inverterdata.update({"Model": invertor["minv"]})
                 inverterdata.update({"Solar Production": invertor["statistics"]["EpvT"]})
                 inverterdata.update({"Solar to Battery": invertor["statistics"]["Epvcharge"]})
                 inverterdata.update({"Solar to Grid": invertor["statistics"]["Eout"]})
                 inverterdata.update({"Solar to Load": invertor["statistics"]["Epv2load"]})
                 inverterdata.update({"Total Load": invertor["statistics"]["EHomeLoad"]})
+                """ EHomeLoad looks to be Eeff (self-consumption) + Einput (draw from grid) - this is not load consumed by house hold
+                 appliances as it includes charging battery with grid and solar (and thus remains constant during battery discharge)
+                 
+                 this alternative calculation derrives load of house hold appliances by summing solar to load, battery to load and grid to load. 
+                 where battery to load is calculated by discharge - battery to grid *see note on battToGrid :(
+                 """
+                inverterdata.update({"Home Load": invertor["statistics"]["Epv2load"] + (invertor["system_statistics"]["EDischarge"][index] - battToGrid) + invertor["statistics"]["EGrid2Load"]})
+                inverterdata.update({"Battery to Load": invertor["system_statistics"]["EDischarge"][index] - battToGrid})
+                inverterdata.update({"Battery Stored": invertor["statistics"]["Ebat"] })
                 inverterdata.update({"Grid to Load": invertor["statistics"]["EGrid2Load"]})
                 inverterdata.update({"Grid to Battery": invertor["statistics"]["EGridCharge"]})
                 inverterdata.update({"State of Charge": invertor["statistics"]["Soc"]})
