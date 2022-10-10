@@ -150,6 +150,20 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.PPV1,
+        name="Instantaneous PPV1",
+        native_unit_of_measurement=POWER_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+        AlphaESSSensorDescription(
+        key=AlphaESSNames.PPV2,
+        name="Instantaneous PPV2",
+        native_unit_of_measurement=POWER_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
 ]
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
