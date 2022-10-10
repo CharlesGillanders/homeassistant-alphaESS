@@ -5,8 +5,8 @@
   "issue_tracker": "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues",
   "after_dependencies": ["rest"],
   "codeowners": ["@CharlesGillanders"],
-  "requirements": ["alphaess==0.0.6"],
+  "requirements": ["alphaess==0.0.8"],
   "config_flow": true,
   "iot_class": "cloud_polling",
-  "version": "0.0.6"
+  "version": "0.0.8"
 }
