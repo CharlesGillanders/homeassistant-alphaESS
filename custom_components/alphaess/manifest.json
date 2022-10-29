@@ -8,5 +8,5 @@
   "requirements": ["alphaess==0.0.15"],
   "config_flow": true,
   "iot_class": "cloud_polling",
-  "version": "0.0.9"
+  "version": "0.0.10"
 }
