@@ -1,0 +1,93 @@
+setbatterycharge:
+  name: Set Battery Charge
+  description: >
+    Enables setting Alpha ESS Grid Charging Settings.
+  fields:
+    serial:
+      name: Serial
+      description: Your Alpha ESS Serial number.
+      required: true
+      example: AA123456789
+    enabled:
+      name: Enabled
+      description: Enable Grid Charging battery.
+      required: true
+      example: True
+      default: True
+    cp1start:
+      name: Charging Period 1 Start
+      description: Charging Period 1 Start.
+      required: true
+      example: "01:00"
+      default: "00:00"
+    cp1end:
+      name: Charging Period 1 End
+      description: Charging Period 1 End.
+      required: true
+      example: "04:00"
+      default: "00:00"
+    cp2start:
+      name: Charging Period 2 Start
+      description: Charging Period 2 Start.
+      required: true
+      example: "01:00"
+      default: "00:00"
+    cp2end:
+      name: Charging Period 2 End
+      description: Charging Period 2 End.
+      required: true
+      example: "04:00"
+      default: "00:00"
+    chargestopsoc:
+      name: Charge Cutoff
+      description: Charging Stops at SOC [%].
+      required: true
+      example: 100
+      default: 100
+
+setbatterydischarge:
+  name: Set Battery Discharge
+  description: >
+    Enables setting Alpha ESS Battery Discharge Settings.
+  fields:
+    serial:
+      name: Serial
+      description: Your Alpha ESS Serial number.
+      required: true
+      example: AA123456789
+    enabled:
+      name: Enabled
+      description: Enable Battery Discharge.
+      required: true
+      example: True
+      default: True
+    dp1start:
+      name: Discharging Period 1 Start
+      description: Discharging Period 1 Start.
+      required: true
+      example: "01:00"
+      default: "00:00"
+    dp1end:
+      name: Discharging Period 1 End
+      description: Discharging Period 1 End.
+      required: true
+      example: "04:00"
+      default: "00:00"
+    dp2start:
+      name: Discharging Period 2 Start
+      description: Discharging Period 2 Start.
+      required: true
+      example: "01:00"
+      default: "00:00"
+    dp2end:
+      name: Discharging Period 2 End
+      description: Discharging Period 2 End.
+      required: true
+      example: "04:00"
+      default: "00:00"
+    dischargecutoffsoc:
+      name: Discharging Cutoff
+      description: Discharging Cutoff SOC [%].
+      required: true
+      example: 100
+      default: 100
