@@ -1,0 +1,134 @@
+setbatterycharge:
+  name: Set Battery Charge
+  description: >
+    Enables setting Alpha ESS Grid Charging Settings.
+  fields:
+    serial:
+      name: Serial
+      description: Your Alpha ESS Serial number.
+      required: true
+      example: AA123456789
+      selector:
+        text:
+    enabled:
+      name: Enabled
+      description: Enable Grid Charging battery.
+      required: true
+      example: True
+      default: True
+      selector:
+        boolean:
+    cp1start:
+      name: Charging Period 1 Start
+      description: Charging Period 1 Start.
+      required: true
+      example: "01:00"
+      default: "00:00"
+      selector:
+        text:
+          type: time
+    cp1end:
+      name: Charging Period 1 End
+      description: Charging Period 1 End.
+      required: true
+      example: "04:00"
+      default: "00:00"
+      selector:
+        text:
+          type: time
+    cp2start:
+      name: Charging Period 2 Start
+      description: Charging Period 2 Start.
+      required: true
+      example: "01:00"
+      default: "00:00"
+      selector:
+        text:
+          type: time
+    cp2end:
+      name: Charging Period 2 End
+      description: Charging Period 2 End.
+      required: true
+      example: "04:00"
+      default: "00:00"
+      selector:
+        text:
+          type: time
+    chargestopsoc:
+      name: Charge Cutoff
+      description: Charging Stops at SOC [%].
+      required: true
+      example: 100
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+setbatterydischarge:
+  name: Set Battery Discharge
+  description: >
+    Enables setting Alpha ESS Battery Discharge Settings.
+  fields:
+    serial:
+      name: Serial
+      description: Your Alpha ESS Serial number.
+      required: true
+      example: AA123456789
+      selector:
+        text:
+    enabled:
+      name: Enabled
+      description: Enable Battery Discharge.
+      required: true
+      example: True
+      default: True
+      selector:
+        boolean:
+    dp1start:
+      name: Discharging Period 1 Start
+      description: Discharging Period 1 Start.
+      required: true
+      example: "01:00"
+      default: "00:00"
+      selector:
+        text:
+          type: time
+    dp1end:
+      name: Discharging Period 1 End
+      description: Discharging Period 1 End.
+      required: true
+      example: "04:00"
+      default: "00:00"
+      selector:
+        text:
+          type: time
+    dp2start:
+      name: Discharging Period 2 Start
+      description: Discharging Period 2 Start.
+      required: true
+      example: "01:00"
+      default: "00:00"
+      selector:
+        text:
+          type: time
+    dp2end:
+      name: Discharging Period 2 End
+      description: Discharging Period 2 End.
+      required: true
+      example: "04:00"
+      default: "00:00"
+      selector:
+        text:
+          type: time
+    dischargecutoffsoc:
+      name: Discharging Cutoff
+      description: Discharging Cutoff SOC [%].
+      required: true
+      example: 100
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"

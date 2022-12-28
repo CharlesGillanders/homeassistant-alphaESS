@@ -24,3 +24,57 @@ Monitor your energy generation, storage, and usage data using an unofficial API 
 5. Log out of HomeAssistant and back in again
 6. Setup this integration for your Alpha ESS energy storage system in Home Assistant via `Configuration -> Integrations -> Add -> Alpha ESS`
 7. You will be prompted for the username and password for your account on the Alpha ESS website/app
+
+## Services
+
+This project allows you to use the following services in Home Assistant:<br>
+
+### Alpha ESS: Set Battery Charge<br>
+ 
+  This service call allows you to set the grid charge settings for your system. <br>
+  Times are not validated and must be compatible with the Alpha values. <br>
+  Data needed:<br>
+    - serial = The serial of your system. <br>
+    - enabled = True or False <br>
+    - cp1start = Charging Period 1 Start Time <br>
+    - cp1end = Charging Period 1 End Time <br>
+    - cp2start = Charging Period 2 Start Time <br>
+    - cp2end = Charging Period 2 End Time <br>
+
+example:
+```yaml
+service: alphaess.setbatterycharge
+data:
+  serial: AA123456789
+  enabled: True
+  cp1start: "01:00"
+  cp1end: "04:00"
+  cp2start: "13:00"
+  cp2end: "16:00"
+  chargestopsoc: 100
+```
+
+### Alpha ESS: Set Battery Discharge<br>
+ 
+  This service call allows you to set the battery discharge settings for your system. <br>
+  Times are not validated and must be compatible with the Alpha values. <br>
+  Data needed:<br>
+    - serial = The serial of your system. <br>
+    - enabled = True or False <br>
+    - dp1start = Discharging Period 1 Start Time <br>
+    - dp1end = Discharging Period 1 End Time <br>
+    - dp2start = Discharging Period 2 Start Time <br>
+    - dp2end = Discharging Period 2 End Time <br>
+
+example:
+```yaml
+service: alphaess.setbatterydischarge
+data:
+  serial: AA123456789
+  enabled: True
+  dp1start: "01:00"
+  dp1end: "04:00"
+  dp2start: "13:00"
+  dp2end: "16:00"
+  dischargecutoffsoc: 10
+```
