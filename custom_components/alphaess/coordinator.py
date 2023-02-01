@@ -32,8 +32,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 index = int(datetime.date.today().strftime("%d")) - 1
                 inverterdata: dict[str, any] = {}
                 inverterdata.update({"Model": invertor.get("minv")})
-                _stats =  invertor.get("statistics", {})
-                
+                _stats = invertor.get("statistics", {})
+
                 # statistics
                 inverterdata.update({"Solar Production": _stats.get("EpvT")})
                 inverterdata.update({"Solar to Battery": _stats.get("Epvcharge")})
@@ -43,30 +43,46 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 inverterdata.update({"Grid to Load": _stats.get("EGrid2Load")})
                 inverterdata.update({"Grid to Battery": _stats.get("EGridCharge")})
                 inverterdata.update({"State of Charge": _stats.get("Soc")})
-                
+
                 # system statistics
                 _sysstats = invertor.get("system_statistics", {})
                 inverterdata.update({"Charge": _sysstats.get("ECharge", [])[index]})
-                inverterdata.update({"Discharge": _sysstats.get("EDischarge", [])[index]})
+                inverterdata.update(
+                    {"Discharge": _sysstats.get("EDischarge", [])[index]}
+                )
                 inverterdata.update({"EV Charger": _sysstats.get("EChargingPile")})
-                
+
                 # powerdata
                 _powerdata = invertor.get("powerdata", {})
+                if _powerdata is None:
+                    _powerdata = {
+                        "pmeter_l1": 0,
+                        "pmeter_l2": 0,
+                        "pmeter_l3": 0,
+                        "ppv1": 0,
+                        "ppv2": 0,
+                        "pbat": 0,
+                        "soc": 0,
+                        "pmeter_dc": 0,
+                    }
                 _l1 = _powerdata.get("pmeter_l1", 0)
                 _l2 = _powerdata.get("pmeter_l2", 0)
                 _l3 = _powerdata.get("pmeter_l3", 0)  # unit?
                 _ppv1 = _powerdata.get("ppv1")
                 _ppv2 = _powerdata.get("ppv2")
                 _dc = _powerdata.get("pmeter_dc")
+                _soc = _powerdata.get("soc")
                 _bat = _powerdata.get("pbat")
                 inverterdata.update({"Instantaneous Grid I/O L1": _l1})
                 inverterdata.update({"Instantaneous Grid I/O L2": _l2})
                 inverterdata.update({"Instantaneous Grid I/O L3": _l3})
                 inverterdata.update({"Instantaneous Generation": _ppv1 + _ppv2 + _dc})
-                inverterdata.update({"Instantaneous Battery SOC": _powerdata.get("soc")})
-                inverterdata.update({"Instantaneous Battery I/O": _powerdata.get("pbat")})
+                inverterdata.update({"Instantaneous Battery SOC": _soc})
+                inverterdata.update({"Instantaneous Battery I/O": _bat})
                 inverterdata.update({"Instantaneous Grid I/O Total": _l1 + _l2 + _l3})
-                inverterdata.update({"Instantaneous Load": _ppv1 + _ppv2 + _dc + _bat + _l1 + _l2 + _l3})
+                inverterdata.update(
+                    {"Instantaneous Load": _ppv1 + _ppv2 + _dc + _bat + _l1 + _l2 + _l3}
+                )
                 inverterdata.update({"Instantaneous PPV1": _ppv1})
                 inverterdata.update({"Instantaneous PPV2": _ppv2})
                 self.data.update({invertor["sys_sn"]: inverterdata})
