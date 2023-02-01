@@ -50,7 +50,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 inverterdata.update(
                     {"Discharge": _sysstats.get("EDischarge", [])[index]}
                 )
-                inverterdata.update({"EV Charger": _sysstats.get("EChargingPile")})
+                inverterdata.update({"EV Charger": _stats.get("EChargingPile")})
 
                 # powerdata
                 _powerdata = invertor.get("powerdata", {})
