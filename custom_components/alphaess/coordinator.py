@@ -85,6 +85,25 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 )
                 inverterdata.update({"Instantaneous PPV1": _ppv1})
                 inverterdata.update({"Instantaneous PPV2": _ppv2})
+                
+                # more accurate home load
+                
+                """unable to calculate battToGrid from alpha ess web site
+                Eout is both PV feed in and battery feed in - TODO find a way to calculate battToGrid from alpha web site
+                at this point assume there is no battery to grid - means weird number when Virtual Power Plant sell to grid occurs
+                """
+                battToGrid = 0
+                                
+                """ EHomeLoad looks to be Eeff (self-consumption) + Einput (draw from grid) - this is not load consumed by house hold
+                appliances as it includes charging battery with grid and solar (and thus remains constant during battery discharge)
+                
+                this alternative calculation derrives load of house hold appliances by summing solar to load, battery to load and grid to load. 
+                where battery to load is calculated by discharge - battery to grid *see note on battToGrid :(
+                """
+                inverterdata.update({"Home Load": _stats.get("Epv2load") + (_stats.get("EDischarge", [])[index] - battToGrid) + _stats.get("EGrid2Load")})
+                inverterdata.update({"Battery to Load": _stats.get("EDischarge", [])[index] - battToGrid})
+                inverterdata.update({"Battery Stored": _stats.get("Ebat") })                
+                
                 self.data.update({invertor["sys_sn"]: inverterdata})
             return self.data
         except (
