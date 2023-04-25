@@ -28,64 +28,58 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         """Update data via library."""
         try:
             jsondata: json = await self.api.getdata()
-            for invertor in jsondata:
-                index = int(datetime.date.today().strftime("%d")) - 1
+            for inverter in jsondata:
+                #index = int(datetime.date.today().strftime("%d")) - 1
                 inverterdata: dict[str, any] = {}
-                inverterdata.update({"Model": invertor.get("minv")})
-                _stats = invertor.get("statistics", {})
+                inverterdata.update({"Model": inverter.get("minv")})
+                _daily_stats = inverter.get("OneDayEnergy", {})
 
                 # statistics
-                inverterdata.update({"Solar Production": _stats.get("EpvT")})
-                inverterdata.update({"Solar to Battery": _stats.get("Epvcharge")})
-                inverterdata.update({"Solar to Grid": _stats.get("Eout")})
-                inverterdata.update({"Solar to Load": _stats.get("Epv2load")})
-                inverterdata.update({"Total Load": _stats.get("EHomeLoad")})
-                inverterdata.update({"Grid to Load": _stats.get("EGrid2Load")})
-                inverterdata.update({"Grid to Battery": _stats.get("EGridCharge")})
-                inverterdata.update({"State of Charge": _stats.get("Soc")})
+                inverterdata.update({"Solar Production": _daily_stats.get("epv")})
+                inverterdata.update({"Solar to Battery": _daily_stats.get("eCharge")})
+                inverterdata.update({"Solar to Grid": _daily_stats.get("eOutput")})
+                inverterdata.update({"Solar to Load": _daily_stats.get("epv") - _daily_stats.get("eOutput") - _daily_stats.get("eCharge")})
+                inverterdata.update({"Total Load": _daily_stats.get("eInput") + _daily_stats.get("epv") - _daily_stats.get("eCharge") + _daily_stats.get("eDischarge") - _daily_stats.get("eOutput") - _daily_stats.get("eGridCharge")})
+                inverterdata.update({"Grid to Load": _daily_stats.get("eInput")})
+                inverterdata.update({"Grid to Battery": _daily_stats.get("eGridCharge")})
+                #inverterdata.update({"State of Charge": _daily_stats.get("Soc")})
 
                 # system statistics
-                _sysstats = invertor.get("system_statistics", {})
-                inverterdata.update({"Charge": _sysstats.get("ECharge", [])[index]})
-                inverterdata.update(
-                    {"Discharge": _sysstats.get("EDischarge", [])[index]}
-                )
-                inverterdata.update({"EV Charger": _stats.get("EChargingPile")})
+                #_sysstats = invertor.get("system_statistics", {})
+                inverterdata.update({"Charge": _daily_stats.get("eCharge")})
+                inverterdata.update({"Discharge": _daily_stats.get("eDischarge")})
+                inverterdata.update({"EV Charger": _daily_stats.get("eChargingPile")})
 
                 # powerdata
-                _powerdata = invertor.get("powerdata", {})
+                _powerdata = inverter.get("RealTimePower", {})
                 if _powerdata is None:
                     _powerdata = {
-                        "pmeter_l1": 0,
-                        "pmeter_l2": 0,
-                        "pmeter_l3": 0,
-                        "ppv1": 0,
-                        "ppv2": 0,
-                        "pbat": 0,
+                        "ppv": 0,
+                        "pload": 0,
                         "soc": 0,
-                        "pmeter_dc": 0,
+                        "pgrid": 0,
+                        "pbat": 0,
+                        "pev": 0,
                     }
-                _l1 = _powerdata.get("pmeter_l1", 0)
-                _l2 = _powerdata.get("pmeter_l2", 0)
-                _l3 = _powerdata.get("pmeter_l3", 0)  # unit?
-                _ppv1 = _powerdata.get("ppv1")
-                _ppv2 = _powerdata.get("ppv2")
-                _dc = _powerdata.get("pmeter_dc")
-                _soc = _powerdata.get("soc")
-                _bat = _powerdata.get("pbat")
-                inverterdata.update({"Instantaneous Grid I/O L1": _l1})
-                inverterdata.update({"Instantaneous Grid I/O L2": _l2})
-                inverterdata.update({"Instantaneous Grid I/O L3": _l3})
-                inverterdata.update({"Instantaneous Generation": _ppv1 + _ppv2 + _dc})
-                inverterdata.update({"Instantaneous Battery SOC": _soc})
-                inverterdata.update({"Instantaneous Battery I/O": _bat})
-                inverterdata.update({"Instantaneous Grid I/O Total": _l1 + _l2 + _l3})
-                inverterdata.update(
-                    {"Instantaneous Load": _ppv1 + _ppv2 + _dc + _bat + _l1 + _l2 + _l3}
-                )
-                inverterdata.update({"Instantaneous PPV1": _ppv1})
-                inverterdata.update({"Instantaneous PPV2": _ppv2})
-                self.data.update({invertor["sys_sn"]: inverterdata})
+                _p_pv = _powerdata.get("ppv", 0)
+                _p_load = _powerdata.get("pload", 0)
+                _soc = _powerdata.get("soc", 0)  # unit?
+                _p_grid = _powerdata.get("pgrid")
+                _p_bat = _powerdata.get("pbat")
+                _p_ev = _powerdata.get("pev")
+                inverterdata.update({"Instantaneous PV power": _p_pv})
+                inverterdata.update({"Instantaneous load power": _p_load})
+                inverterdata.update({"Instantaneous battery soc": _soc})
+                inverterdata.update({"Instantaneous grid power": _p_grid})
+                inverterdata.update({"Instantaneous battery power": _p_bat})
+                inverterdata.update({"Instantaneous EV power": _p_ev})
+                #inverterdata.update({"Instantaneous Grid I/O Total": _l1 + _l2 + _l3})
+                #inverterdata.update(
+                #    {"Instantaneous Load": _ppv1 + _ppv2 + _dc + _bat + _l1 + _l2 + _l3}
+                #)
+                #inverterdata.update({"Instantaneous PPV1": _ppv1})
+                #inverterdata.update({"Instantaneous PPV2": _ppv2})
+                self.data.update({inverter["sysSn"]: inverterdata})
             return self.data
         except (
             aiohttp.client_exceptions.ClientConnectorError,

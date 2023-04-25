@@ -6,7 +6,7 @@ import voluptuous as vol
 from alphaess import alphaess
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
 
 import homeassistant.helpers.config_validation as cv
@@ -42,9 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
     
 
-    client = alphaess.alphaess()
-    client.username = entry.data[CONF_USERNAME]
-    client.password = entry.data[CONF_PASSWORD]
+    client = alphaess.alphaess(entry.data[CONF_CLIENT_ID], entry.data[CONF_CLIENT_SECRET])
 
     coordinator = AlphaESSDataUpdateCoordinator(hass, client=client)
     await coordinator.async_config_entry_first_refresh()

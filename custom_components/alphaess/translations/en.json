@@ -8,13 +8,12 @@
             "invalid_auth": "Invalid authentication",
             "unknown": "Unexpected error"
         },
-        "flow_title": "Alpha ESS: {username}",
+        "flow_title": "Alpha ESS: {client_id}",
         "step": {
             "user": {
                 "data": {
-                    "host": "Host",
-                    "password": "Password",
-                    "username": "Username"
+                    "client_id": "Client ID",
+                    "client_secret": "Client secret"
                 }
             }
         }

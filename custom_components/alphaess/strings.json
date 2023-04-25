@@ -1,6 +1,6 @@
 {
   "config": {
-    "flow_title": "Alpha ESS: {username}",
+    "flow_title": "Alpha ESS: {client_id}",
     "error": {
         "already_configured": "[%key:common::config_flow::abort::already_configured_account%]",
         "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
@@ -9,10 +9,10 @@
     "step": {
         "user": {
             "title": "Set up Alpha ESS",
-            "description": "Please provide your credentials for logging into the Alpha ESS app/website",
+            "description": "Please provide your credentials for the open alphaess api (open.alphaess.com)",
             "data": {
-                "username": "[%key:common::config_flow::data::username%]",
-                "password": "[%key:common::config_flow::data::password%]"
+                "client_id": "[%key:common::config_flow::data::client_id%]",
+                "client_secret": "[%key:common::config_flow::data::client_secret%]"
             }
         }
     }
