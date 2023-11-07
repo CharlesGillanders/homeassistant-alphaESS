@@ -13,8 +13,8 @@
             "user": {
                 "data": {
                     "host": "Host",
-                    "password": "Password",
-                    "username": "Username"
+                    "appid": "AppID",
+                    "appsecret": "AppSecret"
                 }
             }
         }

@@ -8,7 +8,6 @@ from alphaess import alphaess
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
@@ -16,17 +15,17 @@ from homeassistant.exceptions import HomeAssistantError
 from .const import DOMAIN
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
-    {vol.Required(CONF_USERNAME): str, vol.Required(CONF_PASSWORD): str}
+    {vol.Required("AppID", description={"AppID"}): str, vol.Required("AppSecret", description={"AppSecret"}): str}
 )
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
 
-    client = alphaess.alphaess()
+    client = alphaess.alphaess(data["AppID"], data["AppSecret"])
 
     try:
-        await client.authenticate(data[CONF_USERNAME], data[CONF_PASSWORD])
+        await client.authenticate()
 
     except aiohttp.ClientResponseError as e:
         if e.status == 401:
@@ -37,7 +36,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         raise CannotConnect
 
     else:
-        return {"AlphaESS": data[CONF_USERNAME]}
+        return {"AlphaESS": data["AppID"]}
 
 
 class AlphaESSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -63,7 +62,7 @@ class AlphaESSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
 
             return self.async_create_entry(
-                    title=user_input["username"], data=user_input
+                    title=user_input["AppID"], data=user_input
             )
 
         return self.async_show_form(

@@ -95,27 +95,6 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         state_class=SensorStateClass.TOTAL_INCREASING,
     ),
         AlphaESSSensorDescription(
-        key=AlphaESSNames.GridIOL1,
-        name="Instantaneous Grid I/O L1",
-        native_unit_of_measurement=POWER_WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-        AlphaESSSensorDescription(
-        key=AlphaESSNames.GridIOL2,
-        name="Instantaneous Grid I/O L2",
-        native_unit_of_measurement=POWER_WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-        AlphaESSSensorDescription(
-        key=AlphaESSNames.GridIOL3,
-        name="Instantaneous Grid I/O L3",
-        native_unit_of_measurement=POWER_WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-        AlphaESSSensorDescription(
         key=AlphaESSNames.Generation,
         name="Instantaneous Generation",
         native_unit_of_measurement=POWER_WATT,
@@ -146,20 +125,6 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         AlphaESSSensorDescription(
         key=AlphaESSNames.Load,
         name="Instantaneous Load",
-        native_unit_of_measurement=POWER_WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-        AlphaESSSensorDescription(
-        key=AlphaESSNames.PPV1,
-        name="Instantaneous PPV1",
-        native_unit_of_measurement=POWER_WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-        AlphaESSSensorDescription(
-        key=AlphaESSNames.PPV2,
-        name="Instantaneous PPV2",
         native_unit_of_measurement=POWER_WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -204,7 +169,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         self._coordinator = coordinator
 
         for invertor in coordinator.data:
-            serial = invertor
+            serial = invertor.upper()
             if self._serial == serial:
                 self._attr_device_info = DeviceInfo(
                     entry_type=DeviceEntryType.SERVICE,

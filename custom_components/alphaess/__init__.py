@@ -42,9 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
     
 
-    client = alphaess.alphaess()
-    client.username = entry.data[CONF_USERNAME]
-    client.password = entry.data[CONF_PASSWORD]
+    client = alphaess.alphaess(entry.data["AppID"],entry.data["AppSecret"])
 
     coordinator = AlphaESSDataUpdateCoordinator(hass, client=client)
     await coordinator.async_config_entry_first_refresh()
