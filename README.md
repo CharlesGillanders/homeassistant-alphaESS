@@ -5,6 +5,14 @@
 
 Monitor your energy generation, storage, and usage data using an unofficial API from Alpha ESS
 
+## AlphaESS OpenAPI
+
+In November 2023, AlphaESS introduced a new web API for their own web client, developers were officially encouraged to migrate to using the AlphaESS Open API published at [https://open.alphaess.com/](https://open.alphaess.com/).  This component has been updated to use that Open API.  Anyone wanting to use this component in Home Assistant will first need to register their own invertor with the AlphaESS Open API developer portal.
+
+1. Navigate to [https://open.alphaess.com/](https://open.alphaess.com/) and chose the option to register an account.
+2. Once registered and logged in follow the instructions from [https://github.com/alphaess-developer/alphacloud_open_api](https://github.com/alphaess-developer/alphacloud_open_api) to find your invertor SN and CheckCode
+3. Add your invertor to the developer portal using your SN and CheckCode
+
 ## Installation using HACS
 
 1. Use [HACS](https://hacs.xyz/docs/setup/download), in `HACS > Integrations > Hamburger Menu > Custom Repositories add https://github.com/CharlesGillanders/homeassistant-alphaESS with category set to integration.
@@ -13,7 +21,7 @@ Monitor your energy generation, storage, and usage data using an unofficial API 
 4. Enable Advanced Mode using Profile (click on your username at the bottom of the navigation column) -> Advanced Mode -> On
 5. Log out of HomeAssistant and back in again
 6. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Alpha ESS".
-7. You will be prompted for the username and password for your account on the Alpha ESS website/app
+7. You will be prompted for the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
 
 ## Manual Installation
 
@@ -23,7 +31,7 @@ Monitor your energy generation, storage, and usage data using an unofficial API 
 4. Enable Advanced Mode using Profile (click on your username at the bottom of the navigation column) -> Advanced Mode -> On
 5. Log out of HomeAssistant and back in again
 6. Setup this integration for your Alpha ESS energy storage system in Home Assistant via `Configuration -> Integrations -> Add -> Alpha ESS`
-7. You will be prompted for the username and password for your account on the Alpha ESS website/app
+7. You will be prompted for the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
 
 ## Services
 
