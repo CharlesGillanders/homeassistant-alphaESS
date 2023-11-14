@@ -54,10 +54,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(update_listener))
     
     async def async_battery_charge_handler(call):
-        await client.setbatterycharge(call.data.get('serial'), call.data.get('enabled'), call.data.get('cp1start'), call.data.get('cp1end'), call.data.get('cp2start'), call.data.get('cp2end'), call.data.get('chargestopsoc'))
+        await client.updateChargeConfigInfo(call.data.get('serial'), call.data.get('chargestopsoc'), int(call.data.get('enabled') == True), call.data.get('cp1end'), call.data.get('cp2end'), call.data.get('cp1start'),  call.data.get('cp2start'))
     
     async def async_battery_discharge_handler(call):
-        await client.setbatterydischarge(call.data.get('serial'), call.data.get('enabled'), call.data.get('dp1start'), call.data.get('dp1end'), call.data.get('dp2start'), call.data.get('dp2end'), call.data.get('dischargecutoffsoc'))
+        await client.updateDisChargeConfigInfo(call.data.get('serial'), call.data.get('dischargecutoffsoc'), int(call.data.get('enabled') == True),  call.data.get('dp1end'), call.data.get('dp2end'), call.data.get('dp1start'), call.data.get('dp2start'))
 
     hass.services.async_register(
         DOMAIN, 'setbatterycharge', async_battery_charge_handler, SERVICE_BATTERY_CHARGE_SCHEMA)
