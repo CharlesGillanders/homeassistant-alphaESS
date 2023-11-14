@@ -3,7 +3,7 @@
 ![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)
 
 
-Monitor your energy generation, storage, and usage data using an unofficial API from Alpha ESS
+Monitor your energy generation, storage, and usage data using the official Open API from Alpha ESS
 
 ## AlphaESS OpenAPI
 
@@ -12,6 +12,19 @@ In November 2023, AlphaESS introduced a new web API for their own web client and
 1. Navigate to [https://open.alphaess.com/](https://open.alphaess.com/) and chose the option to register an account.
 2. Once registered and logged in follow the instructions from [https://github.com/alphaess-developer/alphacloud_open_api](https://github.com/alphaess-developer/alphacloud_open_api) to find your inverter SN and CheckCode
 3. Add your inverter to the developer portal using your SN and CheckCode
+
+## Modifying existing installs to use the new OpenAPI
+
+If you had previously been using this custom component in Home Assistant you will need to change to use the new authentication mechanism required by the AlphaESS OpenAPI.  
+
+1. First upgrade the HomeAssistant component to at least version 0.4.0 and then restart your HomeAssistant
+2. In HomeAssistant navigate to Settings / Devices & Services / AlphaESS
+3. Look for the pane labeled Integration entries and click on the "3 dots" menu to the right of your existing AlphaESS service.
+4. Delete the existing AlphaESS service.
+5. Click Add Entry to add a new AlphaESS service
+6. Provide the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
+7. The new service will be created keeping the same entity/device names as before.
+
 
 ## Installation using HACS
 
