@@ -39,6 +39,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 _onedateenergy = invertor.get("OneDateEnergy", {})
                 # data from last power data API
                 _powerdata = invertor.get("LastPower", {})
+                _gridpowerdetails = _powerdata.get("pgridDetail",{})
+                _pvpowerdetails = _powerdata.get("ppvDetail",{})
 
                 _pv =  _onedateenergy.get("epv")
                 _feedin = _onedateenergy.get("eOutput")
@@ -57,11 +59,20 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 inverterdata.update({"Grid to Battery": _gridcharge})
                 inverterdata.update({"EV Charger": _onedateenergy.get("eChargingPile")})           
                 inverterdata.update({"Instantaneous Generation": _powerdata.get("ppv")})
+                inverterdata.update({"Instantaneous PPV1": _pvpowerdetails.get("ppv1")})
+                inverterdata.update({"Instantaneous PPV2": _pvpowerdetails.get("ppv2")})
+                inverterdata.update({"Instantaneous PPV3": _pvpowerdetails.get("ppv3")})
+                inverterdata.update({"Instantaneous PPV4": _pvpowerdetails.get("ppv4")})
                 inverterdata.update({"Instantaneous Battery SOC": _soc})
                 inverterdata.update({"State of Charge": _soc})
                 inverterdata.update({"Instantaneous Battery I/O": _powerdata.get("pbat")})
                 inverterdata.update({"Instantaneous Grid I/O Total": _powerdata.get("pgrid")})
+                inverterdata.update({"Instantaneous Grid I/O L1": _gridpowerdetails.get("pmeterL1")})
+                inverterdata.update({"Instantaneous Grid I/O L2": _gridpowerdetails.get("pmeterL2")})
+                inverterdata.update({"Instantaneous Grid I/O L3": _gridpowerdetails.get("pmeterL3")})
                 inverterdata.update({"Instantaneous Load": _powerdata.get("pload")})
+
+
 
                 self.data.update({invertor["sysSn"]: inverterdata})
 
