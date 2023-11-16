@@ -1,23 +1,22 @@
-{
+{	    
+	"title": "Alpha ESS",
     "config": {
-        "abort": {
+        "step": {
+            "user": {
+				"description": "Enter your AppID amd AppSecret from the AlphaESS OpenAPI developer portal",
+                "data": {
+                    "AppID": "AppID",
+                    "AppSecret": "AppSecret"
+                }
+            }
+        },
+		"abort": {
             "already_configured": "Account is already configured"
         },
         "error": {
             "cannot_connect": "Failed to connect",
             "invalid_auth": "Invalid authentication",
             "unknown": "Unexpected error"
-        },
-        "flow_title": "Alpha ESS: {username}",
-        "step": {
-            "user": {
-                "data": {
-                    "host": "Host",
-                    "appid": "AppID",
-                    "appsecret": "AppSecret"
-                }
-            }
         }
-    },
-    "title": "Alpha ESS"
+    }
 }
