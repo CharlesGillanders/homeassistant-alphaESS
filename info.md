@@ -8,13 +8,13 @@
 [![hacs][hacsbadge]][hacs]
 [![Project Maintenance][maintenance-shield]][user_profile]
 
-Monitor your energy generation, storage, and usage data using an unofficial API from Alpha ESS
+Monitor your energy generation, storage, and usage data using the official Open API from Alpha ESS
 
 ## Setup integration
 
 1. Enable Advanced Mode using Profile (click on your username at the bottom of the navigation column) -> Advanced Mode -> On
 2. [![Add Integration][add-integration-badge]][add-integration] or in the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Alpha ESS"
-3. You will be prompted for the username and password for your account on the Alpha ESS website/app
+3. You will be prompted for the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
 
 {% if not installed %}
 
