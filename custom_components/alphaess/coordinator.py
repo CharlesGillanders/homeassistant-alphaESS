@@ -51,12 +51,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     _soc = _powerdata.get("soc")
                     
                     if _sumdata != None:
-                        inverterdata.update({"Solar Production": _sumdata.get("epvtoday")})
+                    #   Still will keep in, but will be provided with the timezone difference
                         inverterdata.update({"Total Load": _sumdata.get("eload")})
-                        inverterdata.update({"Grid to Load": _sumdata.get("einput")})
-                        inverterdata.update({"Charge": _sumdata.get("echarge")})
-                        inverterdata.update({"Discharge": _sumdata.get("edischarge")})
-                        inverterdata.update({"Solar to Grid": _sumdata.get("eoutput")})              
 
                     if _charge != None and _gridcharge != None:
                         inverterdata.update({"Solar to Battery": _charge - _gridcharge})
@@ -68,7 +64,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         inverterdata.update({"Grid to Battery": _gridcharge})
 
                     if _onedateenergy != None:
-                        inverterdata.update({"EV Charger": _onedateenergy.get("eChargingPile")})           
+                        inverterdata.update({"EV Charger": _onedateenergy.get("eChargingPile")})
+                        inverterdata.update({"Solar Production": _onedateenergy.get("epvtoday")})
+                        inverterdata.update({"Grid to Load": _onedateenergy.get("eInput")})
+                        inverterdata.update({"Charge": _onedateenergy.get("eCharge")})
+                        inverterdata.update({"Discharge": _onedateenergy.get("eDischarge")})
+                        inverterdata.update({"Solar to Grid": _onedateenergy.get("eOutput")})
 
                     if _powerdata != None:                         
                         inverterdata.update({"Instantaneous Generation": _powerdata.get("ppv")})
