@@ -61,11 +61,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         if _gridcharge != None:
                             inverterdata.update({"Grid to Battery": _gridcharge})
 
-                        inverterdata.update({"Solar Production": _onedateenergy.get("epv")})
+                        inverterdata.update({"Solar Production": _pv})
+                        inverterdata.update({"Charge": _charge})
+                        inverterdata.update({"Solar to Grid": _feedin})              
+
                         inverterdata.update({"Grid to Load": _onedateenergy.get("eInput")})
-                        inverterdata.update({"Charge": _onedateenergy.get("echarge")})
                         inverterdata.update({"Discharge": _onedateenergy.get("eDischarge")})
-                        inverterdata.update({"Solar to Grid": _onedateenergy.get("eOutput")})              
 
                         inverterdata.update({"EV Charger": _onedateenergy.get("eChargingPile")})           
 
