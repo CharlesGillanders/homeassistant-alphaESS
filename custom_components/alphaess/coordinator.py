@@ -52,20 +52,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         _gridcharge = _onedateenergy.get("eGridCharge")
                         _charge = _onedateenergy.get("eCharge")
 
-                        if _pv != None and _feedin != None:
-                            inverterdata.update({"Solar to Load": _pv - _feedin})
-
-                        if _charge != None and _gridcharge != None:
-                            inverterdata.update({"Solar to Battery": _charge - _gridcharge})
-
-                        if _gridcharge != None:
-                            inverterdata.update({"Grid to Battery": _gridcharge})
-
                         inverterdata.update({"Solar Production": _pv})
-                        inverterdata.update({"Charge": _charge})
+                        inverterdata.update({"Solar to Load": _pv - _feedin})
                         inverterdata.update({"Solar to Grid": _feedin})              
+                        inverterdata.update({"Solar to Battery": _charge - _gridcharge})
 
                         inverterdata.update({"Grid to Load": _onedateenergy.get("eInput")})
+                        inverterdata.update({"Grid to Battery": _gridcharge})
+
+                        inverterdata.update({"Charge": _charge})
                         inverterdata.update({"Discharge": _onedateenergy.get("eDischarge")})
 
                         inverterdata.update({"EV Charger": _onedateenergy.get("eChargingPile")})           
@@ -75,22 +70,22 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         _gridpowerdetails = _powerdata.get("pgridDetail",{})
                         _pvpowerdetails = _powerdata.get("ppvDetail",{})
 
-                        if _soc != None:
-                            inverterdata.update({"Instantaneous Battery SOC": _soc})
-                            inverterdata.update({"State of Charge": _soc})
+                        # wonder why do we have this twice
+                        inverterdata.update({"Instantaneous Battery SOC": _soc})
+                        inverterdata.update({"State of Charge": _soc})
 
-                        inverterdata.update({"Instantaneous Generation": _powerdata.get("ppv")})
                         inverterdata.update({"Instantaneous Battery I/O": _powerdata.get("pbat")})
-                        inverterdata.update({"Instantaneous Grid I/O Total": _powerdata.get("pgrid")})
                         inverterdata.update({"Instantaneous Load": _powerdata.get("pload")})
 
-                    if _pvpowerdetails != None:
+                        inverterdata.update({"Instantaneous Generation": _powerdata.get("ppv")})
+                        # pv power generation details
                         inverterdata.update({"Instantaneous PPV1": _pvpowerdetails.get("ppv1")})
                         inverterdata.update({"Instantaneous PPV2": _pvpowerdetails.get("ppv2")})
                         inverterdata.update({"Instantaneous PPV3": _pvpowerdetails.get("ppv3")})
                         inverterdata.update({"Instantaneous PPV4": _pvpowerdetails.get("ppv4")})
 
-                    if _gridpowerdetails != None:
+                        inverterdata.update({"Instantaneous Grid I/O Total": _powerdata.get("pgrid")})
+                        # grid power usage details
                         inverterdata.update({"Instantaneous Grid I/O L1": _gridpowerdetails.get("pmeterL1")})
                         inverterdata.update({"Instantaneous Grid I/O L2": _gridpowerdetails.get("pmeterL2")})
                         inverterdata.update({"Instantaneous Grid I/O L3": _gridpowerdetails.get("pmeterL3")})
