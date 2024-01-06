@@ -6,7 +6,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy.KILO_WATT_HOUR, PERCENTAGE, UnitOfPower.WATT
+from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
