@@ -1,5 +1,4 @@
 """Coordinator for AlphaEss integration."""
-import datetime
 import json
 import logging
 
@@ -28,27 +27,27 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         """Update data via library."""
         try:
             jsondata: json = await self.api.getdata()
-            if jsondata != None:
+            if jsondata is not None:
                 for invertor in jsondata:
 
                     inverterdata: dict[str, any] = {}
-                    if invertor.get("minv") != None:
+                    if invertor.get("minv") is not None:
                         inverterdata.update({"Model": invertor.get("minv")})
-                    
+
                     # data from summary data API
                     _sumdata = invertor.get("SumData", {})
                     # data from one date energy API
                     _onedateenergy = invertor.get("OneDateEnergy", {})
                     # data from last power data API
                     _powerdata = invertor.get("LastPower", {})
-                    
-                    if _sumdata != None:
-                    #   Still will keep in, but will be provided with the timezone difference
+
+                    if _sumdata is not None:
+                        #   Still will keep in, but will be provided with the timezone difference
                         inverterdata.update({"Total Load": _sumdata.get("eload")})
                         inverterdata.update({"Total Income": _sumdata.get("totalIncome")})
-                    
-                    if _onedateenergy != None:
-                        _pv =  _onedateenergy.get("epv")
+
+                    if _onedateenergy is not None:
+                        _pv = _onedateenergy.get("epv")
 
                         _feedin = _onedateenergy.get("eOutput")
                         _gridcharge = _onedateenergy.get("eGridCharge")
@@ -56,7 +55,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
                         inverterdata.update({"Solar Production": _pv})
                         inverterdata.update({"Solar to Load": _pv - _feedin})
-                        inverterdata.update({"Solar to Grid": _feedin})              
+                        inverterdata.update({"Solar to Grid": _feedin})
                         inverterdata.update({"Solar to Battery": _charge - _gridcharge})
 
                         inverterdata.update({"Grid to Load": _onedateenergy.get("eInput")})
@@ -65,12 +64,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         inverterdata.update({"Charge": _charge})
                         inverterdata.update({"Discharge": _onedateenergy.get("eDischarge")})
 
-                        inverterdata.update({"EV Charger": _onedateenergy.get("eChargingPile")})           
+                        inverterdata.update({"EV Charger": _onedateenergy.get("eChargingPile")})
 
-                    if _powerdata != None:                         
+                    if _powerdata is not None:
                         _soc = _powerdata.get("soc")
-                        _gridpowerdetails = _powerdata.get("pgridDetail",{})
-                        _pvpowerdetails = _powerdata.get("ppvDetail",{})
+                        _gridpowerdetails = _powerdata.get("pgridDetail", {})
+                        _pvpowerdetails = _powerdata.get("ppvDetail", {})
 
                         # wonder why do we have this twice
                         inverterdata.update({"Instantaneous Battery SOC": _soc})
@@ -91,12 +90,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         inverterdata.update({"Instantaneous Grid I/O L1": _gridpowerdetails.get("pmeterL1")})
                         inverterdata.update({"Instantaneous Grid I/O L2": _gridpowerdetails.get("pmeterL2")})
                         inverterdata.update({"Instantaneous Grid I/O L3": _gridpowerdetails.get("pmeterL3")})
-                    
+
                     self.data.update({invertor["sysSn"]: inverterdata})
 
             return self.data
         except (
-            aiohttp.client_exceptions.ClientConnectorError,
-            aiohttp.ClientResponseError,
+                aiohttp.client_exceptions.ClientConnectorError,
+                aiohttp.ClientResponseError,
         ) as error:
             raise UpdateFailed(error) from error
