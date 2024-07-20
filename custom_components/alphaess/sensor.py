@@ -11,7 +11,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, increment_inverter_count
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .entity import AlphaESSSensorDescription
 from .enums import AlphaESSNames
@@ -182,7 +182,7 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="Total Income",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=None,
     )
 ]
 
@@ -198,6 +198,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     }
 
     for serial in coordinator.data:
+        increment_inverter_count()
         for description in key_supported_states:
             entities.append(
                 AlphaESSSensor(
