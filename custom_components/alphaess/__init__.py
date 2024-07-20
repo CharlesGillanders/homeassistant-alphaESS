@@ -6,7 +6,6 @@ import voluptuous as vol
 from alphaess import alphaess
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 
 import homeassistant.helpers.config_validation as cv
@@ -38,11 +37,11 @@ SERVICE_BATTERY_DISCHARGE_SCHEMA = vol.Schema(
     }
 )
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
-    
 
-    client = alphaess.alphaess(entry.data["AppID"],entry.data["AppSecret"])
+    client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"])
 
     coordinator = AlphaESSDataUpdateCoordinator(hass, client=client)
     await coordinator.async_config_entry_first_refresh()
@@ -52,16 +51,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
-    
+
     async def async_battery_charge_handler(call):
-        await client.updateChargeConfigInfo(call.data.get('serial'), call.data.get('chargestopsoc'), int(call.data.get('enabled') == True), call.data.get('cp1end'), call.data.get('cp2end'), call.data.get('cp1start'),  call.data.get('cp2start'))
-    
+        await client.updateChargeConfigInfo(call.data.get('serial'), call.data.get('chargestopsoc'),
+                                            int(call.data.get('enabled') == True), call.data.get('cp1end'),
+                                            call.data.get('cp2end'), call.data.get('cp1start'),
+                                            call.data.get('cp2start'))
+
     async def async_battery_discharge_handler(call):
-        await client.updateDisChargeConfigInfo(call.data.get('serial'), call.data.get('dischargecutoffsoc'), int(call.data.get('enabled') == True),  call.data.get('dp1end'), call.data.get('dp2end'), call.data.get('dp1start'), call.data.get('dp2start'))
+        await client.updateDisChargeConfigInfo(call.data.get('serial'), call.data.get('dischargecutoffsoc'),
+                                               int(call.data.get('enabled') == True), call.data.get('dp1end'),
+                                               call.data.get('dp2end'), call.data.get('dp1start'),
+                                               call.data.get('dp2start'))
 
     hass.services.async_register(
         DOMAIN, 'setbatterycharge', async_battery_charge_handler, SERVICE_BATTERY_CHARGE_SCHEMA)
-        
+
     hass.services.async_register(
         DOMAIN, 'setbatterydischarge', async_battery_discharge_handler, SERVICE_BATTERY_DISCHARGE_SCHEMA)
 
@@ -74,6 +79,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
+
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""

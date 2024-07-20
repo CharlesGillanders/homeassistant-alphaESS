@@ -8,7 +8,7 @@ from alphaess import alphaess
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, SCAN_INTERVAL
+from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -25,8 +25,17 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         """Update data via library."""
+
+        inverter_count = get_inverter_count()
+        if inverter_count == 1:
+            LOCAL_INVERTER_COUNT = 0
+        else:
+            LOCAL_INVERTER_COUNT = inverter_count
+
+        _LOGGER.info(f"INVERTER COUNT {inverter_count}")
+
         try:
-            jsondata: json = await self.api.getdata()
+            jsondata: json = await self.api.getdata(THROTTLE_MULTIPLIER * LOCAL_INVERTER_COUNT)
             if jsondata is not None:
                 for invertor in jsondata:
 
