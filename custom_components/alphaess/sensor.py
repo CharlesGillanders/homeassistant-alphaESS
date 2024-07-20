@@ -6,7 +6,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower
+from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -177,7 +177,13 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-    ),
+    ),  AlphaESSSensorDescription(
+        key=AlphaESSNames.Income,
+        name="Total Income",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.MEASUREMENT,
+    )
 ]
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:

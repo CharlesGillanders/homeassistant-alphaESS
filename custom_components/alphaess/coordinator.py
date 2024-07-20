@@ -45,9 +45,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     if _sumdata != None:
                     #   Still will keep in, but will be provided with the timezone difference
                         inverterdata.update({"Total Load": _sumdata.get("eload")})
+                        inverterdata.update({"Total Income": _sumdata.get("totalIncome")})
                     
                     if _onedateenergy != None:
                         _pv =  _onedateenergy.get("epv")
+
                         _feedin = _onedateenergy.get("eOutput")
                         _gridcharge = _onedateenergy.get("eGridCharge")
                         _charge = _onedateenergy.get("eCharge")
