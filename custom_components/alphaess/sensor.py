@@ -187,13 +187,13 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER,
+        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER,
+        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     )
 ]
