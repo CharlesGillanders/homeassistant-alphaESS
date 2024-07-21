@@ -30,3 +30,5 @@ class AlphaESSNames(str, Enum):
     GridIOL3 = "Instantaneous Grid I/O L3"
     Load = "Instantaneous Load"
     Income = "Total Income"
+    SelfSufficiency = "Self Sufficiency"
+    SelfConsumption = "Self Consumption"

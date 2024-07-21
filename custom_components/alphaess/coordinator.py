@@ -54,6 +54,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         #   Still will keep in, but will be provided with the timezone difference
                         inverterdata.update({"Total Load": _sumdata.get("eload")})
                         inverterdata.update({"Total Income": _sumdata.get("totalIncome")})
+                        inverterdata.update({"Self Consumption": (_sumdata.get("eselfConsumption") * 100)})
+                        inverterdata.update({"Self Sufficiency": (_sumdata.get("eselfSufficiency") * 100)})
 
                     if _onedateenergy is not None:
                         _pv = _onedateenergy.get("epv")

@@ -94,97 +94,110 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.Generation,
         name="Instantaneous Generation",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.PPV1,
         name="Instantaneous PPV1",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.PPV2,
         name="Instantaneous PPV2",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.PPV3,
         name="Instantaneous PPV3",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.PPV4,
         name="Instantaneous PPV4",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOL1,
         name="Instantaneous Grid I/O L1",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOL2,
         name="Instantaneous Grid I/O L2",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOL3,
         name="Instantaneous Grid I/O L3",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.BatterySOC,
         name="Instantaneous Battery SOC",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.BatteryIO,
         name="Instantaneous Battery I/O",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOTotal,
         name="Instantaneous Grid I/O Total",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-        AlphaESSSensorDescription(
+    AlphaESSSensorDescription(
         key=AlphaESSNames.Load,
         name="Instantaneous Load",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-    ),  AlphaESSSensorDescription(
+    ), AlphaESSSensorDescription(
         key=AlphaESSNames.Income,
         name="Total Income",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.SelfConsumption,
+        name="Self Consumption",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.POWER,
+        state_class=None,
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.SelfSufficiency,
+        name="Self Sufficiency",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.POWER,
+        state_class=None,
     )
 ]
+
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Defer sensor setup to the shared sensor module."""
@@ -219,8 +232,8 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         self._config = config
         self._name = key_supported_states.name
         self._native_unit_of_measurement = key_supported_states.native_unit_of_measurement
-        self._device_class=key_supported_states.device_class
-        self._state_class=key_supported_states.state_class
+        self._device_class = key_supported_states.device_class
+        self._state_class = key_supported_states.state_class
         self._serial = serial
         self._coordinator = coordinator
 
