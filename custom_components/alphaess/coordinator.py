@@ -93,10 +93,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         inverterdata["Instantaneous PPV4"] = await process_value(_pvpowerdetails.get("ppv4"))
                         # grid power usage details
                         inverterdata["Instantaneous Grid I/O Total"] = await process_value(_powerdata.get("pgrid"))
-                        inverterdata["Instantaneous Grid I/O L1"] = await process_value(_gridpowerdetails.get("pmeterL1"))
-                        inverterdata["Instantaneous Grid I/O L2"] = await process_value(_gridpowerdetails.get("pmeterL2"))
-                        inverterdata["Instantaneous Grid I/O L3"] = await process_value(_gridpowerdetails.get("pmeterL3"))
-
+                        inverterdata["Instantaneous Grid I/O L1"] = await process_value(
+                            _gridpowerdetails.get("pmeterL1"))
+                        inverterdata["Instantaneous Grid I/O L2"] = await process_value(
+                            _gridpowerdetails.get("pmeterL2"))
+                        inverterdata["Instantaneous Grid I/O L3"] = await process_value(
+                            _gridpowerdetails.get("pmeterL3"))
 
                     self.data.update({invertor["sysSn"]: inverterdata})
 

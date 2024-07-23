@@ -196,7 +196,7 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
-        key=AlphaESSNames.emsStatus,
+        key=AlphaESSNames.EmsStatus,
         name="EMS Status",
         device_class=SensorDeviceClass.ENUM,
         state_class=None,

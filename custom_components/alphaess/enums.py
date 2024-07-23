@@ -32,4 +32,4 @@ class AlphaESSNames(str, Enum):
     Income = "Total Income"
     SelfSufficiency = "Self Sufficiency"
     SelfConsumption = "Self Consumption"
-    emsStatus = "EMS Status"
+    EmsStatus = "EMS Status"
