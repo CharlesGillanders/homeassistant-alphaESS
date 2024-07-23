@@ -195,6 +195,11 @@ SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.emsStatus,
+        name="EMS Status",
+        device_class=SensorDeviceClass.ENUM,
+        state_class=None,
     )
 ]
 

@@ -37,8 +37,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             LOCAL_INVERTER_COUNT = inverter_count
 
-        _LOGGER.info(f"INVERTER COUNT {inverter_count}")
-
         try:
             jsondata = await self.api.getdata(THROTTLE_MULTIPLIER * LOCAL_INVERTER_COUNT)
             if jsondata is not None:
@@ -47,6 +45,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     inverterdata = {}
                     if invertor.get("minv") is not None:
                         inverterdata["Model"] = await process_value(invertor.get("minv"))
+                    inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"))
 
                     # data from summary data API
                     _sumdata = invertor.get("SumData", {})
@@ -86,20 +85,18 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         inverterdata["State of Charge"] = _soc
                         inverterdata["Instantaneous Battery I/O"] = await process_value(_powerdata.get("pbat"))
                         inverterdata["Instantaneous Load"] = await process_value(_powerdata.get("pload"))
+                        # pv power generation details
                         inverterdata["Instantaneous Generation"] = await process_value(_powerdata.get("ppv"))
                         inverterdata["Instantaneous PPV1"] = await process_value(_pvpowerdetails.get("ppv1"))
                         inverterdata["Instantaneous PPV2"] = await process_value(_pvpowerdetails.get("ppv2"))
                         inverterdata["Instantaneous PPV3"] = await process_value(_pvpowerdetails.get("ppv3"))
                         inverterdata["Instantaneous PPV4"] = await process_value(_pvpowerdetails.get("ppv4"))
+                        # grid power usage details
                         inverterdata["Instantaneous Grid I/O Total"] = await process_value(_powerdata.get("pgrid"))
-                        inverterdata["Instantaneous Grid I/O L1"] = await process_value(
-                            _gridpowerdetails.get("pmeterL1"))
-                        inverterdata["Instantaneous Grid I/O L2"] = await process_value(
-                            _gridpowerdetails.get("pmeterL2"))
-                        inverterdata["Instantaneous Grid I/O L3"] = await process_value(
-                            _gridpowerdetails.get("pmeterL3"))
+                        inverterdata["Instantaneous Grid I/O L1"] = await process_value(_gridpowerdetails.get("pmeterL1"))
+                        inverterdata["Instantaneous Grid I/O L2"] = await process_value(_gridpowerdetails.get("pmeterL2"))
+                        inverterdata["Instantaneous Grid I/O L3"] = await process_value(_gridpowerdetails.get("pmeterL3"))
 
-                    _LOGGER.info(f"INVERTER DATA: {inverterdata}")
 
                     self.data.update({invertor["sysSn"]: inverterdata})
 
