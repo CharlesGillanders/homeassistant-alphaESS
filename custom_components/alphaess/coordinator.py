@@ -66,7 +66,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         _gridcharge = await process_value(_onedateenergy.get("eGridCharge"))
                         _charge = await process_value(_onedateenergy.get("eCharge"))
 
-                        inverterdata["Solar Production"] = _pv
+                        inverterdata["Solar Production"] = await process_value(_pv)
                         inverterdata["Solar to Load"] = await process_value(_pv - _feedin)
                         inverterdata["Solar to Grid"] = _feedin
                         inverterdata["Solar to Battery"] = await process_value(_charge - _gridcharge)
