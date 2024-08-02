@@ -5,6 +5,7 @@ from typing import List
 from homeassistant.components.sensor import (
     SensorEntity
 )
+from homeassistant.const import CURRENCY_DOLLAR
 
 from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS
 
@@ -20,6 +21,8 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Defer sensor setup to the shared sensor module."""
+
+    currency = hass.config.currency
 
     coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
@@ -42,14 +45,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             for description in limited_key_supported_states:
                 entities.append(
                     AlphaESSSensor(
-                        coordinator, entry, serial, limited_key_supported_states[description]
+                        coordinator, entry, serial, limited_key_supported_states[description], currency
                     )
                 )
         else:
             for description in full_key_supported_states:
                 entities.append(
                     AlphaESSSensor(
-                        coordinator, entry, serial, full_key_supported_states[description]
+                        coordinator, entry, serial, full_key_supported_states[description], currency
                     )
                 )
     async_add_entities(entities)
@@ -60,7 +63,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     """Alpha ESS Base Sensor."""
 
-    def __init__(self, coordinator, config, serial, key_supported_states):
+    def __init__(self, coordinator, config, serial, key_supported_states, currency):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._config = config
@@ -69,6 +72,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         self._device_class = key_supported_states.device_class
         self._state_class = key_supported_states.state_class
         self._serial = serial
+        self._currency = currency
         self._coordinator = coordinator
 
         for invertor in coordinator.data:
@@ -100,7 +104,12 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self):
         """Return the native unit of measurement of the sensor."""
-        return self._native_unit_of_measurement
+        if self._native_unit_of_measurement is not CURRENCY_DOLLAR:
+            return self._native_unit_of_measurement
+        else:
+            self._native_unit_of_measurement = self._currency
+            return self._native_unit_of_measurement
+
 
     @property
     def device_class(self):
