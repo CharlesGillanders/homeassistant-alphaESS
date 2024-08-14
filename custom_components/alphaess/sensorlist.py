@@ -2,11 +2,9 @@ from typing import List
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
-    SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR
-
+from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR, EntityCategory
 
 from .entity import AlphaESSSensorDescription
 from .enums import AlphaESSNames
@@ -196,6 +194,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="EMS Status",
         device_class=SensorDeviceClass.ENUM,
         state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
     )
 ]
 
@@ -290,5 +289,6 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="EMS Status",
         device_class=SensorDeviceClass.ENUM,
         state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
     )
 ]
