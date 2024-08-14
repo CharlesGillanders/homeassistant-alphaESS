@@ -174,18 +174,21 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.Income,
         name="Total Income",
+        icon="mdi:cash-multiple",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
+        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
+        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
@@ -269,18 +272,21 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.Income,
         name="Total Income",
+        icon="mdi:cash-multiple",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
+        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
+        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,

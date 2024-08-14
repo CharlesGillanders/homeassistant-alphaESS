@@ -70,6 +70,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         self._name = key_supported_states.name
         self._native_unit_of_measurement = key_supported_states.native_unit_of_measurement
         self._entity_category = key_supported_states.entity_category
+        self._icon = key_supported_states.icon
         self._device_class = key_supported_states.device_class
         self._state_class = key_supported_states.state_class
         self._serial = serial
@@ -123,4 +124,10 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def entity_category(self):
+        """Return the entity_category of the sensor."""
         return self._entity_category
+
+    @property
+    def icon(self):
+        """Return the entity_category of the sensor."""
+        return self._icon
