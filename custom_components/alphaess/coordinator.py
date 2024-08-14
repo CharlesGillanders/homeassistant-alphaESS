@@ -12,16 +12,16 @@ from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_coun
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-async def process_value(value):
+async def process_value(value, default):
     if value is None or (isinstance(value, str) and value.strip() == ''):
-        return 0
+        return default
     return value
 
 
 async def safe_get(dictionary, key, default=0):
     if dictionary is None:
         return default
-    return await process_value(dictionary.get(key))
+    return await process_value(dictionary.get(key), default)
 
 
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
