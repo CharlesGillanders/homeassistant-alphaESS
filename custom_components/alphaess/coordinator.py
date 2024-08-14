@@ -50,8 +50,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
                     inverterdata = {}
                     if invertor.get("minv") is not None:
-                        inverterdata["Model"] = await process_value(invertor.get("minv"))
-                    inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"))
+                        inverterdata["Model"] = await process_value(invertor.get("minv"), 0)
+                    inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"), 0)
 
                     _sumdata = invertor.get("SumData", {})
                     _onedateenergy = invertor.get("OneDateEnergy", {})
