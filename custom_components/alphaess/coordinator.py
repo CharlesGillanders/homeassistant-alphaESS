@@ -42,10 +42,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             if jsondata is not None:
                 for invertor in jsondata:
 
+                    # data from system list data
                     inverterdata = {}
                     if invertor.get("minv") is not None:
                         inverterdata["Model"] = await process_value(invertor.get("minv"))
                     inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"))
+                    inverterdata["Maximum Battery Capacity"] = await process_value(invertor.get("usCapacity"))
 
                     # data from summary data API
                     _sumdata = invertor.get("SumData", {})

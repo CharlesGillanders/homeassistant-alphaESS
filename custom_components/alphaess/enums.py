@@ -33,3 +33,4 @@ class AlphaESSNames(str, Enum):
     SelfSufficiency = "Self Sufficiency"
     SelfConsumption = "Self Consumption"
     EmsStatus = "EMS Status"
+    usCapacity = "Maximum Battery Capacity"

@@ -9,7 +9,6 @@ from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_
 from .entity import AlphaESSSensorDescription
 from .enums import AlphaESSNames
 
-
 FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.SolarProduction,
@@ -198,6 +197,13 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         device_class=SensorDeviceClass.ENUM,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.usCapacity,
+        name="Maximum Battery Capacity",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
     )
 ]
 
@@ -257,7 +263,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
-    ),AlphaESSSensorDescription(
+    ), AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOTotal,
         name="Instantaneous Grid I/O Total",
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -294,6 +300,12 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         key=AlphaESSNames.EmsStatus,
         name="EMS Status",
         device_class=SensorDeviceClass.ENUM,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.usCapacity,
+        name="Maximum Battery Capacity",
+        native_unit_of_measurement=PERCENTAGE,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
     )
