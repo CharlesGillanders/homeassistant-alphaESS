@@ -204,6 +204,21 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=PERCENTAGE,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.cobat,
+        name="Installed Capacity",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.surplusCobat,
+        name="Current Capacity",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY,
+        entity_category=EntityCategory.DIAGNOSTIC
     )
 ]
 
@@ -307,6 +322,20 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="Maximum Battery Capacity",
         native_unit_of_measurement=PERCENTAGE,
         state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.cobat,
+        name="Installed Capacity",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.surplusCobat,
+        name="Current Capacity",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY,
         entity_category=EntityCategory.DIAGNOSTIC
     )
 ]

@@ -48,6 +48,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         inverterdata["Model"] = await process_value(invertor.get("minv"))
                     inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"))
                     inverterdata["Maximum Battery Capacity"] = await process_value(invertor.get("usCapacity"))
+                    inverterdata["Current Capacity"] = await process_value(invertor.get("surplusCobat"))
+                    inverterdata["Installed Capacity"] = await process_value(invertor.get("cobat"))
 
                     # data from summary data API
                     _sumdata = invertor.get("SumData", {})
