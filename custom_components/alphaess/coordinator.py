@@ -7,8 +7,7 @@ from alphaess import alphaess
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count, set_throttle_count_lower, \
-    get_inverter_list
+from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count, set_throttle_count_lower, get_inverter_list
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 

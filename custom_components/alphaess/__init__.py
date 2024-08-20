@@ -43,10 +43,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"])
 
-    coordinator = AlphaESSDataUpdateCoordinator(hass, client=client)
-    await coordinator.async_config_entry_first_refresh()
+    _coordinator = AlphaESSDataUpdateCoordinator(hass, client=client)
+    await _coordinator.async_config_entry_first_refresh()
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = _coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -54,13 +54,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def async_battery_charge_handler(call):
         await client.updateChargeConfigInfo(call.data.get('serial'), call.data.get('chargestopsoc'),
-                                            int(call.data.get('enabled') == True), call.data.get('cp1end'),
+                                            int(call.data.get('enabled') is True), call.data.get('cp1end'),
                                             call.data.get('cp2end'), call.data.get('cp1start'),
                                             call.data.get('cp2start'))
 
     async def async_battery_discharge_handler(call):
         await client.updateDisChargeConfigInfo(call.data.get('serial'), call.data.get('dischargecutoffsoc'),
-                                               int(call.data.get('enabled') == True), call.data.get('dp1end'),
+                                               int(call.data.get('enabled') is True), call.data.get('dp1end'),
                                                call.data.get('dp2end'), call.data.get('dp1start'),
                                                call.data.get('dp2start'))
 
