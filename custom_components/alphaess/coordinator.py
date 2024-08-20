@@ -27,7 +27,7 @@ async def safe_get(dictionary, key, default=0):
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
 
-    def __init__(self, hass: HomeAssistant, client: alphaess.alphaess) -> None:
+    def __init__(self, hass: HomeAssistant, client: alphaess) -> None:
         """Initialize."""
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = client
@@ -44,7 +44,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             LOCAL_INVERTER_COUNT = inverter_count
 
         try:
-            jsondata = await self.api.getdata(THROTTLE_MULTIPLIER * LOCAL_INVERTER_COUNT)
+            jsondata = await self.api.getdata(True, THROTTLE_MULTIPLIER * LOCAL_INVERTER_COUNT)
             if jsondata is not None:
                 for invertor in jsondata:
 
@@ -61,6 +61,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     _sumdata = invertor.get("SumData", {})
                     _onedateenergy = invertor.get("OneDateEnergy", {})
                     _powerdata = invertor.get("LastPower", {})
+                    _onedatepower = invertor.get("OneDayPower", {})
 
                     inverterdata["Total Load"] = await safe_get(_sumdata, "eload")
                     inverterdata["Total Income"] = await safe_get(_sumdata, "totalIncome")
@@ -88,6 +89,13 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
                     inverterdata["Instantaneous Battery SOC"] = _soc
                     inverterdata["State of Charge"] = _soc
+
+                    if _onedatepower and _soc is 0:
+                        first_entry = _onedatepower[0]
+                        _cbat = first_entry.get("cbat", 0)
+                    else:
+                        _cbat = 0
+
                     inverterdata["Instantaneous Battery I/O"] = await safe_get(_powerdata, "pbat")
                     inverterdata["Instantaneous Load"] = await safe_get(_powerdata, "pload")
                     inverterdata["Instantaneous Generation"] = await safe_get(_powerdata, "ppv")
@@ -99,6 +107,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     inverterdata["Instantaneous Grid I/O L1"] = await safe_get(_gridpowerdetails, "pmeterL1")
                     inverterdata["Instantaneous Grid I/O L2"] = await safe_get(_gridpowerdetails, "pmeterL2")
                     inverterdata["Instantaneous Grid I/O L3"] = await safe_get(_gridpowerdetails, "pmeterL3")
+
+                    inverterdata["State of Charge CBAT"] = _cbat
 
                     self.data.update({invertor["sysSn"]: inverterdata})
 

@@ -14,6 +14,7 @@ class AlphaESSNames(str, Enum):
     GridToLoad = "Grid to Load"
     GridToBattery = "Grid to Battery"
     StateOfCharge = "State of Charge"
+    StateOfCharge_CBAT = "State of Charge"
     Charge = "Charge"
     Discharge = "Discharge"
     EVCharger = "EV Charger"
@@ -36,3 +37,4 @@ class AlphaESSNames(str, Enum):
     usCapacity = "Maximum Battery Capacity"
     cobat = "Installed Capacity"
     surplusCobat = "Current Capacity"
+

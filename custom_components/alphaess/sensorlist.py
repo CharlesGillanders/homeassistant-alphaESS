@@ -224,6 +224,13 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
 
 LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
+        key=AlphaESSNames.StateOfCharge_CBAT,
+        name="State of Charge",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    AlphaESSSensorDescription(
         key=AlphaESSNames.SolarProduction,
         name="Solar Production",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,

@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 DOMAIN = "alphaess"
 PLATFORMS = [Platform.SENSOR]
 SCAN_INTERVAL = timedelta(minutes=1)
-THROTTLE_MULTIPLIER = 1.25
+THROTTLE_MULTIPLIER = 1.35
 INVERTER_COUNT = 0
 
 NAME = "Alpha ESS"
