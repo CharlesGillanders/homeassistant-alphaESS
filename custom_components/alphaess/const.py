@@ -7,8 +7,9 @@ from homeassistant.const import Platform
 DOMAIN = "alphaess"
 PLATFORMS = [Platform.SENSOR]
 SCAN_INTERVAL = timedelta(minutes=1)
-THROTTLE_MULTIPLIER = 1.25
+THROTTLE_MULTIPLIER = 1.35
 INVERTER_COUNT = 0
+INVERTER_LIST = []
 
 NAME = "Alpha ESS"
 ISSUE_URL = "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues"
@@ -30,3 +31,18 @@ def increment_inverter_count():
 
 def get_inverter_count():
     return INVERTER_COUNT
+
+
+# If no Storion-S5, make the throttle amount smaller
+def set_throttle_count_lower():
+    global THROTTLE_MULTIPLIER
+    THROTTLE_MULTIPLIER = 1.25
+
+
+def add_inverter_to_list(inverter):
+    global INVERTER_LIST
+    INVERTER_LIST.append(inverter)
+
+
+def get_inverter_list():
+    return INVERTER_LIST

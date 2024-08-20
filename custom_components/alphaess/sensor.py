@@ -13,7 +13,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, increment_inverter_count
+from .const import DOMAIN, increment_inverter_count, add_inverter_to_list
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -39,6 +39,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     for serial, data in coordinator.data.items():
         model = data.get("Model")
         _LOGGER.info(f"Serial: {serial}, Model: {model}")
+        add_inverter_to_list(model)
         increment_inverter_count()
 
         if model == "Storion-S5":
