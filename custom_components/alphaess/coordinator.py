@@ -12,7 +12,7 @@ from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_coun
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-async def process_value(value, default):
+async def process_value(value, default=0):
     if value is None or (isinstance(value, str) and value.strip() == ''):
         return default
     return value
@@ -48,10 +48,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             if jsondata is not None:
                 for invertor in jsondata:
 
+                    # data from system list data
                     inverterdata = {}
                     if invertor.get("minv") is not None:
-                        inverterdata["Model"] = await process_value(invertor.get("minv"), 0)
-                    inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"), 0)
+                        inverterdata["Model"] = await process_value(invertor.get("minv"))
+
+                    inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"))
+                    inverterdata["Maximum Battery Capacity"] = await process_value(invertor.get("usCapacity"))
+                    inverterdata["Current Capacity"] = await process_value(invertor.get("surplusCobat"))
+                    inverterdata["Installed Capacity"] = await process_value(invertor.get("cobat"))
 
                     _sumdata = invertor.get("SumData", {})
                     _onedateenergy = invertor.get("OneDateEnergy", {})

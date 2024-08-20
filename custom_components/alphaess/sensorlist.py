@@ -2,15 +2,12 @@ from typing import List
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
-    SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR
-
+from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR, EntityCategory
 
 from .entity import AlphaESSSensorDescription
 from .enums import AlphaESSNames
-
 
 FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
@@ -176,18 +173,21 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.Income,
         name="Total Income",
+        icon="mdi:cash-multiple",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
+        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
+        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
@@ -196,6 +196,29 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="EMS Status",
         device_class=SensorDeviceClass.ENUM,
         state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.usCapacity,
+        name="Maximum Battery Capacity",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.cobat,
+        name="Installed Capacity",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.surplusCobat,
+        name="Current Capacity",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY,
+        entity_category=EntityCategory.DIAGNOSTIC
     )
 ]
 
@@ -255,7 +278,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
-    ),AlphaESSSensorDescription(
+    ), AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOTotal,
         name="Instantaneous Grid I/O Total",
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -270,18 +293,21 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.Income,
         name="Total Income",
+        icon="mdi:cash-multiple",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
+        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
+        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
@@ -290,5 +316,26 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="EMS Status",
         device_class=SensorDeviceClass.ENUM,
         state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.usCapacity,
+        name="Maximum Battery Capacity",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.cobat,
+        name="Installed Capacity",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.surplusCobat,
+        name="Current Capacity",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY,
+        entity_category=EntityCategory.DIAGNOSTIC
     )
 ]
