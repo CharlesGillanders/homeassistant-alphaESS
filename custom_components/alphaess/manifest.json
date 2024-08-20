@@ -1,12 +1,20 @@
 {
   "domain": "alphaess",
   "name": "Alpha ESS",
-  "after_dependencies": ["rest"],
-  "codeowners": ["@CharlesGillanders"],
+  "after_dependencies": [
+    "rest"
+  ],
+  "codeowners": [
+    "@CharlesGillanders"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/CharlesGillanders/homeassistant-alphaESS",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues",
-  "requirements": ["alphaessopenapi==0.0.11"],
+  "requirements": [
+    "alphaessopenapi==0.0.11"
+  ],
   "version": "0.5.3"
+}
+
 
