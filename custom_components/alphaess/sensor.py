@@ -35,7 +35,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in LIMITED_SENSOR_DESCRIPTIONS
     }
 
-    _LOGGER.info(f"INITIALISING DEVICES")
+    _LOGGER.info(f"INITIALIZING DEVICES")
     for serial, data in coordinator.data.items():
         model = data.get("Model")
         _LOGGER.info(f"Serial: {serial}, Model: {model}")
@@ -69,6 +69,8 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         self._config = config
         self._name = key_supported_states.name
         self._native_unit_of_measurement = key_supported_states.native_unit_of_measurement
+        self._entity_category = key_supported_states.entity_category
+        self._icon = key_supported_states.icon
         self._device_class = key_supported_states.device_class
         self._state_class = key_supported_states.state_class
         self._serial = serial
@@ -110,7 +112,6 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             self._native_unit_of_measurement = self._currency
             return self._native_unit_of_measurement
 
-
     @property
     def device_class(self):
         """Return the device_class of the sensor."""
@@ -120,3 +121,13 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     def state_class(self):
         """Return the state_class of the sensor."""
         return self._state_class
+
+    @property
+    def entity_category(self):
+        """Return the entity_category of the sensor."""
+        return self._entity_category
+
+    @property
+    def icon(self):
+        """Return the entity_category of the sensor."""
+        return self._icon
