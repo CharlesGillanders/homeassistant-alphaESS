@@ -88,13 +88,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     _pvpowerdetails = _powerdata.get("ppvDetail", {})
 
                     inverterdata["Instantaneous Battery SOC"] = _soc
-                    inverterdata["State of Charge"] = _soc
 
-                    if _onedatepower and _soc is 0:
+                    if _onedatepower and _soc is not 0:
                         first_entry = _onedatepower[0]
                         _cbat = first_entry.get("cbat", 0)
+                        inverterdata["State of Charge"] = _cbat
                     else:
                         _cbat = 0
+                        inverterdata["State of Charge"] = _cbat
 
                     inverterdata["Instantaneous Battery I/O"] = await safe_get(_powerdata, "pbat")
                     inverterdata["Instantaneous Load"] = await safe_get(_powerdata, "pload")
@@ -107,8 +108,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     inverterdata["Instantaneous Grid I/O L1"] = await safe_get(_gridpowerdetails, "pmeterL1")
                     inverterdata["Instantaneous Grid I/O L2"] = await safe_get(_gridpowerdetails, "pmeterL2")
                     inverterdata["Instantaneous Grid I/O L3"] = await safe_get(_gridpowerdetails, "pmeterL3")
-
-                    inverterdata["State of Charge CBAT"] = _cbat
 
                     self.data.update({invertor["sysSn"]: inverterdata})
 
