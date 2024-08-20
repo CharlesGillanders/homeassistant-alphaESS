@@ -12,10 +12,16 @@ from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_coun
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-async def process_value(value):
+async def process_value(value, default):
     if value is None or (isinstance(value, str) and value.strip() == ''):
-        return 0
+        return default
     return value
+
+
+async def safe_get(dictionary, key, default=0):
+    if dictionary is None:
+        return default
+    return await process_value(dictionary.get(key), default)
 
 
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
@@ -44,65 +50,54 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
                     inverterdata = {}
                     if invertor.get("minv") is not None:
-                        inverterdata["Model"] = await process_value(invertor.get("minv"))
-                    inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"))
+                        inverterdata["Model"] = await process_value(invertor.get("minv"), 0)
+                    inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"), 0)
 
-                    # data from summary data API
                     _sumdata = invertor.get("SumData", {})
-                    # data from one date energy API
                     _onedateenergy = invertor.get("OneDateEnergy", {})
-                    # data from last power data API
                     _powerdata = invertor.get("LastPower", {})
 
-                    if _sumdata is not None:
-                        inverterdata["Total Load"] = await process_value(_sumdata.get("eload"))
-                        inverterdata["Total Income"] = await process_value(_sumdata.get("totalIncome"))
-                        inverterdata["Self Consumption"] = await process_value(_sumdata.get("eselfConsumption") * 100)
-                        inverterdata["Self Sufficiency"] = await process_value(_sumdata.get("eselfSufficiency") * 100)
+                    inverterdata["Total Load"] = await safe_get(_sumdata, "eload")
+                    inverterdata["Total Income"] = await safe_get(_sumdata, "totalIncome")
+                    inverterdata["Self Consumption"] = await safe_get(_sumdata, "eselfConsumption", default=0) * 100
+                    inverterdata["Self Sufficiency"] = await safe_get(_sumdata, "eselfSufficiency", default=0) * 100
 
-                    if _onedateenergy is not None:
-                        _pv = await process_value(_onedateenergy.get("epv"))
-                        _feedin = await process_value(_onedateenergy.get("eOutput"))
-                        _gridcharge = await process_value(_onedateenergy.get("eGridCharge"))
-                        _charge = await process_value(_onedateenergy.get("eCharge"))
+                    _pv = await safe_get(_onedateenergy, "epv")
+                    _feedin = await safe_get(_onedateenergy, "eOutput")
+                    _gridcharge = await safe_get(_onedateenergy, "eGridCharge")
+                    _charge = await safe_get(_onedateenergy, "eCharge")
 
-                        inverterdata["Solar Production"] = await process_value(_pv)
-                        inverterdata["Solar to Load"] = await process_value(_pv - _feedin)
-                        inverterdata["Solar to Grid"] = _feedin
-                        inverterdata["Solar to Battery"] = await process_value(_charge - _gridcharge)
-                        inverterdata["Grid to Load"] = await process_value(_onedateenergy.get("eInput"))
-                        inverterdata["Grid to Battery"] = _gridcharge
-                        inverterdata["Charge"] = _charge
-                        inverterdata["Discharge"] = await process_value(_onedateenergy.get("eDischarge"))
-                        inverterdata["EV Charger"] = await process_value(_onedateenergy.get("eChargingPile"))
+                    inverterdata["Solar Production"] = _pv
+                    inverterdata["Solar to Load"] = _pv - _feedin
+                    inverterdata["Solar to Grid"] = _feedin
+                    inverterdata["Solar to Battery"] = _charge - _gridcharge
+                    inverterdata["Grid to Load"] = await safe_get(_onedateenergy, "eInput")
+                    inverterdata["Grid to Battery"] = _gridcharge
+                    inverterdata["Charge"] = _charge
+                    inverterdata["Discharge"] = await safe_get(_onedateenergy, "eDischarge")
+                    inverterdata["EV Charger"] = await safe_get(_onedateenergy, "eChargingPile")
 
-                    if _powerdata is not None:
-                        _soc = await process_value(_powerdata.get("soc"))
-                        _gridpowerdetails = _powerdata.get("pgridDetail", {})
-                        _pvpowerdetails = _powerdata.get("ppvDetail", {})
+                    _soc = await safe_get(_powerdata, "soc")
+                    _gridpowerdetails = _powerdata.get("pgridDetail", {})
+                    _pvpowerdetails = _powerdata.get("ppvDetail", {})
 
-                        inverterdata["Instantaneous Battery SOC"] = _soc
-                        inverterdata["State of Charge"] = _soc
-                        inverterdata["Instantaneous Battery I/O"] = await process_value(_powerdata.get("pbat"))
-                        inverterdata["Instantaneous Load"] = await process_value(_powerdata.get("pload"))
-                        # pv power generation details
-                        inverterdata["Instantaneous Generation"] = await process_value(_powerdata.get("ppv"))
-                        inverterdata["Instantaneous PPV1"] = await process_value(_pvpowerdetails.get("ppv1"))
-                        inverterdata["Instantaneous PPV2"] = await process_value(_pvpowerdetails.get("ppv2"))
-                        inverterdata["Instantaneous PPV3"] = await process_value(_pvpowerdetails.get("ppv3"))
-                        inverterdata["Instantaneous PPV4"] = await process_value(_pvpowerdetails.get("ppv4"))
-                        # grid power usage details
-                        inverterdata["Instantaneous Grid I/O Total"] = await process_value(_powerdata.get("pgrid"))
-                        inverterdata["Instantaneous Grid I/O L1"] = await process_value(
-                            _gridpowerdetails.get("pmeterL1"))
-                        inverterdata["Instantaneous Grid I/O L2"] = await process_value(
-                            _gridpowerdetails.get("pmeterL2"))
-                        inverterdata["Instantaneous Grid I/O L3"] = await process_value(
-                            _gridpowerdetails.get("pmeterL3"))
+                    inverterdata["Instantaneous Battery SOC"] = _soc
+                    inverterdata["State of Charge"] = _soc
+                    inverterdata["Instantaneous Battery I/O"] = await safe_get(_powerdata, "pbat")
+                    inverterdata["Instantaneous Load"] = await safe_get(_powerdata, "pload")
+                    inverterdata["Instantaneous Generation"] = await safe_get(_powerdata, "ppv")
+                    inverterdata["Instantaneous PPV1"] = await safe_get(_pvpowerdetails, "ppv1")
+                    inverterdata["Instantaneous PPV2"] = await safe_get(_pvpowerdetails, "ppv2")
+                    inverterdata["Instantaneous PPV3"] = await safe_get(_pvpowerdetails, "ppv3")
+                    inverterdata["Instantaneous PPV4"] = await safe_get(_pvpowerdetails, "ppv4")
+                    inverterdata["Instantaneous Grid I/O Total"] = await safe_get(_powerdata, "pgrid")
+                    inverterdata["Instantaneous Grid I/O L1"] = await safe_get(_gridpowerdetails, "pmeterL1")
+                    inverterdata["Instantaneous Grid I/O L2"] = await safe_get(_gridpowerdetails, "pmeterL2")
+                    inverterdata["Instantaneous Grid I/O L3"] = await safe_get(_gridpowerdetails, "pmeterL3")
 
                     self.data.update({invertor["sysSn"]: inverterdata})
 
-            return self.data
+                return self.data
         except (
                 aiohttp.client_exceptions.ClientConnectorError,
                 aiohttp.ClientResponseError,
