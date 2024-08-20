@@ -27,7 +27,7 @@ async def safe_get(dictionary, key, default=0):
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
 
-    def __init__(self, hass: HomeAssistant, client: alphaess) -> None:
+    def __init__(self, hass: HomeAssistant, client: alphaess.alphaess) -> None:
         """Initialize."""
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = client
