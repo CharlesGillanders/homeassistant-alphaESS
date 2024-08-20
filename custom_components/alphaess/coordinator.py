@@ -7,7 +7,8 @@ from alphaess import alphaess
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count
+from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count, set_throttle_count_lower, \
+    get_inverter_list
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -32,10 +33,17 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = client
         self.update_method = self._async_update_data
+        self.has_throttle = True
         self.data: dict[str, dict[str, float]] = {}
+        self.LOCAL_INVERTER_COUNT = 0
 
     async def _async_update_data(self):
         """Update data via library."""
+
+        model_list = get_inverter_list()
+        if "Storion-S5" not in model_list and len(model_list) > 0:
+            self.has_throttle = False
+            set_throttle_count_lower()
 
         inverter_count = get_inverter_count()
         if inverter_count == 1:
@@ -44,7 +52,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             LOCAL_INVERTER_COUNT = inverter_count
 
         try:
-            jsondata = await self.api.getdata(True, THROTTLE_MULTIPLIER * LOCAL_INVERTER_COUNT)
+            jsondata = await self.api.getdata(self.has_throttle, THROTTLE_MULTIPLIER * LOCAL_INVERTER_COUNT)
             if jsondata is not None:
                 for invertor in jsondata:
 
@@ -89,12 +97,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
                     inverterdata["Instantaneous Battery SOC"] = _soc
 
-                    if _onedatepower and _soc is not 0:
+                    if _onedatepower and _soc is 0:
                         first_entry = _onedatepower[0]
                         _cbat = first_entry.get("cbat", 0)
-                        inverterdata["State of Charge"] = _cbat
-                    else:
-                        _cbat = 0
                         inverterdata["State of Charge"] = _cbat
 
                     inverterdata["Instantaneous Battery I/O"] = await safe_get(_powerdata, "pbat")
