@@ -103,7 +103,9 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         """Return the state of the resources."""
-        return self._coordinator.data[self._serial][self._name]
+        value = self._coordinator.data[self._serial][self._name]
+        if value is not None:
+            return value
 
     @property
     def native_unit_of_measurement(self):
