@@ -12,16 +12,23 @@ from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_coun
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-async def process_value(value, default=0):
+async def process_value(value, default=None):
     if value is None or (isinstance(value, str) and value.strip() == ''):
         return default
     return value
 
 
-async def safe_get(dictionary, key, default=0):
+async def safe_get(dictionary, key, default=None):
     if dictionary is None:
         return default
     return await process_value(dictionary.get(key), default)
+
+
+async def safe_calculate(val1, val2):
+    if val1 is None or val2 is None:
+        return None
+    else:
+        return val1 - val2
 
 
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
@@ -81,9 +88,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     _charge = await safe_get(_onedateenergy, "eCharge")
 
                     inverterdata["Solar Production"] = _pv
-                    inverterdata["Solar to Load"] = _pv - _feedin
+                    inverterdata["Solar to Load"] = await safe_calculate(_pv, _feedin)
                     inverterdata["Solar to Grid"] = _feedin
-                    inverterdata["Solar to Battery"] = _charge - _gridcharge
+                    inverterdata["Solar to Battery"] = await safe_calculate(_charge, _gridcharge)
                     inverterdata["Grid to Load"] = await safe_get(_onedateenergy, "eInput")
                     inverterdata["Grid to Battery"] = _gridcharge
                     inverterdata["Charge"] = _charge
@@ -96,7 +103,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
                     inverterdata["Instantaneous Battery SOC"] = _soc
 
-                    if _onedatepower and _soc is 0:
+                    if _onedatepower and _soc == 0:
                         first_entry = _onedatepower[0]
                         _cbat = first_entry.get("cbat", 0)
                         inverterdata["State of Charge"] = _cbat
