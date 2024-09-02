@@ -43,24 +43,23 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         self.has_throttle = True
         self.data: dict[str, dict[str, float]] = {}
         self.LOCAL_INVERTER_COUNT = 0
+        self.model_list = get_inverter_list()
+        self.inverter_count = get_inverter_count()
+
+        if "Storion-S5" not in self.model_list and len(self.model_list) > 0:
+            self.has_throttle = False
+            set_throttle_count_lower()
+
+        if self.inverter_count == 1:
+            self.LOCAL_INVERTER_COUNT = 0
+        else:
+            self.LOCAL_INVERTER_COUNT = self.inverter_count
 
     async def _async_update_data(self):
         """Update data via library."""
 
-        model_list = get_inverter_list()
-        inverter_count = get_inverter_count()
-
-        if "Storion-S5" not in model_list and len(model_list) > 0:
-            self.has_throttle = False
-            set_throttle_count_lower()
-
-        if inverter_count == 1:
-            LOCAL_INVERTER_COUNT = 0
-        else:
-            LOCAL_INVERTER_COUNT = inverter_count
-
         try:
-            jsondata = await self.api.getdata(self.has_throttle, THROTTLE_MULTIPLIER * LOCAL_INVERTER_COUNT)
+            jsondata = await self.api.getdata(self.has_throttle, THROTTLE_MULTIPLIER * self.LOCAL_INVERTER_COUNT)
             if jsondata is not None:
                 for invertor in jsondata:
 
