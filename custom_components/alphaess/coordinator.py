@@ -7,7 +7,8 @@ from alphaess import alphaess
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count, set_throttle_count_lower, get_inverter_list
+from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count, set_throttle_count_lower, \
+    get_inverter_list
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -47,11 +48,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         """Update data via library."""
 
         model_list = get_inverter_list()
+        inverter_count = get_inverter_count()
+
         if "Storion-S5" not in model_list and len(model_list) > 0:
             self.has_throttle = False
             set_throttle_count_lower()
 
-        inverter_count = get_inverter_count()
         if inverter_count == 1:
             LOCAL_INVERTER_COUNT = 0
         else:
