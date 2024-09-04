@@ -87,6 +87,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     identifiers={(DOMAIN, serial)},
                     manufacturer="AlphaESS",
                     model=coordinator.data[invertor]["Model"],
+                    model_id=self._serial,
                     name=f"Alpha ESS Energy Statistics : {serial}",
                 )
 
