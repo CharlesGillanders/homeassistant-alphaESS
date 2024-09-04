@@ -173,14 +173,14 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
-        icon="mdi:percent",
+        icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
-        icon="mdi:percent",
+        icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
