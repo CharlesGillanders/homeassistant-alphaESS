@@ -80,8 +80,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
                     inverterdata["Total Load"] = await safe_get(_sumdata, "eload")
                     inverterdata["Total Income"] = await safe_get(_sumdata, "totalIncome")
-                    inverterdata["Self Consumption"] = await safe_get(_sumdata, "eselfConsumption") * 100
-                    inverterdata["Self Sufficiency"] = await safe_get(_sumdata, "eselfSufficiency") * 100
+
+                    self_data = {
+                        "Self Consumption": await safe_get(_sumdata, "eselfConsumption"),
+                        "Self Sufficiency": await safe_get(_sumdata, "eselfSufficiency")
+                    }
+
+                    for key, value in self_data.items():
+                        inverterdata[key] = value * 100 if value is not None else None
 
                     _pv = await safe_get(_onedateenergy, "epv")
                     _feedin = await safe_get(_onedateenergy, "eOutput")
