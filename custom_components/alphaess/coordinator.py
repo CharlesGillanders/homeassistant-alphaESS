@@ -111,8 +111,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     inverterdata["Instantaneous Battery SOC"] = _soc
 
                     if _onedatepower and _soc == 0:
-                        first_entry = _onedatepower[0]
-                        inverterdata["State of Charge"] = await process_value(first_entry.get("cbat"))
+                        inverterdata["State of Charge"] = await safe_get(_onedatepower[0], "cbat")
 
                     inverterdata["Instantaneous Battery I/O"] = await safe_get(_powerdata, "pbat")
                     inverterdata["Instantaneous Load"] = await safe_get(_powerdata, "pload")
