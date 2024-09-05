@@ -35,7 +35,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in LIMITED_SENSOR_DESCRIPTIONS
     }
 
-    _LOGGER.info(f"INITIALIZING DEVICES")
+    _LOGGER.info(f"Initializing Inverters")
     for serial, data in coordinator.data.items():
         model = data.get("Model")
         _LOGGER.info(f"Serial: {serial}, Model: {model}")
