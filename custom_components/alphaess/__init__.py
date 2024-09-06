@@ -1,6 +1,8 @@
 """The AlphaEss integration."""
 from __future__ import annotations
 
+import asyncio
+
 import voluptuous as vol
 
 from alphaess import alphaess
@@ -10,7 +12,7 @@ from homeassistant.core import HomeAssistant
 
 import homeassistant.helpers.config_validation as cv
 
-from .const import DOMAIN, PLATFORMS
+from .const import DOMAIN, PLATFORMS, add_inverter_to_list, increment_inverter_count
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 SERVICE_BATTERY_CHARGE_SCHEMA = vol.Schema(
@@ -42,6 +44,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
 
     client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"])
+
+    ESSList = await client.getESSList()
+    for unit in ESSList:
+        if "sysSn" in unit:
+            name = unit["minv"]
+            add_inverter_to_list(name)
+            increment_inverter_count()
+
+    await asyncio.sleep(1)
 
     _coordinator = AlphaESSDataUpdateCoordinator(hass, client=client)
     await _coordinator.async_config_entry_first_refresh()

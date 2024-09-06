@@ -13,7 +13,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, increment_inverter_count, add_inverter_to_list
+from .const import DOMAIN
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -35,12 +35,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in LIMITED_SENSOR_DESCRIPTIONS
     }
 
-    _LOGGER.info(f"INITIALIZING DEVICES")
+    _LOGGER.info(f"Initializing Inverters")
     for serial, data in coordinator.data.items():
         model = data.get("Model")
         _LOGGER.info(f"Serial: {serial}, Model: {model}")
-        add_inverter_to_list(model)
-        increment_inverter_count()
 
         if model == "Storion-S5":
             for description in limited_key_supported_states:
@@ -69,14 +67,17 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._config = config
         self._name = key_supported_states.name
-        self._native_unit_of_measurement = key_supported_states.native_unit_of_measurement
         self._entity_category = key_supported_states.entity_category
         self._icon = key_supported_states.icon
         self._device_class = key_supported_states.device_class
         self._state_class = key_supported_states.state_class
         self._serial = serial
-        self._currency = currency
         self._coordinator = coordinator
+
+        if key_supported_states.native_unit_of_measurement is CURRENCY_DOLLAR:
+            self._native_unit_of_measurement = currency
+        else:
+            self._native_unit_of_measurement = key_supported_states.native_unit_of_measurement
 
         for invertor in coordinator.data:
             serial = invertor.upper()
@@ -86,6 +87,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     identifiers={(DOMAIN, serial)},
                     manufacturer="AlphaESS",
                     model=coordinator.data[invertor]["Model"],
+                    model_id=self._serial,
                     name=f"Alpha ESS Energy Statistics : {serial}",
                 )
 
@@ -107,11 +109,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self):
         """Return the native unit of measurement of the sensor."""
-        if self._native_unit_of_measurement is not CURRENCY_DOLLAR:
-            return self._native_unit_of_measurement
-        else:
-            self._native_unit_of_measurement = self._currency
-            return self._native_unit_of_measurement
+        return self._native_unit_of_measurement
 
     @property
     def device_class(self):

@@ -173,20 +173,21 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
-        icon="mdi:percent",
+        icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
-        icon="mdi:percent",
+        icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.EmsStatus,
         name="EMS Status",
+        icon="mdi:home-battery",
         device_class=SensorDeviceClass.ENUM,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
@@ -194,6 +195,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.usCapacity,
         name="Maximum Battery Capacity",
+        icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
@@ -300,26 +302,28 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
-        icon="mdi:percent",
+        icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
-        icon="mdi:percent",
+        icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=None,
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.EmsStatus,
         name="EMS Status",
+        icon="mdi:home-battery",
         device_class=SensorDeviceClass.ENUM,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
     ), AlphaESSSensorDescription(
         key=AlphaESSNames.usCapacity,
         name="Maximum Battery Capacity",
+        icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC

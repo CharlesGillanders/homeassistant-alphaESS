@@ -1,6 +1,7 @@
 """Config flow for AlphaEss integration."""
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import aiohttp
@@ -12,7 +13,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import DOMAIN
+from .const import DOMAIN, add_inverter_to_list, increment_inverter_count
+
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {vol.Required("AppID", description={"AppID"}): str, vol.Required("AppSecret", description={"AppSecret"}): str}
@@ -26,6 +28,15 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     try:
         await client.authenticate()
+        await asyncio.sleep(1)
+        ESSList = await client.getESSList()
+        for unit in ESSList:
+            if "sysSn" in unit:
+                name = unit["minv"]
+                add_inverter_to_list(name)
+                increment_inverter_count()
+
+        await asyncio.sleep(1)
 
     except aiohttp.ClientResponseError as e:
         if e.status == 401:
