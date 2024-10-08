@@ -55,6 +55,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             self.LOCAL_INVERTER_COUNT = self.inverter_count
 
+    @staticmethod
+    async def update_discharge(serial):
+        _LOGGER.info(f"Updated Discharge for {serial}")
+        pass
+
     async def _async_update_data(self):
         """Update data via library."""
 

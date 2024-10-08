@@ -346,12 +346,6 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
 
 SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription] = [
     AlphaESSButtonDescription(
-        key=AlphaESSNames.ButtonDischargeFive,
-        name="5 Minute Discharge",
-        icon="mdi:battery-negative",
-        entity_category=EntityCategory.CONFIG
-    ),
-    AlphaESSButtonDescription(
         key=AlphaESSNames.ButtonDischargeFifteen,
         name="15 Minute Discharge",
         icon="mdi:battery-negative",
@@ -362,5 +356,11 @@ SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription
         name="30 Minute Discharge",
         icon="mdi:battery-negative",
         entity_category=EntityCategory.CONFIG
-    )
+    ),
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonDischargeSixty,
+        name="1 Hour Discharge",
+        icon="mdi:battery-negative",
+        entity_category=EntityCategory.CONFIG
+    ),
 ]

@@ -8,6 +8,7 @@ DOMAIN = "alphaess"
 PLATFORMS = [
     Platform.BUTTON,
     Platform.SENSOR,
+    Platform.NUMBER
 ]
 SCAN_INTERVAL = timedelta(minutes=1)
 THROTTLE_MULTIPLIER = 1.35
