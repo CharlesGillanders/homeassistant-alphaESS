@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from homeassistant.components.button import ButtonEntityDescription
 from homeassistant.components.sensor import SensorEntityDescription
 
 
@@ -12,5 +13,14 @@ class AlphaESSSensorDescription(SensorEntityDescription):
     """Class to describe an AlphaESS sensor."""
 
     native_value: Callable[
-        [str | int | float], str | int | float
-    ] | None = lambda val: val
+                      [str | int | float], str | int | float
+                  ] | None = lambda val: val
+
+
+@dataclass
+class AlphaESSButtonDescription(ButtonEntityDescription):
+    """Class to describe an AlphaESS sensor."""
+
+    native_value: Callable[
+                      [str | int | float], str | int | float
+                  ] | None = lambda val: val

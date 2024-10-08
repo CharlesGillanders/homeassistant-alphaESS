@@ -6,7 +6,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR, EntityCategory
 
-from .entity import AlphaESSSensorDescription
+from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription
 from .enums import AlphaESSNames
 
 FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -341,5 +341,26 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         state_class=None,
         device_class=SensorDeviceClass.ENERGY,
         entity_category=EntityCategory.DIAGNOSTIC
+    )
+]
+
+SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription] = [
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonDischargeFive,
+        name="5 Minute Discharge",
+        icon="mdi:battery-negative",
+        entity_category=EntityCategory.CONFIG
+    ),
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonDischargeFifteen,
+        name="15 Minute Discharge",
+        icon="mdi:battery-negative",
+        entity_category=EntityCategory.CONFIG
+    ),
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonDischargeThirty,
+        name="30 Minute Discharge",
+        icon="mdi:battery-negative",
+        entity_category=EntityCategory.CONFIG
     )
 ]

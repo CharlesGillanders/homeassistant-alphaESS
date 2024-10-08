@@ -36,3 +36,6 @@ class AlphaESSNames(str, Enum):
     usCapacity = "Maximum Battery Capacity"
     cobat = "Installed Capacity"
     surplusCobat = "Current Capacity"
+    ButtonDischargeFive = "Discharge Battery Five"
+    ButtonDischargeFifteen = "Discharge Battery Fifteen"
+    ButtonDischargeThirty = "Discharge Battery Thirty"
