@@ -366,19 +366,19 @@ SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription
     AlphaESSButtonDescription(
         key=AlphaESSNames.ButtonChargeFifteen,
         name="15 Minute Charge",
-        icon="mdi:battery-negative",
+        icon="mdi:battery-positive",
         entity_category=EntityCategory.CONFIG,
     ),
     AlphaESSButtonDescription(
         key=AlphaESSNames.ButtonChargeThirty,
         name="30 Minute Charge",
-        icon="mdi:battery-negative",
+        icon="mdi:battery-positive",
         entity_category=EntityCategory.CONFIG,
     ),
     AlphaESSButtonDescription(
         key=AlphaESSNames.ButtonChargeSixty,
         name="60 Minute Charge",
-        icon="mdi:battery-negative",
+        icon="mdi:battery-positive",
         entity_category=EntityCategory.CONFIG,
     )
 ]

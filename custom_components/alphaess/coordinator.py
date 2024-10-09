@@ -1,5 +1,6 @@
 """Coordinator for AlphaEss integration."""
 import logging
+from datetime import datetime, timedelta
 
 import aiohttp
 from alphaess import alphaess
@@ -32,6 +33,13 @@ async def safe_calculate(val1, val2):
         return val1 - val2
 
 
+async def get_rounded_time():
+    now = datetime.now()
+    minutes = (now.minute + 14) // 15 * 15
+    rounded_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(minutes=minutes)
+    return rounded_time.strftime("%H:%M")
+
+
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
 
@@ -59,12 +67,16 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     async def update_discharge(self, name, serial, time_period):
         batUseCap = self.hass.data[DOMAIN][serial].get(name, None)
         _LOGGER.info(f"Retrieved value for Discharge: {batUseCap} for serial: {serial} \n Running for {time_period} minutes")
-        pass
+        current_time = get_rounded_time()
+        future_time = current_time + timedelta(minutes=time_period)
+        self.api.updateDisChargeConfigInfo(serial, batUseCap, 1, current_time, "", future_time, "")
 
     async def update_charge(self, name, serial, time_period):
         batHighCap = self.hass.data[DOMAIN][serial].get(name, None)
         _LOGGER.info(f"Retrieved value for Charge: {batHighCap} for serial: {serial}\n Running for {time_period} minutes")
-        pass
+        current_time = get_rounded_time()
+        future_time = current_time + timedelta(minutes=time_period)
+        self.api.updateChargeConfigInfo(serial, batHighCap, 1, current_time, "", future_time, "")
 
     async def _async_update_data(self):
         """Update data via library."""
