@@ -35,8 +35,19 @@ async def safe_calculate(val1, val2):
 
 async def get_rounded_time():
     now = datetime.now()
-    minutes = (now.minute + 14) // 15 * 15
-    rounded_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(minutes=minutes)
+    if now.minute == 0:
+        minutes = 15
+    elif now.minute < 15:
+        minutes = 0
+    elif now.minute < 30:
+        minutes = 15
+    elif now.minute < 45:
+        minutes = 30
+    else:
+        minutes = 0
+        now += timedelta(hours=1)
+
+    rounded_time = now.replace(minute=minutes, second=0, microsecond=0)
     return rounded_time.strftime("%H:%M")
 
 
@@ -66,21 +77,32 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def update_discharge(self, name, serial, time_period):
         batUseCap = self.hass.data[DOMAIN][serial].get(name, None)
-        _LOGGER.info(f"Retrieved value for Discharge: {batUseCap} for serial: {serial} \n Running for {time_period} minutes")
-        current_time = get_rounded_time()
-        future_time = current_time + timedelta(minutes=time_period)
-        self.api.updateDisChargeConfigInfo(serial, batUseCap, 1, current_time, "", future_time, "")
+        start_time_str = await get_rounded_time()
+        now = datetime.now()
+        start_time = datetime.strptime(start_time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
+        future_time = start_time + timedelta(minutes=time_period)
+        future_time_str = future_time.strftime("%H:%M")
+        return_data = await self.api.updateDisChargeConfigInfo(serial, batUseCap, 0, future_time_str, "00:00",
+                                                               start_time.strftime("%H:%M"), "00:00")
+        _LOGGER.info(
+            f"Retrieved value for Discharge: {batUseCap} for serial: {serial} Running for {start_time.strftime('%H:%M')} to {future_time_str}")
+        _LOGGER.info(return_data)
 
     async def update_charge(self, name, serial, time_period):
         batHighCap = self.hass.data[DOMAIN][serial].get(name, None)
-        _LOGGER.info(f"Retrieved value for Charge: {batHighCap} for serial: {serial}\n Running for {time_period} minutes")
-        current_time = get_rounded_time()
-        future_time = current_time + timedelta(minutes=time_period)
-        self.api.updateChargeConfigInfo(serial, batHighCap, 1, current_time, "", future_time, "")
+        start_time_str = await get_rounded_time()
+        now = datetime.now()
+        start_time = datetime.strptime(start_time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
+        future_time = start_time + timedelta(minutes=time_period)
+        future_time_str = future_time.strftime("%H:%M")
+        return_data = await self.api.updateChargeConfigInfo(serial, batHighCap, 1, future_time_str, "00:00",
+                                                            start_time.strftime("%H:%M"), "00:00")
+        _LOGGER.info(
+            f"Retrieved value for Charge: {batHighCap} for serial: {serial} Running from {start_time.strftime('%H:%M')} to {future_time_str}")
+        _LOGGER.info(return_data)
 
     async def _async_update_data(self):
         """Update data via library."""
-
         try:
             jsondata = await self.api.getdata(self.has_throttle, THROTTLE_MULTIPLIER * self.LOCAL_INVERTER_COUNT)
             if jsondata is not None:
