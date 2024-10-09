@@ -6,7 +6,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR, EntityCategory
 
-from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription
+from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription, AlphaESSNumberDescription
 from .enums import AlphaESSNames
 
 FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -349,18 +349,55 @@ SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription
         key=AlphaESSNames.ButtonDischargeFifteen,
         name="15 Minute Discharge",
         icon="mdi:battery-negative",
-        entity_category=EntityCategory.CONFIG
+        entity_category=EntityCategory.CONFIG,
     ),
     AlphaESSButtonDescription(
         key=AlphaESSNames.ButtonDischargeThirty,
         name="30 Minute Discharge",
         icon="mdi:battery-negative",
-        entity_category=EntityCategory.CONFIG
+        entity_category=EntityCategory.CONFIG,
     ),
     AlphaESSButtonDescription(
         key=AlphaESSNames.ButtonDischargeSixty,
-        name="1 Hour Discharge",
+        name="60 Minute Discharge",
         icon="mdi:battery-negative",
-        entity_category=EntityCategory.CONFIG
+        entity_category=EntityCategory.CONFIG,
     ),
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonChargeFifteen,
+        name="15 Minute Charge",
+        icon="mdi:battery-negative",
+        entity_category=EntityCategory.CONFIG,
+    ),
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonChargeThirty,
+        name="30 Minute Charge",
+        icon="mdi:battery-negative",
+        entity_category=EntityCategory.CONFIG,
+    ),
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonChargeSixty,
+        name="60 Minute Charge",
+        icon="mdi:battery-negative",
+        entity_category=EntityCategory.CONFIG,
+    )
+]
+
+DISCHARGE_AND_CHARGE_NUMBERS: List[AlphaESSNumberDescription] = [
+    AlphaESSNumberDescription(
+        key=AlphaESSNames.batHighCap,
+        name="batHighCap",
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:battery-sync",
+        native_unit_of_measurement=PERCENTAGE,
+
+    ),
+    AlphaESSNumberDescription(
+        key=AlphaESSNames.batUseCap,
+        name="batUseCap",
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:battery-sync",
+        native_unit_of_measurement=PERCENTAGE,
+    )
+
 ]

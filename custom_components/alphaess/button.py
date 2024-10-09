@@ -1,8 +1,6 @@
 from typing import List
 import logging
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
-from homeassistant.components.number import NumberEntity
-from homeassistant.const import EntityCategory
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -27,21 +25,23 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         if model != "Storion-S5":
             for description in full_button_supported_states:
                 button_entities.append(
-                    AlphaESSBattery(coordinator, entry, serial, full_button_supported_states[description]))
+                    AlphaESSBatteryButton(coordinator, entry, serial, full_button_supported_states[description]))
 
     async_add_entities(button_entities)
 
 
-class AlphaESSBattery(CoordinatorEntity, ButtonEntity):
+class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
     def __init__(self, coordinator, config, serial, key_supported_states):
         super().__init__(coordinator)
+        self._serial = serial
         self._coordinator = coordinator
         self._name = key_supported_states.name
+        self._movement_state = self.name.split()[-1]
         self._icon = key_supported_states.icon
         self._entity_category = key_supported_states.entity_category
         self._config = config
-        self._serial = serial
+        self._time = int(self._name.split()[0])
 
         for invertor in coordinator.data:
             serial = invertor.upper()
@@ -56,8 +56,10 @@ class AlphaESSBattery(CoordinatorEntity, ButtonEntity):
                 )
 
     async def async_press(self) -> None:
-        _LOGGER.info(self._name)
-        await self._coordinator.update_discharge(self._serial)
+        if self._movement_state == "Discharge":
+            await self._coordinator.update_discharge("batUseCap", self._serial, self._time)
+        elif self._movement_state == "Charge":
+            await self._coordinator.update_charge("batHighCap", self._serial, self._time)
 
     @property
     def unique_id(self):
@@ -78,5 +80,3 @@ class AlphaESSBattery(CoordinatorEntity, ButtonEntity):
     @property
     def icon(self):
         return self._icon
-
-

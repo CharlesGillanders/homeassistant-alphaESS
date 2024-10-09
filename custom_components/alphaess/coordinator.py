@@ -45,6 +45,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         self.LOCAL_INVERTER_COUNT = 0
         self.model_list = get_inverter_list()
         self.inverter_count = get_inverter_count()
+        self.hass = hass
 
         if "Storion-S5" not in self.model_list and len(self.model_list) > 0:
             self.has_throttle = False
@@ -55,9 +56,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             self.LOCAL_INVERTER_COUNT = self.inverter_count
 
-    @staticmethod
-    async def update_discharge(serial):
-        _LOGGER.info(f"Updated Discharge for {serial}")
+    async def update_discharge(self, name, serial, time_period):
+        batUseCap = self.hass.data[DOMAIN][serial].get(name, None)
+        _LOGGER.info(f"Retrieved value for Discharge: {batUseCap} for serial: {serial} \n Running for {time_period} minutes")
+        pass
+
+    async def update_charge(self, name, serial, time_period):
+        batHighCap = self.hass.data[DOMAIN][serial].get(name, None)
+        _LOGGER.info(f"Retrieved value for Charge: {batHighCap} for serial: {serial}\n Running for {time_period} minutes")
         pass
 
     async def _async_update_data(self):
