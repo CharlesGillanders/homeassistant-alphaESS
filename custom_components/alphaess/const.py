@@ -5,9 +5,13 @@ from datetime import timedelta
 from homeassistant.const import Platform
 
 DOMAIN = "alphaess"
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [
+    Platform.BUTTON,
+    Platform.SENSOR,
+    Platform.NUMBER
+]
 SCAN_INTERVAL = timedelta(minutes=1)
-THROTTLE_MULTIPLIER = 1.35
+THROTTLE_MULTIPLIER = 1.4
 INVERTER_COUNT = 0
 INVERTER_LIST = []
 
