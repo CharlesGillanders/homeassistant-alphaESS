@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 import logging
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
@@ -5,10 +6,13 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import AlphaESSDataUpdateCoordinator
-from .const import DOMAIN
+from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION
 from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
+
+last_discharge_update = None
+last_charge_update = None
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -56,10 +60,21 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 )
 
     async def async_press(self) -> None:
+        current_time = datetime.now()
         if self._movement_state == "Discharge":
-            await self._coordinator.update_discharge("batUseCap", self._serial, self._time)
+            global last_discharge_update
+            if last_discharge_update is None or current_time - last_discharge_update >= ALPHA_POST_REQUEST_RESTRICTION:
+                last_discharge_update = current_time
+                await self._coordinator.update_discharge("batUseCap", self._serial, self._time)
+            else:
+                _LOGGER.warning("Has not been 10 minutes since last post call, please wait")
         elif self._movement_state == "Charge":
-            await self._coordinator.update_charge("batHighCap", self._serial, self._time)
+            global last_charge_update
+            if last_charge_update is None or current_time - last_charge_update >= ALPHA_POST_REQUEST_RESTRICTION:
+                last_charge_update = current_time
+                await self._coordinator.update_charge("batHighCap", self._serial, self._time)
+            else:
+                _LOGGER.warning("Has not been 10 minutes since last post call, please wait")
 
     @property
     def unique_id(self):
