@@ -67,14 +67,20 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 last_discharge_update = current_time
                 await self._coordinator.update_discharge("batUseCap", self._serial, self._time)
             else:
-                _LOGGER.warning("Has not been 10 minutes since last post call, please wait")
+                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_discharge_update)
+                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                _LOGGER.warning(
+                    f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last discharge config post call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.")
         elif self._movement_state == "Charge":
             global last_charge_update
             if last_charge_update is None or current_time - last_charge_update >= ALPHA_POST_REQUEST_RESTRICTION:
                 last_charge_update = current_time
                 await self._coordinator.update_charge("batHighCap", self._serial, self._time)
             else:
-                _LOGGER.warning("Has not been 10 minutes since last post call, please wait")
+                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_charge_update)
+                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                _LOGGER.warning(
+                    f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last charge config post call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.")
 
     @property
     def unique_id(self):
