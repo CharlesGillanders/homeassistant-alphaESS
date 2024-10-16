@@ -6,7 +6,7 @@ import aiohttp
 from alphaess import alphaess
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count, set_throttle_count_lower, \
     get_inverter_list
@@ -187,8 +187,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     self.data.update({invertor["sysSn"]: inverterdata})
 
                 return self.data
-        except (
-                aiohttp.client_exceptions.ClientConnectorError,
-                aiohttp.ClientResponseError,
-        ) as error:
-            raise UpdateFailed(error) from error
+        except (aiohttp.client_exceptions.ClientConnectorError, aiohttp.ClientResponseError) as error:
+            _LOGGER.error(f"Error fetching data: {error}")
+            self.data = None
+            return self.data
