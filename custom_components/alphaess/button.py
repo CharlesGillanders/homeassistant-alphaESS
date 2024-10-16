@@ -66,43 +66,40 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         global last_discharge_update
         global last_charge_update
 
+        async def handle_time_restriction(last_update, update_fn, update_key):
+            local_current_time = datetime.now()
+            if last_update is None or local_current_time - last_update >= ALPHA_POST_REQUEST_RESTRICTION:
+                last_update = local_current_time
+                await update_fn(update_key, self._serial, self._time)
+            else:
+                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (local_current_time - last_update)
+                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                _LOGGER.warning(
+                    f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last {update_key} config post call. "
+                    f"Please wait {int(minutes)} minutes and {int(seconds)} seconds."
+                )
+            return last_update
+
+        current_time = datetime.now()
+
         if self._key == AlphaESSNames.ButtonRechargeConfig:
-            current_time = datetime.now()
-            if last_charge_update is None or current_time - last_charge_update >= ALPHA_POST_REQUEST_RESTRICTION:
-                if last_discharge_update is None or current_time - last_discharge_update >= ALPHA_POST_REQUEST_RESTRICTION:
-                    last_discharge_update = current_time
-                    last_charge_update = current_time
-                    await self._coordinator.reset_config(self._serial)
-                else:
-                    remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_discharge_update)
-                    minutes, seconds = divmod(remaining_time.total_seconds(), 60)
-                    _LOGGER.warning(
-                        f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last discharge config post call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.")
+            if (last_charge_update is None or current_time - last_charge_update >= ALPHA_POST_REQUEST_RESTRICTION) and \
+                    (
+                            last_discharge_update is None or current_time - last_discharge_update >= ALPHA_POST_REQUEST_RESTRICTION):
+                last_discharge_update = last_charge_update = current_time
+                await self._coordinator.reset_config(self._serial)
             else:
-                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_charge_update)
-                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
-                _LOGGER.warning(
-                    f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last charge config post call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.")
+                # Await the handle_time_restriction function and assign the updated value
+                last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
+                                                                   "charge")
+                last_discharge_update = await handle_time_restriction(last_discharge_update,
+                                                                      self._coordinator.update_discharge, "discharge")
         elif self._movement_state == "Discharge":
-            current_time = datetime.now()
-            if last_discharge_update is None or current_time - last_discharge_update >= ALPHA_POST_REQUEST_RESTRICTION:
-                last_discharge_update = current_time
-                await self._coordinator.update_discharge("batUseCap", self._serial, self._time)
-            else:
-                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_discharge_update)
-                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
-                _LOGGER.warning(
-                    f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last discharge config post call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.")
+            last_discharge_update = await handle_time_restriction(last_discharge_update,
+                                                                  self._coordinator.update_discharge, "batUseCap")
         elif self._movement_state == "Charge":
-            current_time = datetime.now()
-            if last_charge_update is None or current_time - last_charge_update >= ALPHA_POST_REQUEST_RESTRICTION:
-                last_charge_update = current_time
-                await self._coordinator.update_charge("batHighCap", self._serial, self._time)
-            else:
-                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_charge_update)
-                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
-                _LOGGER.warning(
-                    f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last charge config post call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.")
+            last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
+                                                               "batHighCap")
 
     @property
     def unique_id(self):
