@@ -8,6 +8,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import AlphaESSDataUpdateCoordinator
 from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION
 from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
+from .enums import AlphaESSNames
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -41,11 +42,13 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         self._serial = serial
         self._coordinator = coordinator
         self._name = key_supported_states.name
+        self._key = key_supported_states.key
         self._movement_state = self.name.split()[-1]
         self._icon = key_supported_states.icon
         self._entity_category = key_supported_states.entity_category
         self._config = config
-        self._time = int(self._name.split()[0])
+        if self._key != AlphaESSNames.ButtonRechargeConfig:
+            self._time = int(self._name.split()[0])
 
         for invertor in coordinator.data:
             serial = invertor.upper()
@@ -60,9 +63,28 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 )
 
     async def async_press(self) -> None:
-        current_time = datetime.now()
-        if self._movement_state == "Discharge":
-            global last_discharge_update
+        global last_discharge_update
+        global last_charge_update
+
+        if self._key == AlphaESSNames.ButtonRechargeConfig:
+            current_time = datetime.now()
+            if last_charge_update is None or current_time - last_charge_update >= ALPHA_POST_REQUEST_RESTRICTION:
+                if last_discharge_update is None or current_time - last_discharge_update >= ALPHA_POST_REQUEST_RESTRICTION:
+                    last_discharge_update = current_time
+                    last_charge_update = current_time
+                    await self._coordinator.reset_config(self._serial)
+                else:
+                    remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_discharge_update)
+                    minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                    _LOGGER.warning(
+                        f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last discharge config post call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.")
+            else:
+                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_charge_update)
+                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                _LOGGER.warning(
+                    f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last charge config post call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.")
+        elif self._movement_state == "Discharge":
+            current_time = datetime.now()
             if last_discharge_update is None or current_time - last_discharge_update >= ALPHA_POST_REQUEST_RESTRICTION:
                 last_discharge_update = current_time
                 await self._coordinator.update_discharge("batUseCap", self._serial, self._time)
@@ -72,7 +94,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 _LOGGER.warning(
                     f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last discharge config post call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.")
         elif self._movement_state == "Charge":
-            global last_charge_update
+            current_time = datetime.now()
             if last_charge_update is None or current_time - last_charge_update >= ALPHA_POST_REQUEST_RESTRICTION:
                 last_charge_update = current_time
                 await self._coordinator.update_charge("batHighCap", self._serial, self._time)

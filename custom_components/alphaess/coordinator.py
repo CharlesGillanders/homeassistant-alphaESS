@@ -75,6 +75,18 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             self.LOCAL_INVERTER_COUNT = self.inverter_count
 
+    async def reset_config(self, serial):
+        batUseCap = self.hass.data[DOMAIN][serial].get("batUseCap", 10)
+        batHighCap = self.hass.data[DOMAIN][serial].get("batHighCap", 90)
+
+        return_charge_data = await self.api.updateChargeConfigInfo(serial, batHighCap, 1, "00:00", "00:00",
+                                                                   "00:00", "00:00")
+        return_discharge_data = await self.api.updateDisChargeConfigInfo(serial, batUseCap, 0, "00:00", "00:00",
+                                                                         "00:00", "00:00")
+
+        _LOGGER.info(
+            f"Reset Charge and Discharge status, now is reset, API response: \n Charge: {return_charge_data}\n Discharge: {return_discharge_data}")
+
     async def update_discharge(self, name, serial, time_period):
         batUseCap = self.hass.data[DOMAIN][serial].get(name, None)
         start_time_str = await get_rounded_time()

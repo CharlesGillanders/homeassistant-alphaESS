@@ -380,6 +380,12 @@ SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription
         name="60 Minute Charge",
         icon="mdi:battery-positive",
         entity_category=EntityCategory.CONFIG,
+    ),
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonRechargeConfig,
+        name="Reset Charge/Discharge",
+        icon="mdi:battery-off",
+        entity_category=EntityCategory.CONFIG,
     )
 ]
 
