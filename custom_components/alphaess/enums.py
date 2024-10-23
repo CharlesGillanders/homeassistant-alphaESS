@@ -45,3 +45,7 @@ class AlphaESSNames(str, Enum):
     ButtonRechargeConfig = "Reset Battery Status"
     batHighCap = "Charging Stops"
     batUseCap = "Discharging Cutoff"
+    ChargeTime1 = "Charging period 1"
+    DischargeTime1 = "Discharge period 1"
+    ChargeTime2 = "Charging period 2"
+    DischargeTime2 = "Discharge period 2"

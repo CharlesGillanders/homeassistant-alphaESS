@@ -7,6 +7,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import CURRENCY_DOLLAR
 
+from .enums import AlphaESSNames
 from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS
 
 from homeassistant.helpers.device_registry import DeviceEntryType
@@ -66,6 +67,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._config = config
+        self._key = key_supported_states.key
         self._name = key_supported_states.name
         self._entity_category = key_supported_states.entity_category
         self._icon = key_supported_states.icon
@@ -104,7 +106,12 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         """Return the state of the resources."""
-        return self._coordinator.data[self._serial][self._name]
+        if (self._key == AlphaESSNames.DischargeTime1 or self._key == AlphaESSNames.ChargeTime1
+                or self._key == AlphaESSNames.DischargeTime2 or self._key == AlphaESSNames.ChargeTime2):
+            value = str(self._name.split()[-1])
+            return self.get_time(self._name, value)
+        else:
+            return self._coordinator.data[self._serial][self._name]
 
     @property
     def native_unit_of_measurement(self):
@@ -130,3 +137,16 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     def icon(self):
         """Return the entity_category of the sensor."""
         return self._icon
+
+    def get_time(self, name, value):
+        direction = name.split()[0]
+        _LOGGER.info(f"direction is: {direction}")
+        if direction == "Discharge":
+            timeDisf = self._coordinator.data[self._serial]["discharge_timeDisf" + value]
+            timeDise = self._coordinator.data[self._serial]["discharge_timeDise" + value]
+            return f"{timeDisf} - {timeDise}"
+        elif direction == "Charge":
+            timeChae = self._coordinator.data[self._serial]["charge_timeChae" + value]
+            timeChaf = self._coordinator.data[self._serial]["charge_timeChaf" + value]
+            return f"{timeChae} - {timeChaf}"
+        return None

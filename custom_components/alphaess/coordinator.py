@@ -198,10 +198,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     _discharge_config = invertor.get("DisChargeConfig", {})
 
                     inverterdata["ctrDis"] = await safe_get(_discharge_config, "ctrDis")
-                    inverterdata["discharge_timeChaf1"] = await safe_get(_discharge_config, "timeChaf1")
-                    inverterdata["discharge_timeChae1"] = await safe_get(_discharge_config, "timeChae1")
-                    inverterdata["discharge_timeChaf2"] = await safe_get(_discharge_config, "timeChaf2")
-                    inverterdata["discharge_timeChae2"] = await safe_get(_discharge_config, "timeChae2")
+                    inverterdata["discharge_timeDisf1"] = await safe_get(_discharge_config, "timeDisf1")
+                    inverterdata["discharge_timeDise1"] = await safe_get(_discharge_config, "timeDise1")
+                    inverterdata["discharge_timeDisf2"] = await safe_get(_discharge_config, "timeDisf2")
+                    inverterdata["discharge_timeDise2"] = await safe_get(_discharge_config, "timeDise2")
                     inverterdata["batUseCap"] = await safe_get(_discharge_config, "batUseCap")
 
                     self.data.update({invertor["sysSn"]: inverterdata})
