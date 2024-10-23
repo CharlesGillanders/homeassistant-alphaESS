@@ -184,6 +184,26 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     inverterdata["Instantaneous Grid I/O L2"] = await safe_get(_gridpowerdetails, "pmeterL2")
                     inverterdata["Instantaneous Grid I/O L3"] = await safe_get(_gridpowerdetails, "pmeterL3")
 
+                    # Get Charge Config
+                    _charge_config = invertor.get("ChargeConfig", {})
+
+                    inverterdata["gridCharge"] = await safe_get(_charge_config, "gridCharge")
+                    inverterdata["charge_timeChaf1"] = await safe_get(_charge_config, "timeChaf1")
+                    inverterdata["charge_timeChae1"] = await safe_get(_charge_config, "timeChae1")
+                    inverterdata["charge_timeChaf2"] = await safe_get(_charge_config, "timeChaf2")
+                    inverterdata["charge_timeChae2"] = await safe_get(_charge_config, "timeChae2")
+                    inverterdata["batHighCap"] = await safe_get(_charge_config, "batHighCap")
+
+                    # Get Discharge Config
+                    _discharge_config = invertor.get("DisChargeConfig", {})
+
+                    inverterdata["ctrDis"] = await safe_get(_discharge_config, "ctrDis")
+                    inverterdata["discharge_timeChaf1"] = await safe_get(_discharge_config, "timeChaf1")
+                    inverterdata["discharge_timeChae1"] = await safe_get(_discharge_config, "timeChae1")
+                    inverterdata["discharge_timeChaf2"] = await safe_get(_discharge_config, "timeChaf2")
+                    inverterdata["discharge_timeChae2"] = await safe_get(_discharge_config, "timeChae2")
+                    inverterdata["batUseCap"] = await safe_get(_discharge_config, "batUseCap")
+
                     self.data.update({invertor["sysSn"]: inverterdata})
 
                 return self.data
