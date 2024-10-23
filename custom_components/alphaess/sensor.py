@@ -106,14 +106,21 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         """Return the state of the resources."""
-        if (self._key == AlphaESSNames.DischargeTime1 or self._key == AlphaESSNames.ChargeTime1
-                or self._key == AlphaESSNames.DischargeTime2 or self._key == AlphaESSNames.ChargeTime2):
-            value = str(self._name.split()[-1])
-            return self.get_time(self._name, value)
-        elif self._key == AlphaESSNames.ChargeRange:
+        keys = {
+            AlphaESSNames.DischargeTime1,
+            AlphaESSNames.ChargeTime1,
+            AlphaESSNames.DischargeTime2,
+            AlphaESSNames.ChargeTime2
+        }
+
+        if self._key in keys:
+            time_value = str(self._name.split()[-1])
+            return self.get_time(self._name, time_value)
+
+        if self._key == AlphaESSNames.ChargeRange:
             return self.get_charge()
-        else:
-            return self._coordinator.data[self._serial][self._name]
+
+        return self._coordinator.data[self._serial][self._name]
 
     @property
     def native_unit_of_measurement(self):
@@ -141,19 +148,31 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         return self._icon
 
     def get_charge(self):
-        batHighCap = self._coordinator.data[self._serial]["batHighCap"]
-        batUseCap = self._coordinator.data[self._serial]["batUseCap"]
-        return f"{batUseCap}% - {batHighCap}%"
+        """Get battery charge range."""
+        bat_high_cap = self._coordinator.data[self._serial].get("batHighCap")
+        bat_use_cap = self._coordinator.data[self._serial].get("batUseCap")
+
+        if bat_high_cap is not None and bat_use_cap is not None:
+            return f"{bat_use_cap}% - {bat_high_cap}%"
+        return None
 
     def get_time(self, name, value):
+        """Get formatted time range for Discharge or Charge."""
         direction = name.split()[0]
-        _LOGGER.info(f"direction is: {direction}")
+        _LOGGER.info(f"Direction is: {direction}")
+
+        def get_time_range(prefix):
+            """Helper to retrieve and format time ranges."""
+            start_time = self._coordinator.data[self._serial].get(f"{prefix}_time{prefix[:3].capitalize()}f{value}")
+            end_time = self._coordinator.data[self._serial].get(f"{prefix}_time{prefix[:3].capitalize()}e{value}")
+            if start_time and end_time:
+                return f"{start_time} - {end_time}"
+            return None
+
         if direction == "Discharge":
-            timeDisf = self._coordinator.data[self._serial]["discharge_timeDisf" + value]
-            timeDise = self._coordinator.data[self._serial]["discharge_timeDise" + value]
-            return f"{timeDisf} - {timeDise}"
+            return get_time_range("discharge")
         elif direction == "Charge":
-            timeChae = self._coordinator.data[self._serial]["charge_timeChae" + value]
-            timeChaf = self._coordinator.data[self._serial]["charge_timeChaf" + value]
-            return f"{timeChae} - {timeChaf}"
+            return get_time_range("charge")
+
         return None
+
