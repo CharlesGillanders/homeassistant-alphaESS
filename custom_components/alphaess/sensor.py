@@ -110,6 +110,8 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                 or self._key == AlphaESSNames.DischargeTime2 or self._key == AlphaESSNames.ChargeTime2):
             value = str(self._name.split()[-1])
             return self.get_time(self._name, value)
+        elif self._key == AlphaESSNames.ChargeRange:
+            return self.get_charge()
         else:
             return self._coordinator.data[self._serial][self._name]
 
@@ -137,6 +139,11 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     def icon(self):
         """Return the entity_category of the sensor."""
         return self._icon
+
+    def get_charge(self):
+        batHighCap = self._coordinator.data[self._serial]["batHighCap"]
+        batUseCap = self._coordinator.data[self._serial]["batUseCap"]
+        return f"{batUseCap}% - {batHighCap}%"
 
     def get_time(self, name, value):
         direction = name.split()[0]

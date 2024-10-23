@@ -242,6 +242,13 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:battery-sync",
+    ), AlphaESSSensorDescription(
+        key=AlphaESSNames.ChargeRange,
+        name="Charging Range",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:battery-sync",
     )
 ]
 
