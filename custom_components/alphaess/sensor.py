@@ -159,7 +159,6 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     def get_time(self, name, value):
         """Get formatted time range for Discharge or Charge."""
         direction = name.split()[0]
-        _LOGGER.info(f"Direction is: {direction}")
 
         def get_time_range(prefix):
             """Helper to retrieve and format time ranges."""
@@ -175,4 +174,3 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             return get_time_range("charge")
 
         return None
-

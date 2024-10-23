@@ -12,8 +12,8 @@ from .enums import AlphaESSNames
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
-last_discharge_update = None
-last_charge_update = None
+last_discharge_update = {}
+last_charge_update = {}
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -66,30 +66,29 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         global last_discharge_update
         global last_charge_update
 
-        async def handle_time_restriction(last_update, update_fn, update_key):
+        async def handle_time_restriction(last_update_dict, update_fn, update_key):
             local_current_time = datetime.now()
+            last_update = last_update_dict.get(self._serial)
             if last_update is None or local_current_time - last_update >= ALPHA_POST_REQUEST_RESTRICTION:
-                last_update = local_current_time
+                last_update_dict[self._serial] = local_current_time
                 await update_fn(update_key, self._serial, self._time)
             else:
                 remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (local_current_time - last_update)
                 minutes, seconds = divmod(remaining_time.total_seconds(), 60)
                 _LOGGER.warning(
-                    f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last {update_key} config post call. "
+                    f"{self._serial}: Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since last {update_key} config post call."
                     f"Please wait {int(minutes)} minutes and {int(seconds)} seconds."
                 )
-            return last_update
+            return last_update_dict
 
         current_time = datetime.now()
 
         if self._key == AlphaESSNames.ButtonRechargeConfig:
-            if (last_charge_update is None or current_time - last_charge_update >= ALPHA_POST_REQUEST_RESTRICTION) and \
-                    (
-                            last_discharge_update is None or current_time - last_discharge_update >= ALPHA_POST_REQUEST_RESTRICTION):
-                last_discharge_update = last_charge_update = current_time
+            if (last_charge_update.get(self._serial) is None or current_time - last_charge_update[self._serial] >= ALPHA_POST_REQUEST_RESTRICTION) and \
+                    (last_discharge_update.get(self._serial) is None or current_time - last_discharge_update[self._serial] >= ALPHA_POST_REQUEST_RESTRICTION):
+                last_discharge_update[self._serial] = last_charge_update[self._serial] = current_time
                 await self._coordinator.reset_config(self._serial)
             else:
-                # Await the handle_time_restriction function and assign the updated value
                 last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
                                                                    "charge")
                 last_discharge_update = await handle_time_restriction(last_discharge_update,
