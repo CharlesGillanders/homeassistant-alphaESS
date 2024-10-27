@@ -39,12 +39,32 @@ If you had previously been using this custom component in Home Assistant you wil
 ## Manual Installation
 
 1. Make a custom_components/alphaess folder in your Home Assistant file system.
-2. Copy all of the files and folders from this repositary into that custom_components/alphaess folder
+2. Copy all the files and folders from this repository into that custom_components/alphaess folder
 3. Restart Home Assistant
 4. Enable Advanced Mode using Profile (click on your username at the bottom of the navigation column) -> Advanced Mode -> On
 5. Log out of HomeAssistant and back in again
 6. Setup this integration for your Alpha ESS energy storage system in Home Assistant via `Configuration -> Integrations -> Add -> Alpha ESS`
 7. You will be prompted for the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
+
+
+
+## Alpha ESS: GUI based Set Battery Charge/Discharge Times information<br>
+
+This is currently in early testing and comes with some caveats enforced by the OpenAPI and AlphaESS, This includes;
+- Charging can only be set once every 10 minutes 
+- Discharging can only be set once every 10 minutes
+- The reset button calls both set Charging and set Discharging
+
+Some values are set by default, this includes 
+- updateChargeConfigInfo: gridcharge = 1 
+- updateDisChargeConfigInfo: ctrDis = 0
+
+Setting the bathighcap and batusecap only save it to hass data (making it persistent across restarts)
+and will only be applied when the respective button (or the reset button) is pressed
+
+A error will be placed in the logs 
+
+The current charge config, discharge config and charging range will only update once the API is re-called (can be up to 1 min)
 
 ## Services
 
