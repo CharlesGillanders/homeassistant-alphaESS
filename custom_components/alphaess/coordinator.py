@@ -35,19 +35,14 @@ async def safe_calculate(val1, val2):
 
 async def get_rounded_time():
     now = datetime.now()
-    if now.minute == 0:
-        minutes = 15
-    elif now.minute < 15:
-        minutes = 0
-    elif now.minute < 30:
-        minutes = 15
-    elif now.minute < 45:
-        minutes = 30
-    else:
-        minutes = 0
-        now += timedelta(hours=1)
 
-    rounded_time = now.replace(minute=minutes, second=0, microsecond=0)
+    if now.minute > 45:
+        rounded_time = now + timedelta(hours=1)
+        rounded_time = rounded_time.replace(minute=0, second=0, microsecond=0)
+    else:
+        rounded_time = now + timedelta(minutes=15 - (now.minute % 15))
+        rounded_time = rounded_time.replace(second=0, microsecond=0)
+
     return rounded_time.strftime("%H:%M")
 
 
@@ -85,7 +80,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                                                                          "00:00", "00:00")
 
         _LOGGER.info(
-            f"Reset Charge and Discharge status, now is reset, API response: \n Charge: {return_charge_data}\n Discharge: {return_discharge_data}")
+            f"Reset Charge and Discharge status, now is reset, API response:\n Charge: {return_charge_data}\n Discharge: {return_discharge_data}")
 
     async def update_discharge(self, name, serial, time_period):
         batUseCap = self.hass.data[DOMAIN][serial].get(name, None)
@@ -100,7 +95,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             f"Retrieved value for Discharge: {batUseCap} for serial: {serial} Running for {start_time.strftime('%H:%M')} to {future_time_str}")
         _LOGGER.info(return_data)
 
+        _LOGGER.info(f"DATA RECEIVED:{await self.api.getDisChargeConfigInfo(serial)}")
+
     async def update_charge(self, name, serial, time_period):
+
         batHighCap = self.hass.data[DOMAIN][serial].get(name, None)
         start_time_str = await get_rounded_time()
         now = datetime.now()
