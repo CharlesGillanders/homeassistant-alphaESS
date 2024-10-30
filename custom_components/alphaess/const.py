@@ -15,6 +15,7 @@ ALPHA_POST_REQUEST_RESTRICTION = timedelta(minutes=10)
 THROTTLE_MULTIPLIER = 1.4
 INVERTER_COUNT = 0
 INVERTER_LIST = []
+SET_CHARGE_BLACKLIST = ["Storion-S5"]
 
 NAME = "Alpha ESS"
 ISSUE_URL = "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues"

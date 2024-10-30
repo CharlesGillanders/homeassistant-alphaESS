@@ -6,7 +6,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import AlphaESSDataUpdateCoordinator
-from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION
+from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION, SET_CHARGE_BLACKLIST
 from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
 from .enums import AlphaESSNames
 
@@ -27,7 +27,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
     for serial, data in coordinator.data.items():
         model = data.get("Model")
-        if model != "Storion-S5":
+        if model not in SET_CHARGE_BLACKLIST:
             for description in full_button_supported_states:
                 button_entities.append(
                     AlphaESSBatteryButton(coordinator, entry, serial, full_button_supported_states[description]))
