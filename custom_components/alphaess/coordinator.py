@@ -66,7 +66,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             self.has_throttle = False
             set_throttle_count_lower()
 
-        if self.inverter_count == 1:
+        if self.inverter_count <= 1:
             self.LOCAL_INVERTER_COUNT = 0
         else:
             self.LOCAL_INVERTER_COUNT = self.inverter_count

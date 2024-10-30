@@ -39,7 +39,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     _LOGGER.info(f"Initializing Inverters")
     for serial, data in coordinator.data.items():
         model = data.get("Model")
-        _LOGGER.info(f"Serial: {serial}, Model: {model}")
+        _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
         # This is done due to the limited data that inverters like the Storion-S5 support
         if model in LIMITED_INVERTER_SENSOR_LIST:
