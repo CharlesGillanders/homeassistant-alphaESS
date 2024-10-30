@@ -14,7 +14,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -41,7 +41,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         model = data.get("Model")
         _LOGGER.info(f"Serial: {serial}, Model: {model}")
 
-        if model == "Storion-S5":
+        # This is done due to the limited data that inverters like the Storion-S5 support
+        if model in LIMITED_INVERTER_SENSOR_LIST:
             for description in limited_key_supported_states:
                 entities.append(
                     AlphaESSSensor(

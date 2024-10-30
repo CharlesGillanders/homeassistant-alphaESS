@@ -5,6 +5,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.number import RestoreNumber
 import logging
 from custom_components.alphaess import DOMAIN, AlphaESSDataUpdateCoordinator
+from custom_components.alphaess.const import INVERTER_SETTING_BLACKLIST
 from custom_components.alphaess.enums import AlphaESSNames
 from custom_components.alphaess.sensorlist import DISCHARGE_AND_CHARGE_NUMBERS
 
@@ -22,7 +23,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
     for serial, data in coordinator.data.items():
         model = data.get("Model")
-        if model != "Storion-S5":
+        if model not in INVERTER_SETTING_BLACKLIST:
             for description in full_number_supported_states:
                 number_entities.append(
                     AlphaNumber(coordinator, serial, entry, full_number_supported_states[description]))

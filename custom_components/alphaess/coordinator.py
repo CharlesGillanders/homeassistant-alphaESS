@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count, set_throttle_count_lower, \
-    get_inverter_list
+    get_inverter_list, LOWER_INVERTER_API_CALL_LIST
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -61,7 +61,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         self.inverter_count = get_inverter_count()
         self.hass = hass
 
-        if "Storion-S5" not in self.model_list and len(self.model_list) > 0:
+        # Reduce the throttle count lower due to the reduced API calls it makes
+        if all(inverter not in self.model_list for inverter in LOWER_INVERTER_API_CALL_LIST) and len(self.model_list) > 0:
             self.has_throttle = False
             set_throttle_count_lower()
 
