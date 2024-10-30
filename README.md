@@ -39,7 +39,7 @@ If you had previously been using this custom component in Home Assistant you wil
 ## Manual Installation
 
 1. Make a custom_components/alphaess folder in your Home Assistant file system.
-2. Copy all the files and folders from this repository into that custom_components/alphaess folder
+2. Copy all the files and folders from this repository into the custom_components/alphaess folder
 3. Restart Home Assistant
 4. Enable Advanced Mode using Profile (click on your username at the bottom of the navigation column) -> Advanced Mode -> On
 5. Log out of HomeAssistant and back in again

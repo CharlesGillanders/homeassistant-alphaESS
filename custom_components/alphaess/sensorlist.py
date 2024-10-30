@@ -226,7 +226,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        icon="mdi:battery-sync",
+        icon="mdi:clock-time-ten",
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.ChargeTime2,
@@ -234,7 +234,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        icon="mdi:battery-sync",
+        icon="mdi:clock-time-ten",
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.DischargeTime1,
@@ -242,7 +242,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        icon="mdi:battery-sync",
+        icon="mdi:clock-time-ten",
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.DischargeTime2,
@@ -250,7 +250,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        icon="mdi:battery-sync",
+        icon="mdi:clock-time-ten",
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.ChargeRange,
