@@ -15,6 +15,8 @@ ALPHA_POST_REQUEST_RESTRICTION = timedelta(minutes=10)
 THROTTLE_MULTIPLIER = 1.4
 INVERTER_COUNT = 0
 INVERTER_LIST = []
+
+# Set blacklist for certain inverters from certain sensors
 INVERTER_SETTING_BLACKLIST = ["Storion-S5"]
 LOWER_INVERTER_API_CALL_LIST = ["Storion-S5"]
 LIMITED_INVERTER_SENSOR_LIST = ["Storion-S5"]
