@@ -27,7 +27,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
     for serial, data in coordinator.data.items():
         model = data.get("Model")
-        # This is due to the uncertainty around if the Storion-S5 supports instant charge and discharge
         if model not in INVERTER_SETTING_BLACKLIST:
             for description in full_button_supported_states:
                 button_entities.append(

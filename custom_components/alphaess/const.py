@@ -17,9 +17,11 @@ INVERTER_COUNT = 0
 INVERTER_LIST = []
 
 # Set blacklist for certain inverters from certain sensors
-INVERTER_SETTING_BLACKLIST = ["Storion-S5"]
+INVERTER_SETTING_BLACKLIST = []  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount
+LIMITED_INVERTER_SENSOR_LIST = ["Storion-S5"]  # Blacklist sensors for showing data relating to getlastpowerdata and other data points
+
+# Inverters who do not support "getlastpowerdata"
 LOWER_INVERTER_API_CALL_LIST = ["Storion-S5"]
-LIMITED_INVERTER_SENSOR_LIST = ["Storion-S5"]
 
 NAME = "Alpha ESS"
 ISSUE_URL = "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues"
