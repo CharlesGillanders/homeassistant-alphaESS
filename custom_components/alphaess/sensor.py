@@ -7,13 +7,14 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import CURRENCY_DOLLAR
 
+from .enums import AlphaESSNames
 from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS
 
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -38,9 +39,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     _LOGGER.info(f"Initializing Inverters")
     for serial, data in coordinator.data.items():
         model = data.get("Model")
-        _LOGGER.info(f"Serial: {serial}, Model: {model}")
+        _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
-        if model == "Storion-S5":
+        # This is done due to the limited data that inverters like the Storion-S5 support
+        if model in LIMITED_INVERTER_SENSOR_LIST:
             for description in limited_key_supported_states:
                 entities.append(
                     AlphaESSSensor(
@@ -66,6 +68,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._config = config
+        self._key = key_supported_states.key
         self._name = key_supported_states.name
         self._entity_category = key_supported_states.entity_category
         self._icon = key_supported_states.icon
@@ -104,6 +107,20 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         """Return the state of the resources."""
+        keys = {
+            AlphaESSNames.DischargeTime1,
+            AlphaESSNames.ChargeTime1,
+            AlphaESSNames.DischargeTime2,
+            AlphaESSNames.ChargeTime2
+        }
+
+        if self._key in keys:
+            time_value = str(self._name.split()[-1])
+            return self.get_time(self._name, time_value)
+
+        if self._key == AlphaESSNames.ChargeRange:
+            return self.get_charge()
+
         return self._coordinator.data[self._serial][self._name]
 
     @property
@@ -130,3 +147,31 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     def icon(self):
         """Return the entity_category of the sensor."""
         return self._icon
+
+    def get_charge(self):
+        """Get battery charge range."""
+        bat_high_cap = self._coordinator.data[self._serial].get("batHighCap")
+        bat_use_cap = self._coordinator.data[self._serial].get("batUseCap")
+
+        if bat_high_cap is not None and bat_use_cap is not None:
+            return f"{bat_use_cap}% - {bat_high_cap}%"
+        return None
+
+    def get_time(self, name, value):
+        """Get formatted time range for Discharge or Charge."""
+        direction = name.split()[0]
+
+        def get_time_range(prefix):
+            """Helper to retrieve and format time ranges."""
+            start_time = self._coordinator.data[self._serial].get(f"{prefix}_time{prefix[:3].capitalize()}f{value}")
+            end_time = self._coordinator.data[self._serial].get(f"{prefix}_time{prefix[:3].capitalize()}e{value}")
+            if start_time and end_time:
+                return f"{start_time} - {end_time}"
+            return None
+
+        if direction == "Discharge":
+            return get_time_range("discharge")
+        elif direction == "Charge":
+            return get_time_range("charge")
+
+        return None

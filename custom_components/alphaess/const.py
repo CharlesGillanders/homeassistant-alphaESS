@@ -5,11 +5,23 @@ from datetime import timedelta
 from homeassistant.const import Platform
 
 DOMAIN = "alphaess"
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [
+    Platform.BUTTON,
+    Platform.SENSOR,
+    Platform.NUMBER
+]
 SCAN_INTERVAL = timedelta(minutes=1)
-THROTTLE_MULTIPLIER = 1.35
+ALPHA_POST_REQUEST_RESTRICTION = timedelta(minutes=10)
+THROTTLE_MULTIPLIER = 1.4
 INVERTER_COUNT = 0
 INVERTER_LIST = []
+
+# Set blacklist for certain inverters from certain sensors
+INVERTER_SETTING_BLACKLIST = []  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount
+LIMITED_INVERTER_SENSOR_LIST = ["Storion-S5"]  # Blacklist sensors for showing data relating to getlastpowerdata and other data points
+
+# Inverters who do not support "getlastpowerdata"
+LOWER_INVERTER_API_CALL_LIST = ["Storion-S5"]
 
 NAME = "Alpha ESS"
 ISSUE_URL = "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues"

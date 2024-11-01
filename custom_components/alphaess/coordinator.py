@@ -1,14 +1,15 @@
 """Coordinator for AlphaEss integration."""
 import logging
+from datetime import datetime, timedelta
 
 import aiohttp
 from alphaess import alphaess
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN, SCAN_INTERVAL, THROTTLE_MULTIPLIER, get_inverter_count, set_throttle_count_lower, \
-    get_inverter_list
+    get_inverter_list, LOWER_INVERTER_API_CALL_LIST
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -32,6 +33,19 @@ async def safe_calculate(val1, val2):
         return val1 - val2
 
 
+async def get_rounded_time():
+    now = datetime.now()
+
+    if now.minute > 45:
+        rounded_time = now + timedelta(hours=1)
+        rounded_time = rounded_time.replace(minute=0, second=0, microsecond=0)
+    else:
+        rounded_time = now + timedelta(minutes=15 - (now.minute % 15))
+        rounded_time = rounded_time.replace(second=0, microsecond=0)
+
+    return rounded_time.strftime("%H:%M")
+
+
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
 
@@ -45,19 +59,61 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         self.LOCAL_INVERTER_COUNT = 0
         self.model_list = get_inverter_list()
         self.inverter_count = get_inverter_count()
+        self.hass = hass
 
-        if "Storion-S5" not in self.model_list and len(self.model_list) > 0:
+        # Reduce the throttle count lower due to the reduced API calls it makes
+        if all(inverter not in self.model_list for inverter in LOWER_INVERTER_API_CALL_LIST) and len(self.model_list) > 0:
             self.has_throttle = False
             set_throttle_count_lower()
 
-        if self.inverter_count == 1:
+        if self.inverter_count <= 1:
             self.LOCAL_INVERTER_COUNT = 0
         else:
             self.LOCAL_INVERTER_COUNT = self.inverter_count
 
+    async def reset_config(self, serial):
+        batUseCap = self.hass.data[DOMAIN][serial].get("batUseCap", 10)
+        batHighCap = self.hass.data[DOMAIN][serial].get("batHighCap", 90)
+
+        return_charge_data = await self.api.updateChargeConfigInfo(serial, batHighCap, 1, "00:00", "00:00",
+                                                                   "00:00", "00:00")
+        return_discharge_data = await self.api.updateDisChargeConfigInfo(serial, batUseCap, 0, "00:00", "00:00",
+                                                                         "00:00", "00:00")
+
+        _LOGGER.info(
+            f"Reset Charge and Discharge status, now is reset, API response:\n Charge: {return_charge_data}\n Discharge: {return_discharge_data}")
+
+    async def update_discharge(self, name, serial, time_period):
+        batUseCap = self.hass.data[DOMAIN][serial].get(name, None)
+        start_time_str = await get_rounded_time()
+        now = datetime.now()
+        start_time = datetime.strptime(start_time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
+        future_time = start_time + timedelta(minutes=time_period)
+        future_time_str = future_time.strftime("%H:%M")
+        return_data = await self.api.updateDisChargeConfigInfo(serial, batUseCap, 0, future_time_str, "00:00",
+                                                               start_time.strftime("%H:%M"), "00:00")
+        _LOGGER.info(
+            f"Retrieved value for Discharge: {batUseCap} for serial: {serial} Running for {start_time.strftime('%H:%M')} to {future_time_str}")
+        _LOGGER.info(return_data)
+
+        _LOGGER.info(f"DATA RECEIVED:{await self.api.getDisChargeConfigInfo(serial)}")
+
+    async def update_charge(self, name, serial, time_period):
+
+        batHighCap = self.hass.data[DOMAIN][serial].get(name, None)
+        start_time_str = await get_rounded_time()
+        now = datetime.now()
+        start_time = datetime.strptime(start_time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
+        future_time = start_time + timedelta(minutes=time_period)
+        future_time_str = future_time.strftime("%H:%M")
+        return_data = await self.api.updateChargeConfigInfo(serial, batHighCap, 1, future_time_str, "00:00",
+                                                            start_time.strftime("%H:%M"), "00:00")
+        _LOGGER.info(
+            f"Retrieved value for Charge: {batHighCap} for serial: {serial} Running from {start_time.strftime('%H:%M')} to {future_time_str}")
+        _LOGGER.info(return_data)
+
     async def _async_update_data(self):
         """Update data via library."""
-
         try:
             jsondata = await self.api.getdata(self.has_throttle, THROTTLE_MULTIPLIER * self.LOCAL_INVERTER_COUNT)
             if jsondata is not None:
@@ -127,11 +183,30 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     inverterdata["Instantaneous Grid I/O L2"] = await safe_get(_gridpowerdetails, "pmeterL2")
                     inverterdata["Instantaneous Grid I/O L3"] = await safe_get(_gridpowerdetails, "pmeterL3")
 
+                    # Get Charge Config
+                    _charge_config = invertor.get("ChargeConfig", {})
+
+                    inverterdata["gridCharge"] = await safe_get(_charge_config, "gridCharge")
+                    inverterdata["charge_timeChaf1"] = await safe_get(_charge_config, "timeChaf1")
+                    inverterdata["charge_timeChae1"] = await safe_get(_charge_config, "timeChae1")
+                    inverterdata["charge_timeChaf2"] = await safe_get(_charge_config, "timeChaf2")
+                    inverterdata["charge_timeChae2"] = await safe_get(_charge_config, "timeChae2")
+                    inverterdata["batHighCap"] = await safe_get(_charge_config, "batHighCap")
+
+                    # Get Discharge Config
+                    _discharge_config = invertor.get("DisChargeConfig", {})
+
+                    inverterdata["ctrDis"] = await safe_get(_discharge_config, "ctrDis")
+                    inverterdata["discharge_timeDisf1"] = await safe_get(_discharge_config, "timeDisf1")
+                    inverterdata["discharge_timeDise1"] = await safe_get(_discharge_config, "timeDise1")
+                    inverterdata["discharge_timeDisf2"] = await safe_get(_discharge_config, "timeDisf2")
+                    inverterdata["discharge_timeDise2"] = await safe_get(_discharge_config, "timeDise2")
+                    inverterdata["batUseCap"] = await safe_get(_discharge_config, "batUseCap")
+
                     self.data.update({invertor["sysSn"]: inverterdata})
 
                 return self.data
-        except (
-                aiohttp.client_exceptions.ClientConnectorError,
-                aiohttp.ClientResponseError,
-        ) as error:
-            raise UpdateFailed(error) from error
+        except (aiohttp.client_exceptions.ClientConnectorError, aiohttp.ClientResponseError) as error:
+            _LOGGER.error(f"Error fetching data: {error}")
+            self.data = None
+            return self.data
