@@ -17,7 +17,7 @@ INVERTER_COUNT = 0
 INVERTER_LIST = []
 
 # Set blacklist for certain inverters from certain sensors
-INVERTER_SETTING_BLACKLIST = []  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount
+INVERTER_SETTING_BLACKLIST = ["Storion-SMILE-B3"]  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount
 LIMITED_INVERTER_SENSOR_LIST = ["Storion-S5"]  # Blacklist sensors for showing data relating to getlastpowerdata and other data points
 
 # Inverters who do not support "getlastpowerdata"
