@@ -77,7 +77,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
         return_charge_data = await self.api.updateChargeConfigInfo(serial, batHighCap, 1, "00:00", "00:00",
                                                                    "00:00", "00:00")
-        return_discharge_data = await self.api.updateDisChargeConfigInfo(serial, batUseCap, 0, "00:00", "00:00",
+        return_discharge_data = await self.api.updateDisChargeConfigInfo(serial, batUseCap, 1, "00:00", "00:00",
                                                                          "00:00", "00:00")
 
         _LOGGER.info(
