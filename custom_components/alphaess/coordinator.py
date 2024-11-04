@@ -90,7 +90,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         start_time = datetime.strptime(start_time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
         future_time = start_time + timedelta(minutes=time_period)
         future_time_str = future_time.strftime("%H:%M")
-        return_data = await self.api.updateDisChargeConfigInfo(serial, batUseCap, 0, future_time_str, "00:00",
+        return_data = await self.api.updateDisChargeConfigInfo(serial, batUseCap, 1, future_time_str, "00:00",
                                                                start_time.strftime("%H:%M"), "00:00")
         _LOGGER.info(
             f"Retrieved value for Discharge: {batUseCap} for serial: {serial} Running for {start_time.strftime('%H:%M')} to {future_time_str}")
