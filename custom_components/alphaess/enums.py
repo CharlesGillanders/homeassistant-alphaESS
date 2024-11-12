@@ -50,3 +50,4 @@ class AlphaESSNames(str, Enum):
     ChargeTime2 = "Charging Period 2"
     DischargeTime2 = "Discharge Period 2"
     ChargeRange = "Charging Range"
+    Total_Generation = "Total Generation"
