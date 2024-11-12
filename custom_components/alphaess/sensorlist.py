@@ -165,6 +165,13 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
+        key=AlphaESSNames.Total_Generation,
+        name="Total Generation",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
         key=AlphaESSNames.Income,
         name="Total Income",
         icon="mdi:cash-multiple",
@@ -339,6 +346,13 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.Total_Generation,
+        name="Total Generation",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.Income,

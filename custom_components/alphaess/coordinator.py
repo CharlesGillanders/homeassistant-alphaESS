@@ -136,6 +136,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
                     inverterdata["Total Load"] = await safe_get(_sumdata, "eload")
                     inverterdata["Total Income"] = await safe_get(_sumdata, "totalIncome")
+                    inverterdata["Total Generation"] = await safe_get(_sumdata, "epvtotal")
 
                     self_data = {
                         "Self Consumption": await safe_get(_sumdata, "eselfConsumption"),
