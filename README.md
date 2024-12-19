@@ -66,6 +66,18 @@ A error will be placed in the logs
 
 The current charge config, discharge config and charging range will only update once the API is re-called (can be up to 1 min)
 
+## Issues with registering systems to the AlphaESS OpenAPI
+
+There has been a few issues regarding registering systems to the AlphaESS OpenAPI.  The following are some of the issues that have been reported and how to resolve them.
+
+### Issue: Unable to register system to AlphaESS OpenAPI (not receiving verification code) 
+
+If you are unable to register your system to the AlphaESS OpenAPI because you are not receiving the verification code, you can try the following steps to resolve the issue:
+1. Access the current postman collection library for the AlphaESS OpenAPI [here](https://www.postman.com/poshy163/alphaess/collection/tsy43t1/alphaess-open-api?action=share&creator=11219653) (you will need to fork the collection)
+2. Clicking on the root of the list of API calls (should be called AlphaESS Open API) and then click on the variables tab fill in systemSN and CheckCode into the initial and current value fields, 
+3. Click on the getVerificationCode GET API call followed by the send button to send the request.  You should receive a verification code either in the response body or by email.
+
+
 ## Services
 
 This project allows you to use the following services in Home Assistant:<br>
@@ -106,6 +118,7 @@ data:
     - dp1end = Discharging Period 1 End Time <br>
     - dp2start = Discharging Period 2 Start Time <br>
     - dp2end = Discharging Period 2 End Time <br>
+
 
 example:
 ```yaml
