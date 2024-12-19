@@ -10,7 +10,7 @@ Monitor your energy generation, storage, and usage data using the official Open 
 In November 2023, AlphaESS introduced a new web API for their own web client and developers were officially encouraged to migrate to using the AlphaESS Open API published at [https://open.alphaess.com/](https://open.alphaess.com/).  This component has been updated to use that Open API.  Anyone wanting to use this component in Home Assistant will first need to register their own inverter with the AlphaESS Open API developer portal.
 
 1. Navigate to [https://open.alphaess.com/](https://open.alphaess.com/) and chose the option to register an account.
-2. Once registered and logged in follow the instructions in your inverters manual to find your inverter SN and CheckCode
+2. Once registered and logged in follow the instructions in your inverters manual to find your inverter SN and CheckCode, See example [here](https://imgur.com/a/Xm5t1s0)
 3. Add your inverter to the developer portal using your SN and CheckCode
 
 ## Modifying existing installs to use the new OpenAPI
