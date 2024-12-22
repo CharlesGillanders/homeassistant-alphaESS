@@ -74,7 +74,7 @@ There has been a few issues regarding registering systems to the AlphaESS OpenAP
 
 If you are unable to register your system to the AlphaESS OpenAPI because you are not receiving the verification code, you can try the following steps to resolve the issue:
 1. Access the current postman collection library for the AlphaESS OpenAPI [here](https://www.postman.com/poshy163/alphaess/collection/tsy43t1/alphaess-open-api?action=share&creator=11219653) (you will need to fork the collection)
-2. Clicking on the root of the list of API calls (should be called AlphaESS Open API) and then click on the variables tab fill in systemSN and CheckCode into the initial and current value fields, 
+2. Clicking on the root of the list of API calls (should be called AlphaESS Open API) and then click on the variables tab and fill in your AppID, AppSecret, systemSN and CheckCode into the initial and current value fields. 
 3. Click on the getVerificationCode GET API call followed by the send button to send the request.  You should receive a verification code either in the response body or by email.
 
 
