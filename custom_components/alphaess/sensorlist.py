@@ -266,7 +266,80 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:battery-lock-open",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.pmeterDc,
+        name="pmeterDc",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:current-dc",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.ElectricVehiclePowerOne,
+        name="Electric Vehicle Power One",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:car-electric",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.ElectricVehiclePowerTwo,
+        name="Electric Vehicle Power Two",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:car-electric",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.ElectricVehiclePowerThree,
+        name="Electric Vehicle Power Three",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:car-electric",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.ElectricVehiclePowerFour,
+        name="Electric Vehicle Power Four",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:car-electric",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.pev,
+        name="pev",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:flash",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PrealL1,
+        name="PrealL1",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:flash",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PrealL2,
+        name="PrealL2",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:flash",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PrealL3,
+        name="PrealL3",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:flash",
     )
+
 ]
 
 LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -449,8 +522,89 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:battery-lock-open",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.pmeterDc,
+        name="pmeterDc",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:current-dc",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.ElectricVehiclePowerOne,
+        name="Electric Vehicle Power One",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:car-electric",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.ElectricVehiclePowerTwo,
+        name="Electric Vehicle Power Two",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:car-electric",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.ElectricVehiclePowerThree,
+        name="Electric Vehicle Power Three",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:car-electric",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.ElectricVehiclePowerFour,
+        name="Electric Vehicle Power Four",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:car-electric",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.pev,
+        name="pev",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:flash",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PrealL1,
+        name="PrealL1",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:flash",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PrealL2,
+        name="PrealL2",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:flash",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PrealL3,
+        name="PrealL3",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:flash",
     )
 ]
+
+
+
+
+
+
+
+
+
 
 SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription] = [
     AlphaESSButtonDescription(
