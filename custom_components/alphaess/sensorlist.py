@@ -649,15 +649,6 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     )
 ]
 
-
-
-
-
-
-
-
-
-
 SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription] = [
     AlphaESSButtonDescription(
         key=AlphaESSNames.ButtonDischargeFifteen,
