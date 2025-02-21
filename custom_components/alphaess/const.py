@@ -16,7 +16,7 @@ THROTTLE_MULTIPLIER = 1.4
 INVERTER_COUNT = 0
 INVERTER_LIST = []
 
-KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000"]  # List of known inverters
+KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000", "SMILE-T10-HV-INV"]  # List of known inverters
 
 # Set blacklist for certain inverters from certain sensors
 INVERTER_SETTING_BLACKLIST = ["VT1000"]  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount

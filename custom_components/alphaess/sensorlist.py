@@ -268,6 +268,14 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         icon="mdi:battery-lock-open",
     ),
     AlphaESSSensorDescription(
+        key=AlphaESSNames.mbat,
+        name="Battery Model",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:battery-heart-variant",
+    ),
+    AlphaESSSensorDescription(
         key=AlphaESSNames.pmeterDc,
         name="pmeterDc",
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -522,6 +530,14 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:battery-lock-open",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.mbat,
+        name="Battery Model",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:battery-heart-variant",
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.pmeterDc,

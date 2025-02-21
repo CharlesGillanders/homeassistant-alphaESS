@@ -125,6 +125,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     if invertor.get("minv") is not None:
                         inverterdata["Model"] = await process_value(invertor.get("minv"))
 
+                    if invertor.get("mbat") is not None:
+                        inverterdata["Battery Model"] = await process_value(invertor.get("mbat"))
+
                     inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"))
                     inverterdata["Maximum Battery Capacity"] = await process_value(invertor.get("usCapacity"))
                     inverterdata["Current Capacity"] = await process_value(invertor.get("surplusCobat"))
