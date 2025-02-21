@@ -16,8 +16,10 @@ THROTTLE_MULTIPLIER = 1.4
 INVERTER_COUNT = 0
 INVERTER_LIST = []
 
+KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000", "SMILE-T10-HV-INV"]  # List of known inverters
+
 # Set blacklist for certain inverters from certain sensors
-INVERTER_SETTING_BLACKLIST = []  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount
+INVERTER_SETTING_BLACKLIST = ["VT1000"]  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount
 LIMITED_INVERTER_SENSOR_LIST = ["Storion-S5"]  # Blacklist sensors for showing data relating to getlastpowerdata and other data points
 
 # Inverters who do not support "getlastpowerdata"

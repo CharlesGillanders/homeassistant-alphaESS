@@ -62,7 +62,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         self.hass = hass
 
         # Reduce the throttle count lower due to the reduced API calls it makes
-        if all(inverter not in self.model_list for inverter in LOWER_INVERTER_API_CALL_LIST) and len(self.model_list) > 0:
+        if all(inverter not in self.model_list for inverter in LOWER_INVERTER_API_CALL_LIST) and len(
+                self.model_list) > 0:
             self.has_throttle = False
             set_throttle_count_lower()
 
@@ -124,6 +125,13 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     if invertor.get("minv") is not None:
                         inverterdata["Model"] = await process_value(invertor.get("minv"))
 
+                    if invertor.get("mbat") is not None:
+                        inverterdata["Battery Model"] = await process_value(invertor.get("mbat"))
+
+                    inverterdata["Inverter nominal Power"] =  await process_value(invertor.get("poinv"))
+                    inverterdata["Pv nominal Power"] = await process_value(invertor.get("popv"))
+
+
                     inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"))
                     inverterdata["Maximum Battery Capacity"] = await process_value(invertor.get("usCapacity"))
                     inverterdata["Current Capacity"] = await process_value(invertor.get("surplusCobat"))
@@ -164,6 +172,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     _soc = await safe_get(_powerdata, "soc")
                     _gridpowerdetails = _powerdata.get("pgridDetail", {})
                     _pvpowerdetails = _powerdata.get("ppvDetail", {})
+                    _getEVdetails = _powerdata.get("pevDetail", {})
 
                     inverterdata["Instantaneous Battery SOC"] = _soc
 
@@ -179,10 +188,19 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     inverterdata["Instantaneous PPV2"] = await safe_get(_pvpowerdetails, "ppv2")
                     inverterdata["Instantaneous PPV3"] = await safe_get(_pvpowerdetails, "ppv3")
                     inverterdata["Instantaneous PPV4"] = await safe_get(_pvpowerdetails, "ppv4")
+                    inverterdata["pmeterDc"] = await safe_get(_pvpowerdetails, "pmeterDc")
+                    inverterdata["pev"] = await safe_get(_powerdata, "pev")
+                    inverterdata["Electric Vehicle Power One"] = await safe_get(_getEVdetails, "ev1Power")
+                    inverterdata["Electric Vehicle Power Two"] = await safe_get(_getEVdetails, "ev2Power")
+                    inverterdata["Electric Vehicle Power Three"] = await safe_get(_getEVdetails, "ev3Power")
+                    inverterdata["Electric Vehicle Power Four"] = await safe_get(_getEVdetails, "ev4Power")
                     inverterdata["Instantaneous Grid I/O Total"] = await safe_get(_powerdata, "pgrid")
                     inverterdata["Instantaneous Grid I/O L1"] = await safe_get(_gridpowerdetails, "pmeterL1")
                     inverterdata["Instantaneous Grid I/O L2"] = await safe_get(_gridpowerdetails, "pmeterL2")
                     inverterdata["Instantaneous Grid I/O L3"] = await safe_get(_gridpowerdetails, "pmeterL3")
+                    inverterdata["PrealL1"] = await safe_get(_powerdata, "prealL1")
+                    inverterdata["PrealL2"] = await safe_get(_powerdata, "prealL1")
+                    inverterdata["PrealL3"] = await safe_get(_powerdata, "prealL1")
 
                     # Get Charge Config
                     _charge_config = invertor.get("ChargeConfig", {})
