@@ -61,3 +61,5 @@ class AlphaESSNames(str, Enum):
     PrealL2 = "PrealL2"
     PrealL3 = "PrealL3"
     mbat = "Battery Model"
+    popv = "Pv nominal Power"
+    poinv = "Inverter nominal Power"
