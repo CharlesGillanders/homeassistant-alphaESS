@@ -8,7 +8,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import CURRENCY_DOLLAR
 
 from .enums import AlphaESSNames
-from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS
+from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, EV_CHARGING_DETAILS
 
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
@@ -36,6 +36,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in LIMITED_SENSOR_DESCRIPTIONS
     }
 
+    ev_charging_supported_states = {
+        description.key: description for description in EV_CHARGING_DETAILS
+    }
+
     _LOGGER.info(f"Initializing Inverters")
     for serial, data in coordinator.data.items():
         model = data.get("Model")
@@ -56,6 +60,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         coordinator, entry, serial, full_key_supported_states[description], currency
                     )
                 )
+
+        ev_charger = data.get("EV Charger S/N")
+        if ev_charger:
+            ev_serial = data.get("EV Charger Model")
+
+            for description in EV_CHARGING_DETAILS:
+                entities.append(
+                    AlphaESSSensor(
+                        coordinator, entry, serial, ev_charging_supported_states[description.key], currency, True
+                    )
+                )
+
     async_add_entities(entities)
 
     return
@@ -64,7 +80,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     """Alpha ESS Base Sensor."""
 
-    def __init__(self, coordinator, config, serial, key_supported_states, currency):
+    def __init__(self, coordinator, config, serial, key_supported_states, currency, ev_charger=False):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._config = config
@@ -84,7 +100,16 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
 
         for invertor in coordinator.data:
             serial = invertor.upper()
-            if self._serial == serial:
+            if ev_charger:
+                self._attr_device_info = DeviceInfo(
+                    entry_type=DeviceEntryType.SERVICE,
+                    identifiers={(DOMAIN, coordinator.data[invertor]["EV Charger S/N"])},
+                    manufacturer="AlphaESS",
+                    model=coordinator.data[invertor]["EV Charger Model"],
+                    model_id="EV Charger S/N",
+                    name=f"Alpha ESS Charger : {coordinator.data[invertor]["EV Charger S/N"]}",
+                )
+            elif self._serial == serial:
                 self._attr_device_info = DeviceInfo(
                     entry_type=DeviceEntryType.SERVICE,
                     identifiers={(DOMAIN, serial)},
@@ -93,6 +118,8 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     model_id=self._serial,
                     name=f"Alpha ESS Energy Statistics : {serial}",
                 )
+
+
 
     @property
     def unique_id(self):
@@ -110,6 +137,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         keys = {
             AlphaESSNames.DischargeTime1,
             AlphaESSNames.ChargeTime1,
+            AlphaESSNames.DischargeTime2,
             AlphaESSNames.DischargeTime2,
             AlphaESSNames.ChargeTime2
         }

@@ -63,3 +63,7 @@ class AlphaESSNames(str, Enum):
     mbat = "Battery Model"
     popv = "Pv nominal Power"
     poinv = "Inverter nominal Power"
+    evchargersn = "EV Charger S/N"
+    evchargermodel = "EV Charger Model"
+
+
