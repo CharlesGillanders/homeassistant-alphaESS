@@ -711,3 +711,21 @@ DISCHARGE_AND_CHARGE_NUMBERS: List[AlphaESSNumberDescription] = [
         native_unit_of_measurement=PERCENTAGE,
     )
 ]
+
+
+EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.evchargersn,
+        name="EV Charger S/N",
+        icon="mdi:ev-station",
+        native_unit_of_measurement=None,
+        state_class=None,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.evchargermodel,
+        name="EV Charger Model",
+        icon="mdi:ev-station",
+        native_unit_of_measurement=None,
+        state_class=None,
+    )
+]

@@ -12,12 +12,12 @@ PLATFORMS = [
 ]
 SCAN_INTERVAL = timedelta(minutes=1)
 ALPHA_POST_REQUEST_RESTRICTION = timedelta(minutes=10)
-THROTTLE_MULTIPLIER = 1.4
+THROTTLE_MULTIPLIER = 1.5
 INVERTER_COUNT = 0
 INVERTER_LIST = []
 
 KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000", "SMILE-T10-HV-INV"]  # List of known inverters
-
+KNOWN_CHARGERS = ["SMILE-EVCT11"]
 # Set blacklist for certain inverters from certain sensors
 INVERTER_SETTING_BLACKLIST = ["VT1000"]  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount
 LIMITED_INVERTER_SENSOR_LIST = ["Storion-S5"]  # Blacklist sensors for showing data relating to getlastpowerdata and other data points
