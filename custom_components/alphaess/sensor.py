@@ -106,7 +106,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     identifiers={(DOMAIN, coordinator.data[invertor]["EV Charger S/N"])},
                     manufacturer="AlphaESS",
                     model=coordinator.data[invertor]["EV Charger Model"],
-                    model_id="EV Charger S/N",
+                    model_id=coordinator.data[invertor]["EV Charger S/N"],
                     name=f"Alpha ESS Charger : {coordinator.data[invertor]["EV Charger S/N"]}",
                 )
             elif self._serial == serial:
