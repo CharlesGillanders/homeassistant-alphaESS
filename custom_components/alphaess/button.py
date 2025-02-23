@@ -132,7 +132,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
     @property
     def name(self):
-        return f"{self._serial}_{self._name}"
+        return f"{self._name}"
 
     @property
     def icon(self):
