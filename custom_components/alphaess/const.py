@@ -19,8 +19,10 @@ INVERTER_LIST = []
 KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000", "SMILE-T10-HV-INV"]  # List of known inverters
 KNOWN_CHARGERS = ["SMILE-EVCT11"]
 # Set blacklist for certain inverters from certain sensors
-INVERTER_SETTING_BLACKLIST = ["VT1000"]  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount
-LIMITED_INVERTER_SENSOR_LIST = ["Storion-S5"]  # Blacklist sensors for showing data relating to getlastpowerdata and other data points
+INVERTER_SETTING_BLACKLIST = [
+    "VT1000"]  # Blacklist sensors for setting discharge/charge amount and sending discharge and charge amount
+LIMITED_INVERTER_SENSOR_LIST = [
+    "Storion-S5"]  # Blacklist sensors for showing data relating to getlastpowerdata and other data points
 
 # Inverters who do not support "getlastpowerdata"
 LOWER_INVERTER_API_CALL_LIST = ["Storion-S5"]
@@ -36,6 +38,16 @@ If you have any issues with this you need to open an issue here:
 {ISSUE_URL}
 -------------------------------------------------------------------
 """
+
+ev_charger_states = {
+    1: "Available (not plugged in)",
+    2: "Preparing (plugged in and not activated)",
+    3: "Charging (charging with power output)",
+    4: "SuspendedEVSE (already started but no available power)",
+    5: "SuspendedEV (waiting for the car to respond)",
+    6: "Finishing (actively stopping charging)",
+    9: "Faulted (pile failure)"
+}
 
 
 def increment_inverter_count():

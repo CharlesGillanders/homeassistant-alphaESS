@@ -14,7 +14,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST
+from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, ev_charger_states
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -119,8 +119,6 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     name=f"Alpha ESS Energy Statistics : {serial}",
                 )
 
-
-
     @property
     def unique_id(self):
         """Return a unique ID to use for this entity."""
@@ -145,6 +143,9 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         if self._key in keys:
             time_value = str(self._name.split()[-1])
             return self.get_time(self._name, time_value)
+
+        if self._key == AlphaESSNames.evchargerstatus:
+            return ev_charger_states.get(self._coordinator.data[self._serial][self._name], "Unknown state")
 
         if self._key == AlphaESSNames.ChargeRange:
             return self.get_charge()
