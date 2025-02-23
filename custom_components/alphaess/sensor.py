@@ -63,8 +63,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
         ev_charger = data.get("EV Charger S/N")
         if ev_charger:
-            ev_serial = data.get("EV Charger Model")
-
             for description in EV_CHARGING_DETAILS:
                 entities.append(
                     AlphaESSSensor(
@@ -127,7 +125,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f"{self._serial}_{self._name}"
+        return f"{self._name}"
 
     @property
     def native_value(self):

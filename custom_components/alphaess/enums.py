@@ -66,5 +66,6 @@ class AlphaESSNames(str, Enum):
     evchargersn = "EV Charger S/N"
     evchargermodel = "EV Charger Model"
     evchargerstatus = "EV Charger Status"
+    evchargerstatusraw = "EV Charger Status Raw"
 
 
