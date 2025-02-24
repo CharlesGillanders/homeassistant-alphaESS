@@ -67,5 +67,6 @@ class AlphaESSNames(str, Enum):
     evchargermodel = "EV Charger Model"
     evchargerstatus = "EV Charger Status"
     evchargerstatusraw = "EV Charger Status Raw"
-
-
+    evcurrentsetting = "Household current setup"
+    startcharging = "Start Charging"
+    stopcharging = "Stop Charging"
