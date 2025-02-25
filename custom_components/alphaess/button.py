@@ -83,6 +83,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         for invertor in coordinator.data:
             serial = invertor.upper()
             if ev_charger:
+                self._ev_serial = coordinator.data[invertor]["EV Charger S/N"]
                 self._attr_device_info = DeviceInfo(
                     entry_type=DeviceEntryType.SERVICE,
                     identifiers={(DOMAIN, coordinator.data[invertor]["EV Charger S/N"])},
@@ -102,6 +103,17 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 )
 
     async def async_press(self) -> None:
+
+        if self._key == AlphaESSNames.stopcharging:
+            _LOGGER.info("Stopped charging")
+            self._movement_state = None
+            await self._coordinator.Control_EV(self._serial, self._ev_serial, 0)
+
+        if self._key == AlphaESSNames.startcharging:
+            _LOGGER.info("started charging")
+            self._movement_state = None
+            await self._coordinator.Control_EV(self._serial, self._ev_serial, 1)
+
         global last_discharge_update
         global last_charge_update
 
