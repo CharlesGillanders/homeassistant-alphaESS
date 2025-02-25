@@ -3,7 +3,7 @@
 ![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)
 
 
-Monitor your energy generation, storage, and usage data using the official Open API from Alpha ESS
+Monitor your energy generation, storage, usage data and electric vehicle using the official Open API from Alpha ESS
 
 ## AlphaESS OpenAPI
 
@@ -51,8 +51,8 @@ If you had previously been using this custom component in Home Assistant you wil
 ## Alpha ESS: GUI based Set Battery Charge/Discharge Times information<br>
 
 This is currently in early testing and comes with some caveats enforced by the OpenAPI and AlphaESS, This includes;
-- Charging can only be set once every 10 minutes 
-- Discharging can only be set once every 10 minutes
+- Charging can only be set once every minute 
+- Discharging can only be set once every minute
 - The reset button calls both set Charging and set Discharging
 
 Some values are set by default, this includes 
@@ -76,6 +76,7 @@ If you are unable to register your system to the AlphaESS OpenAPI because you ar
 1. Access the current postman collection library for the AlphaESS OpenAPI [here](https://www.postman.com/poshy163/alphaess/collection/tsy43t1/alphaess-open-api?action=share&creator=11219653) (you will need to fork the collection)
 2. Clicking on the root of the list of API calls (should be called AlphaESS Open API) and then click on the variables tab and fill in your AppID, AppSecret, systemSN and CheckCode into the initial and current value fields. 
 3. Click on the getVerificationCode GET API call followed by the send button to send the request.  You should receive a verification code either in the response body or by email.
+
 
 
 ## Services
