@@ -62,7 +62,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 )
 
         ev_charger = data.get("EV Charger S/N")
+
         if ev_charger:
+            ev_model = data.get("EV Charger Model")
+            _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
             for description in EV_CHARGING_DETAILS:
                 entities.append(
                     AlphaESSSensor(
