@@ -128,7 +128,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 minutes, seconds = divmod(remaining_time.total_seconds(), 60)
 
                 await create_persistent_notification(self.hass,
-                                                     message=f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since the last call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
+                                                     message=f"HPlease wait {int(minutes)} minutes and {int(seconds)} seconds.",
                                                      title=f"{self._serial} cannot call {movement_direction}")
 
             return last_update_dict
