@@ -23,8 +23,6 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Defer sensor setup to the shared sensor module."""
 
-    currency = hass.config.currency
-
     coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities: List[AlphaESSSensor] = []
@@ -43,6 +41,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     _LOGGER.info(f"Initializing Inverters")
     for serial, data in coordinator.data.items():
         model = data.get("Model")
+        currency = data.get("Currency")
         _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
         # This is done due to the limited data that inverters like the Storion-S5 support

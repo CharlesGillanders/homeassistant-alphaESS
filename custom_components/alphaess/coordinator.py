@@ -166,6 +166,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         "Self Sufficiency": await safe_get(_sumdata, "eselfSufficiency")
                     }
 
+                    inverterdata["Currency"] = await safe_get(_sumdata, "moneyType")
+
                     for key, value in self_data.items():
                         inverterdata[key] = value * 100 if value is not None else None
 
