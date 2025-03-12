@@ -711,3 +711,60 @@ DISCHARGE_AND_CHARGE_NUMBERS: List[AlphaESSNumberDescription] = [
         native_unit_of_measurement=PERCENTAGE,
     )
 ]
+
+EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSNumberDescription] = [
+
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.stopcharging,
+        name="Stop Charging",
+        icon="mdi:battery-off",
+        entity_category=EntityCategory.CONFIG,
+    ),
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.startcharging,
+        name="Start Charging",
+        icon="mdi:battery-plus",
+        entity_category=EntityCategory.CONFIG,
+    )
+
+]
+
+EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.evchargersn,
+        name="EV Charger S/N",
+        icon="mdi:ev-station",
+        native_unit_of_measurement=None,
+        state_class=None,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.evchargermodel,
+        name="EV Charger Model",
+        icon="mdi:ev-station",
+        native_unit_of_measurement=None,
+        state_class=None,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.evchargerstatusraw,
+        name="EV Charger Status Raw",
+        icon="mdi:ev-station",
+        native_unit_of_measurement=None,
+        state_class=None,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.evchargerstatus,
+        name="EV Charger Status",
+        icon="mdi:ev-station",
+        native_unit_of_measurement=None,
+        state_class=None,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.evcurrentsetting,
+        name="Household current setup",
+        icon="mdi:ev-station",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement="A",
+        state_class=None,
+    )
+
+]

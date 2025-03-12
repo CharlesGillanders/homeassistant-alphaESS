@@ -3,7 +3,7 @@
 ![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)
 
 
-Monitor your energy generation, storage, and usage data using the official Open API from Alpha ESS
+Monitor your energy generation, storage, usage data and electric vehicle using the official Open API from Alpha ESS
 
 ## AlphaESS OpenAPI
 
@@ -49,10 +49,12 @@ If you had previously been using this custom component in Home Assistant you wil
 
 
 ## Alpha ESS: GUI based Set Battery Charge/Discharge Times information<br>
+ 
+These settings will only use slot 1 for charging and discharging, while you are not able to modify slot 2 from this integration, you are able to view its current settings
 
-This is currently in early testing and comes with some caveats enforced by the OpenAPI and AlphaESS, This includes;
-- Charging can only be set once every 10 minutes 
-- Discharging can only be set once every 10 minutes
+Alpha has recently, and unannounced removed most of the restrictions around the POST API calls that can be made. The current restrictions are:
+- Charging can only be set once every 30s 
+- Discharging can only be set once every 30s 
 - The reset button calls both set Charging and set Discharging
 
 Some values are set by default, this includes 
@@ -62,9 +64,11 @@ Some values are set by default, this includes
 Setting the bathighcap and batusecap only save it to hass data (making it persistent across restarts)
 and will only be applied when the respective button (or the reset button) is pressed
 
-A error will be placed in the logs 
+An error will be placed in the logs 
 
 The current charge config, discharge config and charging range will only update once the API is re-called (can be up to 1 min)
+
+If you want to adjust the restrictions yourself, you are able to by modifying the `ALPHA_POST_REQUEST_RESTRICTION` varible in const.py to the amount of seconds allowed per call
 
 ## Issues with registering systems to the AlphaESS OpenAPI
 
@@ -76,6 +80,7 @@ If you are unable to register your system to the AlphaESS OpenAPI because you ar
 1. Access the current postman collection library for the AlphaESS OpenAPI [here](https://www.postman.com/poshy163/alphaess/collection/tsy43t1/alphaess-open-api?action=share&creator=11219653) (you will need to fork the collection)
 2. Clicking on the root of the list of API calls (should be called AlphaESS Open API) and then click on the variables tab and fill in your AppID, AppSecret, systemSN and CheckCode into the initial and current value fields. 
 3. Click on the getVerificationCode GET API call followed by the send button to send the request.  You should receive a verification code either in the response body or by email.
+
 
 
 ## Services

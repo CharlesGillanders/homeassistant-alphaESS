@@ -8,13 +8,13 @@ from homeassistant.components.sensor import (
 from homeassistant.const import CURRENCY_DOLLAR
 
 from .enums import AlphaESSNames
-from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS
+from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, EV_CHARGING_DETAILS
 
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST
+from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, ev_charger_states
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -22,8 +22,6 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Defer sensor setup to the shared sensor module."""
-
-    currency = hass.config.currency
 
     coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
@@ -36,9 +34,17 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in LIMITED_SENSOR_DESCRIPTIONS
     }
 
+    ev_charging_supported_states = {
+        description.key: description for description in EV_CHARGING_DETAILS
+    }
+
     _LOGGER.info(f"Initializing Inverters")
     for serial, data in coordinator.data.items():
         model = data.get("Model")
+        currency = data.get("Currency")
+        if currency is None:
+            currency = hass.config.currency
+
         _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
         # This is done due to the limited data that inverters like the Storion-S5 support
@@ -56,6 +62,19 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         coordinator, entry, serial, full_key_supported_states[description], currency
                     )
                 )
+
+        ev_charger = data.get("EV Charger S/N")
+
+        if ev_charger:
+            ev_model = data.get("EV Charger Model")
+            _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
+            for description in EV_CHARGING_DETAILS:
+                entities.append(
+                    AlphaESSSensor(
+                        coordinator, entry, serial, ev_charging_supported_states[description.key], currency, True
+                    )
+                )
+
     async_add_entities(entities)
 
     return
@@ -64,7 +83,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     """Alpha ESS Base Sensor."""
 
-    def __init__(self, coordinator, config, serial, key_supported_states, currency):
+    def __init__(self, coordinator, config, serial, key_supported_states, currency, ev_charger=False):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._config = config
@@ -84,7 +103,16 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
 
         for invertor in coordinator.data:
             serial = invertor.upper()
-            if self._serial == serial:
+            if ev_charger:
+                self._attr_device_info = DeviceInfo(
+                    entry_type=DeviceEntryType.SERVICE,
+                    identifiers={(DOMAIN, coordinator.data[invertor]["EV Charger S/N"])},
+                    manufacturer="AlphaESS",
+                    model=coordinator.data[invertor]["EV Charger Model"],
+                    model_id=coordinator.data[invertor]["EV Charger S/N"],
+                    name=f"Alpha ESS Charger : {coordinator.data[invertor]["EV Charger S/N"]}",
+                )
+            elif self._serial == serial:
                 self._attr_device_info = DeviceInfo(
                     entry_type=DeviceEntryType.SERVICE,
                     identifiers={(DOMAIN, serial)},
@@ -102,7 +130,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return f"{self._serial}_{self._name}"
+        return f"{self._name}"
 
     @property
     def native_value(self):
@@ -111,12 +139,16 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             AlphaESSNames.DischargeTime1,
             AlphaESSNames.ChargeTime1,
             AlphaESSNames.DischargeTime2,
+            AlphaESSNames.DischargeTime2,
             AlphaESSNames.ChargeTime2
         }
 
         if self._key in keys:
             time_value = str(self._name.split()[-1])
             return self.get_time(self._name, time_value)
+
+        if self._key == AlphaESSNames.evchargerstatus:
+            return ev_charger_states.get(self._coordinator.data[self._serial][self._name], "Unknown state")
 
         if self._key == AlphaESSNames.ChargeRange:
             return self.get_charge()

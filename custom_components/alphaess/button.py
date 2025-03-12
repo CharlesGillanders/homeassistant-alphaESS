@@ -7,7 +7,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import AlphaESSDataUpdateCoordinator
 from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION, INVERTER_SETTING_BLACKLIST
-from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
+from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS, EV_DISCHARGE_AND_CHARGE_BUTTONS
 from .enums import AlphaESSNames
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -38,6 +38,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
     }
 
+    ev_charging_supported_states = {
+        description.key: description for description in EV_DISCHARGE_AND_CHARGE_BUTTONS
+    }
+
     for serial, data in coordinator.data.items():
         model = data.get("Model")
         if model not in INVERTER_SETTING_BLACKLIST:
@@ -45,27 +49,50 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 button_entities.append(
                     AlphaESSBatteryButton(coordinator, entry, serial, full_button_supported_states[description]))
 
+        ev_charger = data.get("EV Charger S/N")
+        if ev_charger:
+            for description in ev_charging_supported_states:
+                button_entities.append(
+                    AlphaESSBatteryButton(
+                        coordinator, entry, serial, ev_charging_supported_states[description], True
+                    )
+                )
+
     async_add_entities(button_entities)
 
 
 class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
-    def __init__(self, coordinator, config, serial, key_supported_states):
+    def __init__(self, coordinator, config, serial, key_supported_states, ev_charger=False):
         super().__init__(coordinator)
         self._serial = serial
         self._coordinator = coordinator
         self._name = key_supported_states.name
         self._key = key_supported_states.key
-        self._movement_state = self.name.split()[-1]
+        if not ev_charger:
+            self._movement_state = self.name.split()[-1]
+
         self._icon = key_supported_states.icon
         self._entity_category = key_supported_states.entity_category
         self._config = config
+
         if self._key != AlphaESSNames.ButtonRechargeConfig:
-            self._time = int(self._name.split()[0])
+            if not ev_charger:
+                self._time = int(self._name.split()[0])
 
         for invertor in coordinator.data:
             serial = invertor.upper()
-            if self._serial == serial:
+            if ev_charger:
+                self._ev_serial = coordinator.data[invertor]["EV Charger S/N"]
+                self._attr_device_info = DeviceInfo(
+                    entry_type=DeviceEntryType.SERVICE,
+                    identifiers={(DOMAIN, coordinator.data[invertor]["EV Charger S/N"])},
+                    manufacturer="AlphaESS",
+                    model=coordinator.data[invertor]["EV Charger Model"],
+                    model_id=coordinator.data[invertor]["EV Charger S/N"],
+                    name=f"Alpha ESS Charger : {coordinator.data[invertor]["EV Charger S/N"]}",
+                )
+            elif self._serial == serial:
                 self._attr_device_info = DeviceInfo(
                     entry_type=DeviceEntryType.SERVICE,
                     identifiers={(DOMAIN, serial)},
@@ -76,6 +103,17 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 )
 
     async def async_press(self) -> None:
+
+        if self._key == AlphaESSNames.stopcharging:
+            _LOGGER.info("Stopped charging")
+            self._movement_state = None
+            await self._coordinator.Control_EV(self._serial, self._ev_serial, 0)
+
+        if self._key == AlphaESSNames.startcharging:
+            _LOGGER.info("started charging")
+            self._movement_state = None
+            await self._coordinator.Control_EV(self._serial, self._ev_serial, 1)
+
         global last_discharge_update
         global last_charge_update
 
@@ -90,7 +128,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 minutes, seconds = divmod(remaining_time.total_seconds(), 60)
 
                 await create_persistent_notification(self.hass,
-                                                     message=f"Has not been {ALPHA_POST_REQUEST_RESTRICTION.total_seconds() // 60} minutes since the last call. Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
+                                                     message=f"HPlease wait {int(minutes)} minutes and {int(seconds)} seconds.",
                                                      title=f"{self._serial} cannot call {movement_direction}")
 
             return last_update_dict
@@ -132,7 +170,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
     @property
     def name(self):
-        return f"{self._serial}_{self._name}"
+        return f"{self._name}"
 
     @property
     def icon(self):

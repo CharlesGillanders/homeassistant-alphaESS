@@ -72,6 +72,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             self.LOCAL_INVERTER_COUNT = self.inverter_count
 
+    async def Control_EV(self, serial, ev_serial, direction):
+        return_data = await self.api.remoteControlEvCharger(serial, ev_serial, direction)
+        _LOGGER.info(f"Control EV Charger: {ev_serial} for serial: {serial} Direction: {direction}")
+        _LOGGER.info(return_data)
+
     async def reset_config(self, serial):
         batUseCap = self.hass.data[DOMAIN][serial].get("batUseCap", 10)
         batHighCap = self.hass.data[DOMAIN][serial].get("batHighCap", 90)
@@ -116,7 +121,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         """Update data via library."""
         try:
-            jsondata = await self.api.getdata(self.has_throttle, THROTTLE_MULTIPLIER * self.LOCAL_INVERTER_COUNT)
+            jsondata = await self.api.getdata(True, True, THROTTLE_MULTIPLIER * self.LOCAL_INVERTER_COUNT)
             if jsondata is not None:
                 for invertor in jsondata:
 
@@ -128,9 +133,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     if invertor.get("mbat") is not None:
                         inverterdata["Battery Model"] = await process_value(invertor.get("mbat"))
 
-                    inverterdata["Inverter nominal Power"] =  await process_value(invertor.get("poinv"))
+                    inverterdata["Inverter nominal Power"] = await process_value(invertor.get("poinv"))
                     inverterdata["Pv nominal Power"] = await process_value(invertor.get("popv"))
-
 
                     inverterdata["EMS Status"] = await process_value(invertor.get("emsStatus"))
                     inverterdata["Maximum Battery Capacity"] = await process_value(invertor.get("usCapacity"))
@@ -141,6 +145,17 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     _onedateenergy = invertor.get("OneDateEnergy", {})
                     _powerdata = invertor.get("LastPower", {})
                     _onedatepower = invertor.get("OneDayPower", {})
+                    _evdata = invertor.get("EVData", {})
+
+                    if _evdata:
+                        _evdata = _evdata[0]
+                        inverterdata["EV Charger S/N"] = await safe_get(_evdata, "evchargerSn")
+                        inverterdata["EV Charger Model"] = await safe_get(_evdata, "evchargerModel")
+                        _evstatus = invertor.get("EVStatus", {})
+                        inverterdata["EV Charger Status"] = await safe_get(_evstatus, "evchargerStatus")
+                        inverterdata["EV Charger Status Raw"] = await safe_get(_evstatus, "evchargerStatus")
+                        _evcurrent = invertor.get("EVCurrent", {})
+                        inverterdata["Household current setup"] = await safe_get(_evcurrent, "currentsetting")
 
                     inverterdata["Total Load"] = await safe_get(_sumdata, "eload")
                     inverterdata["Total Income"] = await safe_get(_sumdata, "totalIncome")
@@ -150,6 +165,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         "Self Consumption": await safe_get(_sumdata, "eselfConsumption"),
                         "Self Sufficiency": await safe_get(_sumdata, "eselfSufficiency")
                     }
+
+                    inverterdata["Currency"] = await safe_get(_sumdata, "moneyType")
 
                     for key, value in self_data.items():
                         inverterdata[key] = value * 100 if value is not None else None
