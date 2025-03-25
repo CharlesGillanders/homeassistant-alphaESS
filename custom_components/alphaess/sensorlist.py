@@ -177,7 +177,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         icon="mdi:cash-multiple",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.SelfConsumption,
@@ -185,7 +185,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
-        state_class=SensorStateClass.TOTAL,
+        state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
@@ -193,7 +193,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
-        state_class=SensorStateClass.TOTAL,
+        state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.EmsStatus,
@@ -459,7 +459,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         icon="mdi:cash-multiple",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.SelfConsumption,
@@ -467,7 +467,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
-        state_class=SensorStateClass.TOTAL,
+        state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
@@ -475,7 +475,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.POWER_FACTOR,
-        state_class=SensorStateClass.TOTAL,
+        state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.EmsStatus,
