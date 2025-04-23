@@ -70,3 +70,5 @@ class AlphaESSNames(str, Enum):
     evcurrentsetting = "Household current setup"
     startcharging = "Start Charging"
     stopcharging = "Stop Charging"
+    treePlanted = "Trees Planted"
+    carbonReduction = "Co2 Reduction"

@@ -4,7 +4,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR, EntityCategory
+from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR, EntityCategory, UnitOfMass
 
 from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription, AlphaESSNumberDescription
 from .enums import AlphaESSNames
@@ -364,8 +364,22 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:flash",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.carbonReduction,
+        name="Co2 Reduction",
+        native_unit_of_measurement=UnitOfMass.KILOGRAMS,
+        device_class=SensorDeviceClass.WEIGHT,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:molecule-co2",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.treePlanted,
+        name="Trees Planted",
+        native_unit_of_measurement=None,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:tree",
     )
-
 ]
 
 LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -646,6 +660,21 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:flash",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.carbonReduction,
+        name="Carbon Reduction",
+        native_unit_of_measurement=UnitOfMass.KILOGRAMS,
+        device_class=SensorDeviceClass.WEIGHT,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:molecule-co2",
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.treePlanted,
+        name="Trees Planted",
+        native_unit_of_measurement=None,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:tree",
     )
 ]
 
