@@ -81,7 +81,19 @@ If you are unable to register your system to the AlphaESS OpenAPI because you ar
 2. Clicking on the root of the list of API calls (should be called AlphaESS Open API) and then click on the variables tab and fill in your AppID, AppSecret, systemSN and CheckCode into the initial and current value fields. 
 3. Click on the getVerificationCode GET API call followed by the send button to send the request.  You should receive a verification code either in the response body or by email.
 
+### Issue: Entities becoming unavailable/not working and/or defaulting to 0
 
+Newer AlphaESS Inverters have a firmware that can introduce incompatibilities with the current iteration of the integration. This new inverters has caused issues with the API calls that are currently supported and the data currently sent.
+
+If you would like to help improve it for your specie inverter, please open an issue with the following information:
+
+Use the postman collection found [here](https://github.com/CharlesGillanders/alphaess-openAPI/blob/main/AlphaESS%20Open%20API.postman_collection.json) you will need an account here: https://www.postman.com/
+
+In the variables tab you need to edit the Initial Value and Current Value fields for AppID, AppSecret, and SysSN. (found within the openAPI developer portal) and the AppID and AppSecret from https://open.alphaess.com/
+
+The SysSN is the serial number of your invertor and the AppID and AppSecret are your AppID and AppSecret from https://open.alphaess.com/, once you have set all three variables in both current and initial value hit the save button.
+
+Then you should run each of the API calls in turn - one after the other and paste the results here, removing your SysSN for confidentiality.
 
 ## Services
 
