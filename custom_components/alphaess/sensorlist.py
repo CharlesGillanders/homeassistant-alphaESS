@@ -784,6 +784,7 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
         key=AlphaESSNames.evchargerstatus,
         name="EV Charger Status",
         icon="mdi:ev-station",
+        device_class="enum",
         native_unit_of_measurement=None,
         state_class=None,
     ),
