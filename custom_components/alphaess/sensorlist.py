@@ -243,7 +243,7 @@ SYSTEM_STATUS_SENSORS = [
         "mdi:lightning-bolt",
         UnitOfEnergy.KILO_WATT_HOUR,
         SensorDeviceClass.ENERGY,
-        SensorStateClass.MEASUREMENT
+        SensorStateClass.TOTAL
 
     ),
     _create_diagnostic_sensor(
@@ -252,7 +252,7 @@ SYSTEM_STATUS_SENSORS = [
         "mdi:lightning-bolt",
         UnitOfEnergy.KILO_WATT_HOUR,
         SensorDeviceClass.ENERGY,
-        SensorStateClass.MEASUREMENT
+        SensorStateClass.TOTAL
     ),
 
     # Environmental impact
