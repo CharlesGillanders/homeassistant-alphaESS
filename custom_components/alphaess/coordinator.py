@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
 import aiohttp
-from alphaess import alphaess
+from .alphaesstesting import alphaess
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -223,7 +223,7 @@ class InverterDataParser:
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
 
-    def __init__(self, hass: HomeAssistant, client: alphaess.alphaess) -> None:
+    def __init__(self, hass: HomeAssistant, client: alphaess) -> None:
         """Initialize coordinator."""
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = client
@@ -318,7 +318,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
             if jsondata is None:
                 return self.data
-
             for invertor in jsondata:
                 serial = invertor.get("sysSn")
                 if not serial:
@@ -328,12 +327,33 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 inverter_data = await self._parse_inverter_data(invertor)
                 self.data[serial] = inverter_data
 
+                local_ip_data = next((item for item in jsondata if item.get("type") == "local_ip_data"), None)
+
+                if local_ip_data:
+                    self.data["local_ip_info"] = await self._parse_local_ip_data(local_ip_data)
+
             return self.data
 
         except (aiohttp.ClientConnectorError, aiohttp.ClientResponseError) as error:
             _LOGGER.error(f"Error fetching data: {error}")
             self.data = None
             return self.data
+
+    @staticmethod
+    async def _parse_local_ip_data(local_ip_data: dict) -> dict:
+        """Parse the local_ip_data dictionary and return relevant info."""
+        data = {}
+
+        device_info = local_ip_data.get("device_info", {})
+        status = local_ip_data.get("status", {})
+
+        data["Local IP"] = local_ip_data.get("ip")
+        data["Cloud Connection Status"] = status.get("serverstatus")
+        data["Software Version"] = device_info.get("sw")
+        data["Serial Number"] = device_info.get("sn")
+        data["Hardware Version"] = device_info.get("hw")
+
+        return data
 
     async def _parse_inverter_data(self, invertor: Dict) -> Dict[str, Any]:
         """Parse all data for a single inverter."""

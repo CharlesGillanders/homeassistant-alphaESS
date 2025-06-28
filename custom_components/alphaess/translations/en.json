@@ -6,7 +6,8 @@
         "description": "Enter your AppID amd AppSecret from the AlphaESS OpenAPI developer portal \n \n If you have any issues with the OpenAPI, read a list of potential fixes [here](https://github.com/CharlesGillanders/homeassistant-alphaESS?tab=readme-ov-file#issues-with-registering-systems-to-the-alphaess-openapi)",
         "data": {
           "AppID": "AppID",
-          "AppSecret": "AppSecret"
+          "AppSecret": "AppSecret",
+          "IPAddress": "IP Address (optional, for local API access)"
         }
       }
     },
@@ -17,6 +18,15 @@
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
       "unknown": "Unexpected error"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "IPAddress": "IP Address (for local API access)"
+        }
+      }
     }
   },
   "entity": {

@@ -9,7 +9,8 @@ from homeassistant.const import CURRENCY_DOLLAR
 from homeassistant.helpers.typing import StateType
 
 from .enums import AlphaESSNames
-from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, EV_CHARGING_DETAILS
+from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, EV_CHARGING_DETAILS, \
+    LOCAL_IP_SYSTEM_SENSORS
 
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
@@ -47,6 +48,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
         _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
+        has_local_ip_data = 'Local IP' in data
+
         # This is done due to the limited data that inverters like the Storion-S5 support
         if model in LIMITED_INVERTER_SENSOR_LIST:
             for description in limited_key_supported_states:
@@ -72,6 +75,19 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 entities.append(
                     AlphaESSSensor(
                         coordinator, entry, serial, ev_charging_supported_states[description.key], currency, True
+                    )
+                )
+
+        if has_local_ip_data:
+            _LOGGER.info(f"New local IP system sensor for {serial}")
+            for description in LOCAL_IP_SYSTEM_SENSORS:
+                entities.append(
+                    AlphaESSSensor(
+                        coordinator,
+                        entry,
+                        serial,
+                        ev_charging_supported_states[description.key],
+                        currency
                     )
                 )
 

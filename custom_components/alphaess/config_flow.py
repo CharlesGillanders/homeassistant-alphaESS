@@ -5,26 +5,27 @@ import asyncio
 from typing import Any
 
 import aiohttp
-from alphaess import alphaess
+from .alphaesstesting import alphaess
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN, add_inverter_to_list, increment_inverter_count
 
-
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {vol.Required("AppID", description={"AppID"}): str, vol.Required("AppSecret", description={"AppSecret"}): str}
-)
+STEP_USER_DATA_SCHEMA = vol.Schema({
+    vol.Required("AppID", description="AppID"): str,
+    vol.Required("AppSecret", description="AppSecret"): str,
+    vol.Optional("IPAddress", default=None): str
+})
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
 
-    client = alphaess.alphaess(data["AppID"], data["AppSecret"])
+    client = alphaess(data["AppID"], data["AppSecret"], ipaddress=data["IPAddress"])
 
     try:
         await client.authenticate()
@@ -56,7 +57,7 @@ class AlphaESSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
+            self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
 
@@ -73,12 +74,19 @@ class AlphaESSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
 
             return self.async_create_entry(
-                    title=user_input["AppID"], data=user_input
+                title=user_input["AppID"], data=user_input
             )
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> AlphaESSOptionsFlowHandler:
+        return AlphaESSOptionsFlowHandler(config_entry)
 
 
 class InvalidAuth(HomeAssistantError):
@@ -87,3 +95,28 @@ class InvalidAuth(HomeAssistantError):
 
 class CannotConnect(HomeAssistantError):
     """Error to indicate there is a problem connecting."""
+
+
+class AlphaESSOptionsFlowHandler(config_entries.OptionsFlow):
+    """AlphaESS options flow."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry):
+        self._config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        schema = {
+            vol.Optional(
+                "IPAddress",
+                default=self._config_entry.options.get(
+                    "IPAddress",
+                    self._config_entry.data.get("IPAddress", ""),
+                ),
+            ): str
+        }
+
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))

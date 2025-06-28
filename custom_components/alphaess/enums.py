@@ -72,3 +72,8 @@ class AlphaESSNames(str, Enum):
     stopcharging = "Stop Charging"
     treePlanted = "Trees Planted"
     carbonReduction = "Co2 Reduction"
+    softwareVersion = "Software Version"
+    serialNumber = "Serial Number"
+    localIP = "Local IP"
+    hardwareVersion = "Hardware Version"
+    cloudConnectionStaus = "Cloud Connection Status"

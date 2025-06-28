@@ -5,8 +5,7 @@ This module defines all sensor, button, and number entity descriptions for the A
 Sensors are organized by category and access level (full vs limited API access).
 """
 
-from typing import List, Dict, Set
-from dataclasses import dataclass
+from typing import List
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -190,6 +189,44 @@ BATTERY_SENSORS = [
         AlphaESSNames.mbat,
         "Battery Model",
         "mdi:battery-heart-variant"
+    ),
+]
+
+# ============================================================================
+# LOCAL IP SENSORS
+# ============================================================================
+
+LOCAL_IP_SYSTEM_SENSORS = [
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.softwareVersion,
+        name="software Version",
+        icon="mdi:diversify",
+        device_class=SensorDeviceClass.ENUM,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.localIP,
+        name="IP Address",
+        icon="mdi:ip-network",
+        device_class=SensorDeviceClass.ENUM,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.hardwareVersion,
+        name="Hardware Version",
+        icon="mdi:wrench",
+        device_class=SensorDeviceClass.ENUM,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.cloudConnectionStaus,
+        name="Cloud Connection Status",
+        icon="mdi:cloud-cog",
+        native_unit_of_measurement=None,
+        state_class=None,
     ),
 ]
 
