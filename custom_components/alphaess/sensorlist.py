@@ -60,7 +60,8 @@ def _create_power_sensor(key: AlphaESSNames, name: str,
 
 def _create_diagnostic_sensor(key: AlphaESSNames, name: str, icon: str,
                               unit: str = None,
-                              device_class: str = None) -> AlphaESSSensorDescription:
+                              device_class: str = None,
+                              state_class: SensorStateClass = None) -> AlphaESSSensorDescription:
     """Helper to create diagnostic sensors."""
     return AlphaESSSensorDescription(
         key=key,
@@ -68,7 +69,7 @@ def _create_diagnostic_sensor(key: AlphaESSNames, name: str, icon: str,
         icon=icon,
         native_unit_of_measurement=unit,
         device_class=device_class,
-        state_class=None,
+        state_class=state_class,
         entity_category=EntityCategory.DIAGNOSTIC,
     )
 
@@ -164,21 +165,24 @@ BATTERY_SENSORS = [
         AlphaESSNames.usCapacity,
         "Maximum Battery Capacity",
         "mdi:home-percent",
-        PERCENTAGE
+        PERCENTAGE,
+        state_class=SensorStateClass.TOTAL
     ),
     _create_diagnostic_sensor(
         AlphaESSNames.cobat,
         "Installed Capacity",
         "mdi:battery-heart-variant",
         UnitOfEnergy.KILO_WATT_HOUR,
-        SensorDeviceClass.ENERGY
+        SensorDeviceClass.ENERGY,
+        SensorStateClass.TOTAL
     ),
     _create_diagnostic_sensor(
         AlphaESSNames.surplusCobat,
         "Current Capacity",
         "mdi:battery-heart-variant",
         UnitOfEnergy.KILO_WATT_HOUR,
-        SensorDeviceClass.ENERGY
+        SensorDeviceClass.ENERGY,
+        SensorStateClass.TOTAL
     ),
 
     # Battery model
@@ -223,11 +227,13 @@ SYSTEM_STATUS_SENSORS = [
     ),
 
     # System status
-    _create_diagnostic_sensor(
-        AlphaESSNames.EmsStatus,
-        "EMS Status",
-        "mdi:home-battery",
-        device_class=SensorDeviceClass.ENUM
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.EmsStatus,
+        name="EMS Status",
+        icon="mdi:home-battery",
+        device_class=SensorDeviceClass.ENUM,
+        state_class=None,  # ENUM sensors cannot have a state_class
+        entity_category=EntityCategory.DIAGNOSTIC
     ),
 
     # System specs
