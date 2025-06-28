@@ -242,14 +242,17 @@ SYSTEM_STATUS_SENSORS = [
         "Inverter nominal Power",
         "mdi:lightning-bolt",
         UnitOfEnergy.KILO_WATT_HOUR,
-        SensorDeviceClass.ENERGY
+        SensorDeviceClass.ENERGY,
+        SensorStateClass.MEASUREMENT
+
     ),
     _create_diagnostic_sensor(
         AlphaESSNames.popv,
         "Pv nominal Power",
         "mdi:lightning-bolt",
         UnitOfEnergy.KILO_WATT_HOUR,
-        SensorDeviceClass.ENERGY
+        SensorDeviceClass.ENERGY,
+        SensorStateClass.MEASUREMENT
     ),
 
     # Environmental impact
