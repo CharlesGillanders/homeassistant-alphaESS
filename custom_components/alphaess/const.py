@@ -39,16 +39,15 @@ If you have any issues with this you need to open an issue here:
 -------------------------------------------------------------------
 """
 
-ev_charger_states = {
-    1: "Available (not plugged in)",
-    2: "Preparing (plugged in and not activated)",
-    3: "Charging (charging with power output)",
-    4: "SuspendedEVSE (already started but no available power)",
-    5: "SuspendedEV (waiting for the car to respond)",
-    6: "Finishing (actively stopping charging)",
-    9: "Faulted (pile failure)"
+EV_CHARGER_STATE_KEYS = {
+    1: "available",
+    2: "preparing",
+    3: "charging",
+    4: "suspended_evse",
+    5: "suspended_ev",
+    6: "finishing",
+    9: "faulted"
 }
-
 
 def increment_inverter_count():
     global INVERTER_COUNT

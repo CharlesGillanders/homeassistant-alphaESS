@@ -6,6 +6,7 @@ from homeassistant.components.sensor import (
     SensorEntity
 )
 from homeassistant.const import CURRENCY_DOLLAR
+from homeassistant.helpers.typing import StateType
 
 from .enums import AlphaESSNames
 from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, EV_CHARGING_DETAILS
@@ -13,7 +14,7 @@ from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, E
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, ev_charger_states
+from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -132,27 +133,21 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         return f"{self._name}"
 
     @property
-    def native_value(self):
-        """Return the state of the resources."""
-        keys = {
-            AlphaESSNames.DischargeTime1,
-            AlphaESSNames.ChargeTime1,
-            AlphaESSNames.DischargeTime2,
-            AlphaESSNames.DischargeTime2,
-            AlphaESSNames.ChargeTime2
-        }
-
-        if self._key in keys:
-            time_value = str(self._name.split()[-1])
-            return self.get_time(self._name, time_value)
+    def native_value(self) -> StateType:
+        """Return the value of the sensor."""
+        if self._coordinator.data is None:
+            return None
 
         if self._key == AlphaESSNames.evchargerstatus:
-            return ev_charger_states.get(self._coordinator.data[self._serial][self._name], "Unknown state")
+            raw_state = self._coordinator.data.get(self._serial, {}).get(self._name)
 
-        if self._key == AlphaESSNames.ChargeRange:
-            return self.get_charge()
+            if raw_state is None:
+                return None
 
-        return self._coordinator.data[self._serial][self._name]
+            return EV_CHARGER_STATE_KEYS.get(raw_state, "unknown")
+
+        # Normal sensor handling
+        return self._coordinator.data.get(self._serial, {}).get(self._name)
 
     @property
     def native_unit_of_measurement(self):
@@ -163,6 +158,22 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     def device_class(self):
         """Return the device_class of the sensor."""
         return self._device_class
+
+    @property
+    def options(self) -> list[str] | None:
+        """Return the list of possible options for enum sensors."""
+        if self._key == AlphaESSNames.evchargerstatus:
+            return ["available", "preparing", "charging", "suspended_evse",
+                    "suspended_ev", "finishing", "faulted", "unknown"]
+
+        return None
+
+    @property
+    def translation_key(self) -> str | None:
+        """Return the translation key."""
+        if self._key == AlphaESSNames.evchargerstatus:
+            return "ev_charger_status"
+        return None
 
     @property
     def state_class(self):

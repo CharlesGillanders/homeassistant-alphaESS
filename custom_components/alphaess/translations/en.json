@@ -1,22 +1,39 @@
-{	    
-	"title": "Alpha ESS",
-    "config": {
-        "step": {
-            "user": {
-				"description": "Enter your AppID amd AppSecret from the AlphaESS OpenAPI developer portal \n \n If you have any issues with the OpenAPI, read a list of potential fixes [here](https://github.com/CharlesGillanders/homeassistant-alphaESS?tab=readme-ov-file#issues-with-registering-systems-to-the-alphaess-openapi)",
-                "data": {
-                    "AppID": "AppID",
-                    "AppSecret": "AppSecret"
-                }
-            }
-        },
-		"abort": {
-            "already_configured": "Account is already configured"
-        },
-        "error": {
-            "cannot_connect": "Failed to connect",
-            "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
+{
+  "title": "Alpha ESS",
+  "config": {
+    "step": {
+      "user": {
+        "description": "Enter your AppID amd AppSecret from the AlphaESS OpenAPI developer portal \n \n If you have any issues with the OpenAPI, read a list of potential fixes [here](https://github.com/CharlesGillanders/homeassistant-alphaESS?tab=readme-ov-file#issues-with-registering-systems-to-the-alphaess-openapi)",
+        "data": {
+          "AppID": "AppID",
+          "AppSecret": "AppSecret"
         }
+      }
+    },
+    "abort": {
+      "already_configured": "Account is already configured"
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid authentication",
+      "unknown": "Unexpected error"
     }
+  },
+  "entity": {
+    "sensor": {
+      "ev_charger_status": {
+        "name": "EV Charger Status",
+        "state": {
+          "available": "Available (not plugged in)",
+          "preparing": "Preparing (plugged in)",
+          "charging": "Charging",
+          "suspended_evse": "Suspended by EVSE",
+          "suspended_ev": "Suspended by EV",
+          "finishing": "Finishing",
+          "faulted": "Faulted",
+          "unknown": "Unknown"
+        }
+      }
+    }
+  }
 }
