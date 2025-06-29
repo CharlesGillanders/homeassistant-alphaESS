@@ -18,7 +18,7 @@ from .const import DOMAIN, add_inverter_to_list, increment_inverter_count
 STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required("AppID", description="AppID"): str,
     vol.Required("AppSecret", description="AppSecret"): str,
-    vol.Optional("IPAddress", default=None): str
+    vol.Optional("IPAddress", default=None): vol.Any(None, str)
 })
 
 
