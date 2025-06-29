@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
 import aiohttp
-from .alphaesstesting import alphaess
+from alphaess import alphaess
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -289,7 +289,7 @@ class InverterDataParser:
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
 
-    def __init__(self, hass: HomeAssistant, client: alphaess) -> None:
+    def __init__(self, hass: HomeAssistant, client: alphaess.alphaess) -> None:
         """Initialize coordinator."""
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = client

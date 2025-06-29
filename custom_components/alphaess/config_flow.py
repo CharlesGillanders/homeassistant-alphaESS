@@ -5,7 +5,7 @@ import asyncio
 from typing import Any
 
 import aiohttp
-from .alphaesstesting import alphaess
+from alphaess import alphaess
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -25,7 +25,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
 
-    client = alphaess(data["AppID"], data["AppSecret"], ipaddress=data["IPAddress"])
+    client = alphaess.alphaess(data["AppID"], data["AppSecret"], ipaddress=data["IPAddress"])
 
     try:
         await client.authenticate()

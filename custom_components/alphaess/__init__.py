@@ -5,7 +5,7 @@ import asyncio
 
 import voluptuous as vol
 
-from .alphaesstesting import alphaess
+from alphaess import alphaess
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -45,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     ip_address = entry.options.get("IPAddress", entry.data.get("IPAddress"))
 
-    client = alphaess(entry.data["AppID"], entry.data["AppSecret"], ipaddress=ip_address)
+    client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"], ipaddress=ip_address)
 
     ESSList = await client.getESSList()
     for unit in ESSList:
