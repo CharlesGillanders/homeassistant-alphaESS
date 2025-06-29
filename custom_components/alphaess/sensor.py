@@ -58,14 +58,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             for description in limited_key_supported_states:
                 entities.append(
                     AlphaESSSensor(
-                        coordinator, entry, serial, limited_key_supported_states[description], currency
+                        coordinator, entry, serial, limited_key_supported_states[description], currency, has_local_connection=has_local_ip_data
                     )
                 )
         else:
             for description in full_key_supported_states:
                 entities.append(
                     AlphaESSSensor(
-                        coordinator, entry, serial, full_key_supported_states[description], currency
+                        coordinator, entry, serial, full_key_supported_states[description], currency, has_local_connection=has_local_ip_data
                     )
                 )
 
@@ -77,7 +77,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             for description in EV_CHARGING_DETAILS:
                 entities.append(
                     AlphaESSSensor(
-                        coordinator, entry, serial, ev_charging_supported_states[description.key], currency, True
+                        coordinator, entry, serial, ev_charging_supported_states[description.key], currency, True, has_local_connection=has_local_ip_data
                     )
                 )
 
@@ -90,7 +90,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         entry,
                         serial,
                         local_ip_supported_states[description.key],
-                        currency
+                        currency,
+                        has_local_connection=has_local_ip_data
                     )
                 )
 
@@ -102,7 +103,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     """Alpha ESS Base Sensor."""
 
-    def __init__(self, coordinator, config, serial, key_supported_states, currency, ev_charger=False):
+    def __init__(self, coordinator, config, serial, key_supported_states, currency, ev_charger=False, has_local_connection=False):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._config = config
@@ -131,6 +132,19 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     model_id=coordinator.data[invertor]["EV Charger S/N"],
                     name=f"Alpha ESS Charger : {coordinator.data[invertor]["EV Charger S/N"]}",
                 )
+            elif "Local IP" in coordinator.data[invertor]:
+                self._attr_device_info = DeviceInfo(
+                    entry_type=DeviceEntryType.SERVICE,
+                    identifiers={(DOMAIN, serial)},
+                    serial_number=coordinator.data[invertor]["Device Serial Number"],
+                    sw_version=coordinator.data[invertor]["Software Version"],
+                    hw_version=coordinator.data[invertor]["Hardware Version"],
+                    manufacturer="AlphaESS",
+                    model=coordinator.data[invertor]["Model"],
+                    model_id=self._serial,
+                    name=f"Alpha ESS Energy Statistics LOCAL : {serial}",
+                    configuration_url=f"http://{coordinator.data[invertor]["Local IP"]}"
+                )
             elif self._serial == serial:
                 self._attr_device_info = DeviceInfo(
                     entry_type=DeviceEntryType.SERVICE,
@@ -140,6 +154,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     model_id=self._serial,
                     name=f"Alpha ESS Energy Statistics : {serial}",
                 )
+
 
     @property
     def unique_id(self):

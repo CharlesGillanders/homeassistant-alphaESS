@@ -814,7 +814,6 @@ LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        device_class=SensorDeviceClass.ENUM,
     ),
 ]
 
