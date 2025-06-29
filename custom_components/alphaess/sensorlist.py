@@ -279,7 +279,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         key=AlphaESSNames.poinv,
         name="Inverter nominal Power",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=None,
+        state_class=SensorStateClass.TOTAL,
         device_class=SensorDeviceClass.ENERGY,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
@@ -288,7 +288,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         key=AlphaESSNames.popv,
         name="Pv nominal Power",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=None,
+        state_class=SensorStateClass.TOTAL,
         device_class=SensorDeviceClass.ENERGY,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
@@ -758,6 +758,65 @@ EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSNumberDescription] = [
 
 ]
 
+LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.localIP,
+        name="Local IP",
+        icon="mdi:ip-network",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.wifiStatus,
+        name="WiFi Status",
+        icon="mdi:wifi",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.connectedSSID,
+        name="Connected SSID",
+        icon="mdi:wifi",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.softwareVersion,
+        name="Software Version",
+        icon="mdi:package-variant",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.hardwareVersion,
+        name="Hardware Version",
+        icon="mdi:chip",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.deviceSerialNumber,
+        name="Device Serial Number",
+        icon="mdi:identifier",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.cloudConnectionStatus,
+        name="Cloud Connection Status",
+        icon="mdi:cloud-check",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+]
+
 EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.evchargersn,
@@ -798,3 +857,4 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
     )
 
 ]
+
