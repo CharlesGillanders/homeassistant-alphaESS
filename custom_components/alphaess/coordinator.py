@@ -112,6 +112,35 @@ class InverterDataParser:
             "Household current setup": await self.dp.safe_get(ev_current, "currentsetting"),
         }
 
+    async def parse_local_ip_data(self, local_ip_data: Dict) -> Dict[str, Any]:
+        """Parse local IP system data."""
+        if not local_ip_data:
+            return {}
+
+        status = local_ip_data.get("status", {})
+        device_info = local_ip_data.get("device_info", {})
+
+        return {
+            "Local IP": local_ip_data.get("ip"),
+            "Device Status": await self.dp.safe_get(status, "devstatus"),
+            "Server Status": await self.dp.safe_get(status, "serverstatus"),
+            "WiFi Status": await self.dp.safe_get(status, "wifistatus"),
+            "Connected SSID": await self.dp.safe_get(status, "connssid"),
+            "WiFi DHCP": await self.dp.safe_get(status, "wifidhcp"),
+            "WiFi IP": await self.dp.safe_get(status, "wifiip"),
+            "WiFi Mask": await self.dp.safe_get(status, "wifimask"),
+            "WiFi Gateway": await self.dp.safe_get(status, "wifigateway"),
+            "Serial Number": await self.dp.safe_get(device_info, "sn"),
+            "Device Key": await self.dp.safe_get(device_info, "key"),
+            "Hardware Version": await self.dp.safe_get(device_info, "hw"),
+            "Software Version": await self.dp.safe_get(device_info, "sw"),
+            "APN": await self.dp.safe_get(device_info, "apn"),
+            "Username": await self.dp.safe_get(device_info, "username"),
+            "Password": await self.dp.safe_get(device_info, "password"),
+            "Ethernet Module": await self.dp.safe_get(device_info, "ethmoudle"),
+            "4G Module": await self.dp.safe_get(device_info, "g4moudle"),
+        }
+
     async def parse_summary_data(self, sum_data: Dict) -> Dict[str, Any]:
         """Parse summary statistics."""
         data = {
@@ -123,11 +152,12 @@ class InverterDataParser:
             "Currency": await self.dp.safe_get(sum_data, "moneyType"),
         }
 
-        # Convert percentages
-        for key in ["eselfConsumption", "eselfSufficiency"]:
-            value = await self.dp.safe_get(sum_data, key)
-            readable_key = key.replace("e", "").replace("selfC", "Self C").replace("selfS", "Self S")
-            data[readable_key] = value * 100 if value is not None else None
+        # Handle self consumption and sufficiency correctly
+        self_consumption = await self.dp.safe_get(sum_data, "eselfConsumption")
+        self_sufficiency = await self.dp.safe_get(sum_data, "eselfSufficiency")
+
+        data["Self Consumption"] = self_consumption * 100 if self_consumption is not None else None
+        data["Self Sufficiency"] = self_sufficiency * 100 if self_sufficiency is not None else None
 
         return data
 
@@ -199,10 +229,28 @@ class InverterDataParser:
         for key in ["gridCharge", "batHighCap"]:
             data[key] = await self.dp.safe_get(config, key)
 
-        # Parse time slots
-        for slot in [1, 2]:
-            data[f"charge_timeChaf{slot}"] = await self.dp.safe_get(config, f"timeChaf{slot}")
-            data[f"charge_timeChae{slot}"] = await self.dp.safe_get(config, f"timeChae{slot}")
+        # Parse time slots with the correct key names
+        time_start_1 = await self.dp.safe_get(config, "timeChaf1")
+        time_end_1 = await self.dp.safe_get(config, "timeChae1")
+        time_start_2 = await self.dp.safe_get(config, "timeChaf2")
+        time_end_2 = await self.dp.safe_get(config, "timeChae2")
+
+        # Format as "HH:MM - HH:MM" to match expected format
+        if time_start_1 and time_end_1:
+            data["Charge Time 1"] = f"{time_start_1} - {time_end_1}"
+        else:
+            data["Charge Time 1"] = "00:00 - 00:00"
+
+        if time_start_2 and time_end_2:
+            data["Charge Time 2"] = f"{time_start_2} - {time_end_2}"
+        else:
+            data["Charge Time 2"] = "00:00 - 00:00"
+
+        # Also keep the raw values for compatibility
+        data["charge_timeChaf1"] = time_start_1
+        data["charge_timeChae1"] = time_end_1
+        data["charge_timeChaf2"] = time_start_2
+        data["charge_timeChae2"] = time_end_2
 
         return data
 
@@ -212,10 +260,28 @@ class InverterDataParser:
         for key in ["ctrDis", "batUseCap"]:
             data[key] = await self.dp.safe_get(config, key)
 
-        # Parse time slots
-        for slot in [1, 2]:
-            data[f"discharge_timeDisf{slot}"] = await self.dp.safe_get(config, f"timeDisf{slot}")
-            data[f"discharge_timeDise{slot}"] = await self.dp.safe_get(config, f"timeDise{slot}")
+        # Parse time slots with the correct key names
+        time_start_1 = await self.dp.safe_get(config, "timeDisf1")
+        time_end_1 = await self.dp.safe_get(config, "timeDise1")
+        time_start_2 = await self.dp.safe_get(config, "timeDisf2")
+        time_end_2 = await self.dp.safe_get(config, "timeDise2")
+
+        # Format as "HH:MM - HH:MM" to match expected format
+        if time_start_1 and time_end_1:
+            data["Discharge Time 1"] = f"{time_start_1} - {time_end_1}"
+        else:
+            data["Discharge Time 1"] = "00:00 - 00:00"
+
+        if time_start_2 and time_end_2:
+            data["Discharge Time 2"] = f"{time_start_2} - {time_end_2}"
+        else:
+            data["Discharge Time 2"] = "00:00 - 00:00"
+
+        # Also keep the raw values for compatibility
+        data["discharge_timeDisf1"] = time_start_1
+        data["discharge_timeDise1"] = time_end_1
+        data["discharge_timeDisf2"] = time_start_2
+        data["discharge_timeDise2"] = time_end_2
 
         return data
 
@@ -318,6 +384,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
             if jsondata is None:
                 return self.data
+
             for invertor in jsondata:
                 serial = invertor.get("sysSn")
                 if not serial:
@@ -327,11 +394,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 inverter_data = await self._parse_inverter_data(invertor)
                 self.data[serial] = inverter_data
 
-                local_ip_data = next((item for item in jsondata if item.get("type") == "local_ip_data"), None)
-
-                if local_ip_data:
-                    self.data["local_ip_info"] = await self._parse_local_ip_data(local_ip_data)
-
             return self.data
 
         except (aiohttp.ClientConnectorError, aiohttp.ClientResponseError) as error:
@@ -339,26 +401,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             self.data = None
             return self.data
 
-    @staticmethod
-    async def _parse_local_ip_data(local_ip_data: dict) -> dict:
-        """Parse the local_ip_data dictionary and return relevant info."""
-        data = {}
-
-        device_info = local_ip_data.get("device_info", {})
-        status = local_ip_data.get("status", {})
-
-        data["Local IP"] = local_ip_data.get("ip")
-        data["Cloud Connection Status"] = status.get("serverstatus")
-        data["Software Version"] = device_info.get("sw")
-        data["Serial Number"] = device_info.get("sn")
-        data["Hardware Version"] = device_info.get("hw")
-
-        return data
-
     async def _parse_inverter_data(self, invertor: Dict) -> Dict[str, Any]:
         """Parse all data for a single inverter."""
         # Start with basic info
         data = await self.parser.parse_basic_info(invertor)
+
+        # Add LocalIPData if available
+        local_ip_data = invertor.get("LocalIPData", {})
+        if local_ip_data:
+            data.update(await self.parser.parse_local_ip_data(local_ip_data))
 
         # Add EV data if available
         ev_data = invertor.get("EVData", {})
@@ -389,5 +440,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         discharge_config = invertor.get("DisChargeConfig", {})
         if discharge_config:
             data.update(await self.parser.parse_discharge_config(discharge_config))
+
+        # Add Charging Range (combining charge and discharge data)
+        if charge_config or discharge_config:
+            bat_high_cap = charge_config.get("batHighCap", 90) if charge_config else 90
+            bat_use_cap = discharge_config.get("batUseCap", 10) if discharge_config else 10
+            data["Charging Range"] = f"{bat_use_cap}% - {bat_high_cap}%"
 
         return data

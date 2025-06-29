@@ -9,8 +9,7 @@ from homeassistant.const import CURRENCY_DOLLAR
 from homeassistant.helpers.typing import StateType
 
 from .enums import AlphaESSNames
-from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, EV_CHARGING_DETAILS, \
-    LOCAL_IP_SYSTEM_SENSORS
+from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, EV_CHARGING_DETAILS, LOCAL_IP_SYSTEM_SENSORS
 
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
@@ -37,6 +36,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
     ev_charging_supported_states = {
         description.key: description for description in EV_CHARGING_DETAILS
+    }
+
+    local_ip_supported_states = {
+        description.key: description for description in LOCAL_IP_SYSTEM_SENSORS
     }
 
     _LOGGER.info(f"Initializing Inverters")
@@ -86,7 +89,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         coordinator,
                         entry,
                         serial,
-                        ev_charging_supported_states[description.key],
+                        local_ip_supported_states[description.key],
                         currency
                     )
                 )
