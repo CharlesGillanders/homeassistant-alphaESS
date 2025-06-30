@@ -51,6 +51,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
         _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
+        _LOGGER.info("DATA RECEIVED IS: %s", data)
+
         has_local_ip_data = 'Local IP' in data
 
         # This is done due to the limited data that inverters like the Storion-S5 support
@@ -81,7 +83,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
                 )
 
-        if has_local_ip_data:
+        if has_local_ip_data and data.get('Local IP') != '0' and data.get('Device Status') is not None:
             _LOGGER.info(f"New local IP system sensor for {serial}")
             for description in LOCAL_IP_SYSTEM_SENSORS:
                 entities.append(
@@ -142,7 +144,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     manufacturer="AlphaESS",
                     model=coordinator.data[invertor]["Model"],
                     model_id=self._serial,
-                    name=f"Alpha ESS Energy Statistics LOCAL : {serial}",
+                    name=f"Alpha ESS Energy Statistics : {serial}",
                     configuration_url=f"http://{coordinator.data[invertor]["Local IP"]}"
                 )
             elif self._serial == serial:

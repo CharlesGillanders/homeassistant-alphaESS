@@ -95,23 +95,6 @@ class InverterDataParser:
             "Installed Capacity": await self.dp.process_value(invertor.get("cobat")),
         }
 
-    async def parse_ev_data(self, ev_data: Optional[Dict], invertor: Dict) -> Dict[str, Any]:
-        """Parse EV charger data."""
-        if not ev_data:
-            return {}
-
-        ev_data = ev_data[0] if isinstance(ev_data, list) else ev_data
-        ev_status = invertor.get("EVStatus", {})
-        ev_current = invertor.get("EVCurrent", {})
-
-        return {
-            "EV Charger S/N": await self.dp.safe_get(ev_data, "evchargerSn"),
-            "EV Charger Model": await self.dp.safe_get(ev_data, "evchargerModel"),
-            "EV Charger Status": await self.dp.safe_get(ev_status, "evchargerStatus"),
-            "EV Charger Status Raw": await self.dp.safe_get(ev_status, "evchargerStatus"),
-            "Household current setup": await self.dp.safe_get(ev_current, "currentsetting"),
-        }
-
     async def parse_local_ip_data(self, local_ip_data: Dict) -> Dict[str, Any]:
         """Parse local IP system data."""
         if not local_ip_data:
@@ -139,6 +122,23 @@ class InverterDataParser:
             "Password": await self.dp.safe_get(device_info, "password"),
             "Ethernet Module": await self.dp.safe_get(device_info, "ethmoudle"),
             "4G Module": await self.dp.safe_get(device_info, "g4moudle"),
+        }
+
+    async def parse_ev_data(self, ev_data: Optional[Dict], invertor: Dict) -> Dict[str, Any]:
+        """Parse EV charger data."""
+        if not ev_data:
+            return {}
+
+        ev_data = ev_data[0] if isinstance(ev_data, list) else ev_data
+        ev_status = invertor.get("EVStatus", {})
+        ev_current = invertor.get("EVCurrent", {})
+
+        return {
+            "EV Charger S/N": await self.dp.safe_get(ev_data, "evchargerSn"),
+            "EV Charger Model": await self.dp.safe_get(ev_data, "evchargerModel"),
+            "EV Charger Status": await self.dp.safe_get(ev_status, "evchargerStatus"),
+            "EV Charger Status Raw": await self.dp.safe_get(ev_status, "evchargerStatus"),
+            "Household current setup": await self.dp.safe_get(ev_current, "currentsetting"),
         }
 
     async def parse_summary_data(self, sum_data: Dict) -> Dict[str, Any]:

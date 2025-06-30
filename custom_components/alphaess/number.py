@@ -53,7 +53,7 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
 
         for invertor in coordinator.data:
             serial = invertor.upper()
-            if "Local IP" in coordinator.data[invertor]:
+            if "Local IP" in coordinator.data[invertor] and coordinator.data[invertor].get('Local IP') != '0':
                 _LOGGER.info(f"INVERTER LOCAL DATA = {coordinator.data[invertor]}")
                 self._attr_device_info = DeviceInfo(
                     entry_type=DeviceEntryType.SERVICE,

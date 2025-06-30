@@ -94,7 +94,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                     model_id=coordinator.data[invertor]["EV Charger S/N"],
                     name=f"Alpha ESS Charger : {coordinator.data[invertor]["EV Charger S/N"]}",
                 )
-            elif "Local IP" in coordinator.data[invertor]:
+            elif "Local IP" in coordinator.data[invertor] and coordinator.data[invertor].get('Local IP') != '0':
                 self._attr_device_info = DeviceInfo(
                     entry_type=DeviceEntryType.SERVICE,
                     identifiers={(DOMAIN, serial)},
@@ -104,7 +104,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                     manufacturer="AlphaESS",
                     model=coordinator.data[invertor]["Model"],
                     model_id=self._serial,
-                    name=f"Alpha ESS Energy Statistics LOCAL : {serial}",
+                    name=f"Alpha ESS Energy Statistics : {serial}",
                     configuration_url=f"http://{coordinator.data[invertor]["Local IP"]}"
                 )
             elif self._serial == serial:

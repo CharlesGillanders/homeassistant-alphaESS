@@ -18,14 +18,14 @@ from .const import DOMAIN, add_inverter_to_list, increment_inverter_count
 STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required("AppID", description="AppID"): str,
     vol.Required("AppSecret", description="AppSecret"): str,
-    vol.Optional("IPAddress", default=None): vol.Any(None, str)
+    vol.Optional("IPAddress", default='0'): vol.Any(None, str)
 })
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
 
-    client = alphaess.alphaess(data["AppID"], data["AppSecret"], ipaddress=data["IPAddress"])
+    client = alphaess(data["AppID"], data["AppSecret"], ipaddress=data["IPAddress"])
 
     try:
         await client.authenticate()
