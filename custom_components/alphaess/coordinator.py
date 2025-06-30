@@ -18,6 +18,7 @@ from .const import (
     get_inverter_list,
     LOWER_INVERTER_API_CALL_LIST
 )
+from .enums import AlphaESSNames
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -86,13 +87,13 @@ class InverterDataParser:
         """Parse basic inverter information."""
         return {
             "Model": await self.dp.process_value(invertor.get("minv")),
-            "Battery Model": await self.dp.process_value(invertor.get("mbat")),
-            "Inverter nominal Power": await self.dp.process_value(invertor.get("poinv")),
-            "Pv nominal Power": await self.dp.process_value(invertor.get("popv")),
-            "EMS Status": await self.dp.process_value(invertor.get("emsStatus")),
-            "Maximum Battery Capacity": await self.dp.process_value(invertor.get("usCapacity")),
-            "Current Capacity": await self.dp.process_value(invertor.get("surplusCobat")),
-            "Installed Capacity": await self.dp.process_value(invertor.get("cobat")),
+            AlphaESSNames.mbat: await self.dp.process_value(invertor.get("mbat")),
+            AlphaESSNames.poinv: await self.dp.process_value(invertor.get("poinv")),
+            AlphaESSNames.popv: await self.dp.process_value(invertor.get("popv")),
+            AlphaESSNames.EmsStatus: await self.dp.process_value(invertor.get("emsStatus")),
+            AlphaESSNames.usCapacity: await self.dp.process_value(invertor.get("usCapacity")),
+            AlphaESSNames.surplusCobat: await self.dp.process_value(invertor.get("surplusCobat")),
+            AlphaESSNames.cobat: await self.dp.process_value(invertor.get("cobat")),
         }
 
     async def parse_local_ip_data(self, local_ip_data: Dict) -> Dict[str, Any]:
@@ -104,24 +105,24 @@ class InverterDataParser:
         device_info = local_ip_data.get("device_info", {})
 
         return {
-            "Local IP": local_ip_data.get("ip"),
-            "Device Status": await self.dp.safe_get(status, "devstatus"),
-            "Cloud Connection Status": await self.dp.safe_get(status, "serverstatus"),
-            "WiFi Status": await self.dp.safe_get(status, "wifistatus"),
-            "Connected SSID": await self.dp.safe_get(status, "connssid"),
-            "WiFi DHCP": await self.dp.safe_get(status, "wifidhcp"),
-            "WiFi IP": await self.dp.safe_get(status, "wifiip"),
-            "WiFi Mask": await self.dp.safe_get(status, "wifimask"),
-            "WiFi Gateway": await self.dp.safe_get(status, "wifigateway"),
-            "Device Serial Number": await self.dp.safe_get(device_info, "sn"),
-            "Device Key": await self.dp.safe_get(device_info, "key"),
-            "Hardware Version": await self.dp.safe_get(device_info, "hw"),
-            "Software Version": await self.dp.safe_get(device_info, "sw"),
-            "APN": await self.dp.safe_get(device_info, "apn"),
-            "Username": await self.dp.safe_get(device_info, "username"),
-            "Password": await self.dp.safe_get(device_info, "password"),
-            "Ethernet Module": await self.dp.safe_get(device_info, "ethmoudle"),
-            "4G Module": await self.dp.safe_get(device_info, "g4moudle"),
+            AlphaESSNames.localIP: local_ip_data.get("ip"),
+            AlphaESSNames.deviceStatus: await self.dp.safe_get(status, "devstatus"),
+            AlphaESSNames.cloudConnectionStatus: await self.dp.safe_get(status, "serverstatus"),
+            AlphaESSNames.wifiStatus: await self.dp.safe_get(status, "wifistatus"),
+            AlphaESSNames.connectedSSID: await self.dp.safe_get(status, "connssid"),
+            AlphaESSNames.wifiDHCP: await self.dp.safe_get(status, "wifidhcp"),
+            AlphaESSNames.wifiIP: await self.dp.safe_get(status, "wifiip"),
+            AlphaESSNames.wifiMask: await self.dp.safe_get(status, "wifimask"),
+            AlphaESSNames.wifiGateway: await self.dp.safe_get(status, "wifigateway"),
+            AlphaESSNames.deviceSerialNumber: await self.dp.safe_get(device_info, "sn"),
+            AlphaESSNames.deviceKey: await self.dp.safe_get(device_info, "key"),
+            AlphaESSNames.hardwareVersion: await self.dp.safe_get(device_info, "hw"),
+            AlphaESSNames.softwareVersion: await self.dp.safe_get(device_info, "sw"),
+            AlphaESSNames.apn: await self.dp.safe_get(device_info, "apn"),
+            AlphaESSNames.username: await self.dp.safe_get(device_info, "username"),
+            AlphaESSNames.password: await self.dp.safe_get(device_info, "password"),
+            AlphaESSNames.ethernetModule: await self.dp.safe_get(device_info, "ethmoudle"),
+            AlphaESSNames.fourGModule: await self.dp.safe_get(device_info, "g4moudle"),
         }
 
     async def parse_ev_data(self, ev_data: Optional[Dict], invertor: Dict) -> Dict[str, Any]:
@@ -134,21 +135,21 @@ class InverterDataParser:
         ev_current = invertor.get("EVCurrent", {})
 
         return {
-            "EV Charger S/N": await self.dp.safe_get(ev_data, "evchargerSn"),
-            "EV Charger Model": await self.dp.safe_get(ev_data, "evchargerModel"),
-            "EV Charger Status": await self.dp.safe_get(ev_status, "evchargerStatus"),
-            "EV Charger Status Raw": await self.dp.safe_get(ev_status, "evchargerStatus"),
-            "Household current setup": await self.dp.safe_get(ev_current, "currentsetting"),
+            AlphaESSNames.evchargersn: await self.dp.safe_get(ev_data, "evchargerSn"),
+            AlphaESSNames.evchargermodel: await self.dp.safe_get(ev_data, "evchargerModel"),
+            AlphaESSNames.evchargerstatus: await self.dp.safe_get(ev_status, "evchargerStatus"),
+            AlphaESSNames.evchargerstatusraw: await self.dp.safe_get(ev_status, "evchargerStatus"),
+            AlphaESSNames.evcurrentsetting: await self.dp.safe_get(ev_current, "currentsetting"),
         }
 
     async def parse_summary_data(self, sum_data: Dict) -> Dict[str, Any]:
         """Parse summary statistics."""
         data = {
-            "Total Load": await self.dp.safe_get(sum_data, "eload"),
-            "Total Income": await self.dp.safe_get(sum_data, "totalIncome"),
-            "Total Generation": await self.dp.safe_get(sum_data, "epvtotal"),
-            "Trees Planted": await self.dp.safe_get(sum_data, "treeNum"),
-            "Co2 Reduction": await self.dp.safe_get(sum_data, "carbonNum"),
+            AlphaESSNames.TotalLoad: await self.dp.safe_get(sum_data, "eload"),
+            AlphaESSNames.Income: await self.dp.safe_get(sum_data, "totalIncome"),
+            AlphaESSNames.Total_Generation: await self.dp.safe_get(sum_data, "epvtotal"),
+            AlphaESSNames.treePlanted: await self.dp.safe_get(sum_data, "treeNum"),
+            AlphaESSNames.carbonReduction: await self.dp.safe_get(sum_data, "carbonNum"),
             "Currency": await self.dp.safe_get(sum_data, "moneyType"),
         }
 
@@ -156,8 +157,8 @@ class InverterDataParser:
         self_consumption = await self.dp.safe_get(sum_data, "eselfConsumption")
         self_sufficiency = await self.dp.safe_get(sum_data, "eselfSufficiency")
 
-        data["Self Consumption"] = self_consumption * 100 if self_consumption is not None else None
-        data["Self Sufficiency"] = self_sufficiency * 100 if self_sufficiency is not None else None
+        data[AlphaESSNames.SelfConsumption] = self_consumption * 100 if self_consumption is not None else None
+        data[AlphaESSNames.SelfSufficiency] = self_sufficiency * 100 if self_sufficiency is not None else None
 
         return data
 
@@ -169,15 +170,15 @@ class InverterDataParser:
         charge = await self.dp.safe_get(energy_data, "eCharge")
 
         return {
-            "Solar Production": pv,
-            "Solar to Load": await self.dp.safe_calculate(pv, feedin),
-            "Solar to Grid": feedin,
-            "Solar to Battery": await self.dp.safe_calculate(charge, gridcharge),
-            "Grid to Load": await self.dp.safe_get(energy_data, "eInput"),
-            "Grid to Battery": gridcharge,
-            "Charge": charge,
-            "Discharge": await self.dp.safe_get(energy_data, "eDischarge"),
-            "EV Charger": await self.dp.safe_get(energy_data, "eChargingPile"),
+            AlphaESSNames.SolarProduction: pv,
+            AlphaESSNames.SolarToLoad: await self.dp.safe_calculate(pv, feedin),
+            AlphaESSNames.SolarToGrid: feedin,
+            AlphaESSNames.SolarToBattery: await self.dp.safe_calculate(charge, gridcharge),
+            AlphaESSNames.GridToLoad: await self.dp.safe_get(energy_data, "eInput"),
+            AlphaESSNames.GridToBattery: gridcharge,
+            AlphaESSNames.Charge: charge,
+            AlphaESSNames.Discharge: await self.dp.safe_get(energy_data, "eDischarge"),
+            AlphaESSNames.EVCharger: await self.dp.safe_get(energy_data, "eChargingPile"),
         }
 
     async def parse_power_data(self, power_data: Dict, one_day_power: Optional[list]) -> Dict[str, Any]:
@@ -188,46 +189,49 @@ class InverterDataParser:
         ev_details = power_data.get("pevDetail", {})
 
         data = {
-            "Instantaneous Battery SOC": soc,
-            "Instantaneous Battery I/O": await self.dp.safe_get(power_data, "pbat"),
-            "Instantaneous Load": await self.dp.safe_get(power_data, "pload"),
-            "Instantaneous Generation": await self.dp.safe_get(power_data, "ppv"),
-            "Instantaneous Grid I/O Total": await self.dp.safe_get(power_data, "pgrid"),
-            "pev": await self.dp.safe_get(power_data, "pev"),
-            "PrealL1": await self.dp.safe_get(power_data, "prealL1"),
-            "PrealL2": await self.dp.safe_get(power_data, "prealL2"),
-            "PrealL3": await self.dp.safe_get(power_data, "prealL3"),
+            AlphaESSNames.BatterySOC: soc,
+            AlphaESSNames.BatteryIO: await self.dp.safe_get(power_data, "pbat"),
+            AlphaESSNames.Load: await self.dp.safe_get(power_data, "pload"),
+            AlphaESSNames.Generation: await self.dp.safe_get(power_data, "ppv"),
+            AlphaESSNames.GridIOTotal: await self.dp.safe_get(power_data, "pgrid"),
+            AlphaESSNames.pev: await self.dp.safe_get(power_data, "pev"),
+            AlphaESSNames.PrealL1: await self.dp.safe_get(power_data, "prealL1"),
+            AlphaESSNames.PrealL2: await self.dp.safe_get(power_data, "prealL2"),
+            AlphaESSNames.PrealL3: await self.dp.safe_get(power_data, "prealL3"),
         }
 
         # PV string data
         for i in range(1, 5):
-            data[f"Instantaneous PPV{i}"] = await self.dp.safe_get(pv_details, f"ppv{i}")
+            data[getattr(AlphaESSNames, f"PPV{i}")] = await self.dp.safe_get(pv_details, f"ppv{i}")
 
-        data["pmeterDc"] = await self.dp.safe_get(pv_details, "pmeterDc")
+        data[AlphaESSNames.pmeterDc] = await self.dp.safe_get(pv_details, "pmeterDc")
 
         # Grid phase data
         for i in range(1, 4):
-            data[f"Instantaneous Grid I/O L{i}"] = await self.dp.safe_get(grid_details, f"pmeterL{i}")
+            data[getattr(AlphaESSNames, f"GridIOL{i}")] = await self.dp.safe_get(grid_details, f"pmeterL{i}")
 
         # EV power data
         for i in range(1, 5):
-            key = ["One", "Two", "Three", "Four"][i - 1]
-            data[f"Electric Vehicle Power {key}"] = await self.dp.safe_get(ev_details, f"ev{i}Power")
+            key_map = {1: "One", 2: "Two", 3: "Three", 4: "Four"}
+            data[getattr(AlphaESSNames, f"ElectricVehiclePower{key_map[i]}")] = await self.dp.safe_get(ev_details, f"ev{i}Power")
 
         # Fallback SOC from daily data
         if one_day_power and soc == 0:
             first_entry = one_day_power[0]
             cbat = first_entry.get("cbat")
             if cbat is not None:
-                data["State of Charge"] = cbat
+                data[AlphaESSNames.StateOfCharge] = cbat
 
         return data
 
     async def parse_charge_config(self, config: Dict) -> Dict[str, Any]:
         """Parse charge configuration."""
         data = {}
-        for key in ["gridCharge", "batHighCap"]:
-            data[key] = await self.dp.safe_get(config, key)
+        for key in ["gridCharge", AlphaESSNames.batHighCap]:
+            if key == AlphaESSNames.batHighCap:
+                data[key] = await self.dp.safe_get(config, "batHighCap")
+            else:
+                data[key] = await self.dp.safe_get(config, key)
 
         # Parse time slots with the correct key names
         time_start_1 = await self.dp.safe_get(config, "timeChaf1")
@@ -237,14 +241,14 @@ class InverterDataParser:
 
         # Format as "HH:MM - HH:MM" to match expected format
         if time_start_1 and time_end_1:
-            data["Charge Time 1"] = f"{time_start_1} - {time_end_1}"
+            data[AlphaESSNames.ChargeTime1] = f"{time_start_1} - {time_end_1}"
         else:
-            data["Charge Time 1"] = "00:00 - 00:00"
+            data[AlphaESSNames.ChargeTime1] = "00:00 - 00:00"
 
         if time_start_2 and time_end_2:
-            data["Charge Time 2"] = f"{time_start_2} - {time_end_2}"
+            data[AlphaESSNames.ChargeTime2] = f"{time_start_2} - {time_end_2}"
         else:
-            data["Charge Time 2"] = "00:00 - 00:00"
+            data[AlphaESSNames.ChargeTime2] = "00:00 - 00:00"
 
         # Also keep the raw values for compatibility
         data["charge_timeChaf1"] = time_start_1
@@ -257,8 +261,11 @@ class InverterDataParser:
     async def parse_discharge_config(self, config: Dict) -> Dict[str, Any]:
         """Parse discharge configuration."""
         data = {}
-        for key in ["ctrDis", "batUseCap"]:
-            data[key] = await self.dp.safe_get(config, key)
+        for key in ["ctrDis", AlphaESSNames.batUseCap]:
+            if key == AlphaESSNames.batUseCap:
+                data[key] = await self.dp.safe_get(config, "batUseCap")
+            else:
+                data[key] = await self.dp.safe_get(config, key)
 
         # Parse time slots with the correct key names
         time_start_1 = await self.dp.safe_get(config, "timeDisf1")
@@ -268,14 +275,14 @@ class InverterDataParser:
 
         # Format as "HH:MM - HH:MM" to match expected format
         if time_start_1 and time_end_1:
-            data["Discharge Time 1"] = f"{time_start_1} - {time_end_1}"
+            data[AlphaESSNames.DischargeTime1] = f"{time_start_1} - {time_end_1}"
         else:
-            data["Discharge Time 1"] = "00:00 - 00:00"
+            data[AlphaESSNames.DischargeTime1] = "00:00 - 00:00"
 
         if time_start_2 and time_end_2:
-            data["Discharge Time 2"] = f"{time_start_2} - {time_end_2}"
+            data[AlphaESSNames.DischargeTime2] = f"{time_start_2} - {time_end_2}"
         else:
-            data["Discharge Time 2"] = "00:00 - 00:00"
+            data[AlphaESSNames.DischargeTime2] = "00:00 - 00:00"
 
         # Also keep the raw values for compatibility
         data["discharge_timeDisf1"] = time_start_1
@@ -327,8 +334,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def reset_config(self, serial: str) -> None:
         """Reset charge and discharge configuration."""
-        bat_use_cap = self.hass.data[DOMAIN][serial].get("batUseCap", 10)
-        bat_high_cap = self.hass.data[DOMAIN][serial].get("batHighCap", 90)
+        bat_use_cap = self.hass.data[DOMAIN][serial].get(AlphaESSNames.batUseCap, 10)
+        bat_high_cap = self.hass.data[DOMAIN][serial].get(AlphaESSNames.batHighCap, 90)
 
         results = await self._reset_charge_discharge_config(serial, bat_high_cap, bat_use_cap)
         _LOGGER.info(
@@ -445,6 +452,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         if charge_config or discharge_config:
             bat_high_cap = charge_config.get("batHighCap", 90) if charge_config else 90
             bat_use_cap = discharge_config.get("batUseCap", 10) if discharge_config else 10
-            data["Charging Range"] = f"{bat_use_cap}% - {bat_high_cap}%"
+            data[AlphaESSNames.ChargeRange] = f"{bat_use_cap}% - {bat_high_cap}%"
 
         return data
