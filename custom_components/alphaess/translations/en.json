@@ -79,6 +79,18 @@
           "connected_lost": "Connected lost",
           "unknown_error": "Unknown Error"
         }
+      },
+      "wifi_status": {
+        "name": "WiFi Status",
+        "state": {
+          "connection_idle": "Connection Idle",
+          "connecting": "Connecting...",
+          "password_error": "Password Error",
+          "ap_not_found": "AP Not Found",
+          "connect_fail": "Connect Fail",
+          "connected_ok": "Connected OK",
+          "unknown_error": "Unknown Error"
+        }
       }
     }
   }

@@ -14,7 +14,8 @@ from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, E
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS, TCP_STATUS_KEYS, ETHERNET_STATUS_KEYS, FOUR_G_STATUS_KEYS
+from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS, TCP_STATUS_KEYS, ETHERNET_STATUS_KEYS, \
+    FOUR_G_STATUS_KEYS, WIFI_STATUS_KEYS
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -214,10 +215,22 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             except (ValueError, TypeError):
                 return "unknown_error"
 
+        # Handle WiFi status
+        if self._key == AlphaESSNames.wifiStatus:
+            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
+            if raw_state is None:
+                return None
+            try:
+                wifi_status = int(raw_state)
+                return WIFI_STATUS_KEYS.get(wifi_status, "unknown_error")
+            except (ValueError, TypeError):
+                return "unknown_error"
+
         if self._key in [AlphaESSNames.ChargeTime1, AlphaESSNames.ChargeTime2,
                          AlphaESSNames.DischargeTime1, AlphaESSNames.DischargeTime2]:
             return self._coordinator.data.get(self._serial, {}).get(self._key)
 
+        # Normal sensor handling - use the key instead of name for consistency
         return self._coordinator.data.get(self._serial, {}).get(self._key)
 
     @property
@@ -249,6 +262,10 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         if self._key == AlphaESSNames.fourGModule:
             return ["ok", "initialization", "connected_fail", "connected_lost", "unknown_error"]
 
+        if self._key == AlphaESSNames.wifiStatus:
+            return ["connection_idle", "connecting", "password_error", "ap_not_found",
+                    "connect_fail", "connected_ok", "unknown_error"]
+
         return None
 
     @property
@@ -262,6 +279,8 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             return "ethernet_status"
         if self._key == AlphaESSNames.fourGModule and self._device_class == SensorDeviceClass.ENUM:
             return "four_g_status"
+        if self._key == AlphaESSNames.wifiStatus and self._device_class == SensorDeviceClass.ENUM:
+            return "wifi_status"
         return None
 
     @property

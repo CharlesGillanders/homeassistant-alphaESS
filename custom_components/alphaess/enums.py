@@ -86,7 +86,7 @@ class AlphaESSNames(str, Enum):
     wifiMask = "WiFi Mask"
     wifiGateway = "WiFi Gateway"
     deviceSerialNumber = "Device Serial Number"
-    deviceKey = "Device Key"
+    registerKey = "Register Key"
     apn = "APN"
     username = "Username"
     password = "Password"

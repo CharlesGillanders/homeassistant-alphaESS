@@ -115,7 +115,7 @@ class InverterDataParser:
             AlphaESSNames.wifiMask: await self.dp.safe_get(status, "wifimask"),
             AlphaESSNames.wifiGateway: await self.dp.safe_get(status, "wifigateway"),
             AlphaESSNames.deviceSerialNumber: await self.dp.safe_get(device_info, "sn"),
-            AlphaESSNames.deviceKey: await self.dp.safe_get(device_info, "key"),
+            AlphaESSNames.registerKey: await self.dp.safe_get(device_info, "key"),
             AlphaESSNames.hardwareVersion: await self.dp.safe_get(device_info, "hw"),
             AlphaESSNames.softwareVersion: await self.dp.safe_get(device_info, "sw"),
             AlphaESSNames.apn: await self.dp.safe_get(device_info, "apn"),

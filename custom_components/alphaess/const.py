@@ -66,6 +66,16 @@ TCP_STATUS_KEYS = {
     -13: "server_address_error"
 }
 
+WIFI_STATUS_KEYS = {
+    0: "connection_idle",
+    1: "connecting",
+    2: "password_error",
+    3: "ap_not_found",
+    4: "connect_fail",
+    5: "connected_ok"
+    # All other values default to unknown_error
+}
+
 ETHERNET_STATUS_KEYS = {
     0: "link_up",
     # All other values default to link_down
