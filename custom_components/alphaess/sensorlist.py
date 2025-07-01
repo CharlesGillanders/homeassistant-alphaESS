@@ -779,7 +779,7 @@ LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.connectedSSID,
         name="Connected SSID",
-        icon="mdi:wifi",
+        icon="mdi:wifi-marker",
         native_unit_of_measurement=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -811,7 +811,7 @@ LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.cloudConnectionStatus,
         name="Cloud Connection Status",
-        icon="mdi:cloud-check",
+        icon="mdi:cloud-sync",
         device_class=SensorDeviceClass.ENUM,
         native_unit_of_measurement=None,
         state_class=None,
@@ -824,6 +824,7 @@ LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:ethernet"
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.fourGModule,
@@ -832,6 +833,7 @@ LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:signal-4g"
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.registerKey,
@@ -839,6 +841,7 @@ LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:key"
     ),
 ]
 
