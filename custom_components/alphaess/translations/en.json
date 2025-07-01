@@ -43,6 +43,25 @@
           "faulted": "Faulted",
           "unknown": "Unknown"
         }
+      },
+      "tcp_status": {
+        "name": "TCP Status",
+        "state": {
+          "connected_ok": "Connected OK",
+          "initialization": "Initialization",
+          "not_connected_router": "Not connected to a router",
+          "dns_lookup_error": "DNS lookup error",
+          "connect_fail": "Connect fail",
+          "signal_too_weak": "Signal too weak",
+          "failed_register_base_station": "Failed to register base station",
+          "sim_card_not_inserted": "SIM Card not inserted",
+          "not_bound_plant": "Not bound to a plant",
+          "key_error": "KEY error",
+          "sn_error": "SN error",
+          "communication_timeout": "Communication timeout",
+          "communication_abort_server": "Communication abort by server",
+          "server_address_error": "Server address error"
+        }
       }
     }
   }

@@ -14,7 +14,7 @@ from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, E
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS
+from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS, TCP_STATUS_KEYS
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -175,19 +175,29 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             return None
 
         if self._key == AlphaESSNames.evchargerstatus:
-            raw_state = self._coordinator.data.get(self._serial, {}).get(self._name)
-
+            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
             if raw_state is None:
                 return None
-
             return EV_CHARGER_STATE_KEYS.get(raw_state, "unknown")
 
+        # Add TCP status handling - you'll need to add the actual key name for TCP status
+        if self._key == AlphaESSNames.cloudConnectionStatus:  # or whatever the TCP status key is
+            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
+            if raw_state is None:
+                return None
+            try:
+                tcp_status = int(raw_state)
+                return TCP_STATUS_KEYS.get(tcp_status, "connect_fail")
+            except (ValueError, TypeError):
+                return "connect_fail"
+
+        # For time-based sensors
         if self._key in [AlphaESSNames.ChargeTime1, AlphaESSNames.ChargeTime2,
                          AlphaESSNames.DischargeTime1, AlphaESSNames.DischargeTime2]:
             return self._coordinator.data.get(self._serial, {}).get(self._key)
 
         # Normal sensor handling
-        return self._coordinator.data.get(self._serial, {}).get(self._name)
+        return self._coordinator.data.get(self._serial, {}).get(self._key)
 
     @property
     def native_unit_of_measurement(self):
@@ -206,6 +216,12 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             return ["available", "preparing", "charging", "suspended_evse",
                     "suspended_ev", "finishing", "faulted", "unknown"]
 
+        if self._key == AlphaESSNames.cloudConnectionStatus:
+            return ["connected_ok", "initialization", "not_connected_router", "dns_lookup_error",
+                    "connect_fail", "signal_too_weak", "failed_register_base_station",
+                    "sim_card_not_inserted", "not_bound_plant", "key_error", "sn_error",
+                    "communication_timeout", "communication_abort_server", "server_address_error"]
+
         return None
 
     @property
@@ -213,6 +229,8 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         """Return the translation key."""
         if self._key == AlphaESSNames.evchargerstatus:
             return "ev_charger_status"
+        if self._key == AlphaESSNames.cloudConnectionStatus:
+            return "tcp_status"
         return None
 
     @property

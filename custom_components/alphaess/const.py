@@ -49,6 +49,23 @@ EV_CHARGER_STATE_KEYS = {
     9: "faulted"
 }
 
+TCP_STATUS_KEYS = {
+    0: "connected_ok",
+    -1: "initialization",
+    -2: "not_connected_router",
+    -3: "dns_lookup_error",
+    -4: "connect_fail",
+    -5: "signal_too_weak",
+    -6: "failed_register_base_station",
+    -7: "sim_card_not_inserted",
+    -8: "not_bound_plant",
+    -9: "key_error",
+    -10: "sn_error",
+    -11: "communication_timeout",
+    -12: "communication_abort_server",
+    -13: "server_address_error"
+}
+
 def increment_inverter_count():
     global INVERTER_COUNT
     INVERTER_COUNT += 1
