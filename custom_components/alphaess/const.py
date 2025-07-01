@@ -66,6 +66,21 @@ TCP_STATUS_KEYS = {
     -13: "server_address_error"
 }
 
+ETHERNET_STATUS_KEYS = {
+    0: "link_up",
+    # All other values default to link_down
+}
+
+FOUR_G_STATUS_KEYS = {
+    0: "ok",
+    -1: "initialization",
+    -2: "connected_fail",
+    -3: "connected_lost",
+    -4: "connected_fail"
+    # All other values default to unknown_error
+}
+
+
 def increment_inverter_count():
     global INVERTER_COUNT
     INVERTER_COUNT += 1

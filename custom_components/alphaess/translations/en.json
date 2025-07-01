@@ -62,6 +62,23 @@
           "communication_abort_server": "Communication abort by server",
           "server_address_error": "Server address error"
         }
+      },
+      "ethernet_status": {
+        "name": "Ethernet Status",
+        "state": {
+          "link_up": "Link Up",
+          "link_down": "Link Down"
+        }
+      },
+      "four_g_status": {
+        "name": "4G Status",
+        "state": {
+          "ok": "OK",
+          "initialization": "Initialization",
+          "connected_fail": "Connected fail",
+          "connected_lost": "Connected lost",
+          "unknown_error": "Unknown Error"
+        }
       }
     }
   }

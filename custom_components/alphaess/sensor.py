@@ -3,7 +3,7 @@ import logging
 from typing import List
 
 from homeassistant.components.sensor import (
-    SensorEntity
+    SensorEntity, SensorDeviceClass
 )
 from homeassistant.const import CURRENCY_DOLLAR
 from homeassistant.helpers.typing import StateType
@@ -14,7 +14,7 @@ from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, E
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS, TCP_STATUS_KEYS
+from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS, TCP_STATUS_KEYS, ETHERNET_STATUS_KEYS, FOUR_G_STATUS_KEYS
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -174,14 +174,15 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         if self._coordinator.data is None:
             return None
 
+        # Handle EV charger status enum
         if self._key == AlphaESSNames.evchargerstatus:
             raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
             if raw_state is None:
                 return None
             return EV_CHARGER_STATE_KEYS.get(raw_state, "unknown")
 
-        # Add TCP status handling - you'll need to add the actual key name for TCP status
-        if self._key == AlphaESSNames.cloudConnectionStatus:  # or whatever the TCP status key is
+        # Handle TCP status for cloud connection
+        if self._key == AlphaESSNames.cloudConnectionStatus:
             raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
             if raw_state is None:
                 return None
@@ -191,12 +192,32 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             except (ValueError, TypeError):
                 return "connect_fail"
 
-        # For time-based sensors
+        # Handle Ethernet status
+        if self._key == AlphaESSNames.ethernetModule:
+            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
+            if raw_state is None:
+                return None
+            try:
+                eth_status = int(raw_state)
+                return ETHERNET_STATUS_KEYS.get(eth_status, "link_down")
+            except (ValueError, TypeError):
+                return "link_down"
+
+        # Handle 4G status
+        if self._key == AlphaESSNames.fourGModule:
+            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
+            if raw_state is None:
+                return None
+            try:
+                g4_status = int(raw_state)
+                return FOUR_G_STATUS_KEYS.get(g4_status, "unknown_error")
+            except (ValueError, TypeError):
+                return "unknown_error"
+
         if self._key in [AlphaESSNames.ChargeTime1, AlphaESSNames.ChargeTime2,
                          AlphaESSNames.DischargeTime1, AlphaESSNames.DischargeTime2]:
             return self._coordinator.data.get(self._serial, {}).get(self._key)
 
-        # Normal sensor handling
         return self._coordinator.data.get(self._serial, {}).get(self._key)
 
     @property
@@ -222,15 +243,25 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     "sim_card_not_inserted", "not_bound_plant", "key_error", "sn_error",
                     "communication_timeout", "communication_abort_server", "server_address_error"]
 
+        if self._key == AlphaESSNames.ethernetModule:
+            return ["link_up", "link_down"]
+
+        if self._key == AlphaESSNames.fourGModule:
+            return ["ok", "initialization", "connected_fail", "connected_lost", "unknown_error"]
+
         return None
 
     @property
     def translation_key(self) -> str | None:
         """Return the translation key."""
-        if self._key == AlphaESSNames.evchargerstatus:
+        if self._key == AlphaESSNames.evchargerstatus and self._device_class == SensorDeviceClass.ENUM:
             return "ev_charger_status"
-        if self._key == AlphaESSNames.cloudConnectionStatus:
+        if self._key == AlphaESSNames.cloudConnectionStatus and self._device_class == SensorDeviceClass.ENUM:
             return "tcp_status"
+        if self._key == AlphaESSNames.ethernetModule and self._device_class == SensorDeviceClass.ENUM:
+            return "ethernet_status"
+        if self._key == AlphaESSNames.fourGModule and self._device_class == SensorDeviceClass.ENUM:
+            return "four_g_status"
         return None
 
     @property

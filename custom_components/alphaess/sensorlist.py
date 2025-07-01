@@ -816,6 +816,22 @@ LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.ethernetModule,
+        name="Ethernet Status",
+        device_class=SensorDeviceClass.ENUM,
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.fourGModule,
+        name="4G Status",
+        device_class=SensorDeviceClass.ENUM,
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 ]
 
 EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
@@ -858,4 +874,3 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
     )
 
 ]
-
