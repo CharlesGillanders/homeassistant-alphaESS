@@ -182,6 +182,10 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
 
             return EV_CHARGER_STATE_KEYS.get(raw_state, "unknown")
 
+        if self._key in [AlphaESSNames.ChargeTime1, AlphaESSNames.ChargeTime2,
+                         AlphaESSNames.DischargeTime1, AlphaESSNames.DischargeTime2]:
+            return self._coordinator.data.get(self._serial, {}).get(self._key)
+
         # Normal sensor handling
         return self._coordinator.data.get(self._serial, {}).get(self._name)
 
