@@ -70,6 +70,19 @@ The current charge config, discharge config and charging range will only update 
 
 If you want to adjust the restrictions yourself, you are able to by modifying the `ALPHA_POST_REQUEST_RESTRICTION` varible in const.py to the amount of seconds allowed per call
 
+## Local Inverter Support
+
+To use the local inverter support, you will need to have a local inverter that is able to reach your HA instance (preferably on the same subnet). 
+
+To add a local inverter to an existing AlphaESS integration, you will need to select the "Configure" option from the AlphaESS integration in Home Assistant, and then input your inverter's IP address, you can also do this if you need to reconfigure your inverter's IP address (due to DHCP changes, etc).
+
+To remove/reset the local inverter integration, you will need to go back to the configuration settings, and set it to 0. (this will "remove" all the sensors linked, and will need to be manually deleted)
+
+For now, if you have more than one inverter linked to your OpenAPI Account, the local inverter settings will only work on the first inverter that is linked to your account. support for setting it to be a custom one is coming.
+
+![](https://i.imgur.com/rHWI2gh.png)
+
+
 ## Issues with registering systems to the AlphaESS OpenAPI
 
 There has been a few issues regarding registering systems to the AlphaESS OpenAPI.  The following are some of the issues that have been reported and how to resolve them.

@@ -39,14 +39,55 @@ If you have any issues with this you need to open an issue here:
 -------------------------------------------------------------------
 """
 
-ev_charger_states = {
-    1: "Available (not plugged in)",
-    2: "Preparing (plugged in and not activated)",
-    3: "Charging (charging with power output)",
-    4: "SuspendedEVSE (already started but no available power)",
-    5: "SuspendedEV (waiting for the car to respond)",
-    6: "Finishing (actively stopping charging)",
-    9: "Faulted (pile failure)"
+EV_CHARGER_STATE_KEYS = {
+    1: "available",
+    2: "preparing",
+    3: "charging",
+    4: "suspended_evse",
+    5: "suspended_ev",
+    6: "finishing",
+    9: "faulted"
+}
+
+TCP_STATUS_KEYS = {
+    0: "connected_ok",
+    -1: "initialization",
+    -2: "not_connected_router",
+    -3: "dns_lookup_error",
+    -4: "connect_fail",
+    -5: "signal_too_weak",
+    -6: "failed_register_base_station",
+    -7: "sim_card_not_inserted",
+    -8: "not_bound_plant",
+    -9: "key_error",
+    -10: "sn_error",
+    -11: "communication_timeout",
+    -12: "communication_abort_server",
+    -13: "server_address_error"
+}
+
+WIFI_STATUS_KEYS = {
+    0: "connection_idle",
+    1: "connecting",
+    2: "password_error",
+    3: "ap_not_found",
+    4: "connect_fail",
+    5: "connected_ok"
+    # All other values default to unknown_error
+}
+
+ETHERNET_STATUS_KEYS = {
+    0: "link_up",
+    # All other values default to link_down
+}
+
+FOUR_G_STATUS_KEYS = {
+    0: "ok",
+    -1: "initialization",
+    -2: "connected_fail",
+    -3: "connected_lost",
+    -4: "connected_fail"
+    # All other values default to unknown_error
 }
 
 

@@ -23,10 +23,11 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
     for serial, data in coordinator.data.items():
         model = data.get("Model")
+        has_local_ip_data = 'Local IP' in data
         if model not in INVERTER_SETTING_BLACKLIST:
             for description in full_number_supported_states:
                 number_entities.append(
-                    AlphaNumber(coordinator, serial, entry, full_number_supported_states[description]))
+                    AlphaNumber(coordinator, serial, entry, full_number_supported_states[description], has_local_connection=has_local_ip_data))
 
     async_add_entities(number_entities)
 
@@ -34,7 +35,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class AlphaNumber(CoordinatorEntity, RestoreNumber):
     """Battery use capacity number entity."""
 
-    def __init__(self, coordinator, serial, config, full_number_supported_states):
+    def __init__(self, coordinator, serial, config, full_number_supported_states, has_local_connection=False):
         super().__init__(coordinator)
         self._coordinator = coordinator
         self._serial = serial
@@ -52,7 +53,21 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
 
         for invertor in coordinator.data:
             serial = invertor.upper()
-            if self._serial == serial:
+            if "Local IP" in coordinator.data[invertor] and coordinator.data[invertor].get('Local IP') != '0':
+                _LOGGER.info(f"INVERTER LOCAL DATA = {coordinator.data[invertor]}")
+                self._attr_device_info = DeviceInfo(
+                    entry_type=DeviceEntryType.SERVICE,
+                    identifiers={(DOMAIN, serial)},
+                    serial_number=coordinator.data[invertor]["Device Serial Number"],
+                    sw_version=coordinator.data[invertor]["Software Version"],
+                    hw_version=coordinator.data[invertor]["Hardware Version"],
+                    manufacturer="AlphaESS",
+                    model=coordinator.data[invertor]["Model"],
+                    model_id=self._serial,
+                    name=f"Alpha ESS Energy Statistics LOCAL : {serial}",
+                    configuration_url=f"http://{coordinator.data[invertor]["Local IP"]}"
+                )
+            elif self._serial == serial:
                 self._attr_device_info = DeviceInfo(
                     entry_type=DeviceEntryType.SERVICE,
                     identifiers={(DOMAIN, serial)},

@@ -43,7 +43,9 @@ SERVICE_BATTERY_DISCHARGE_SCHEMA = vol.Schema(
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
 
-    client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"])
+    ip_address = entry.options.get("IPAddress", entry.data.get("IPAddress"))
+
+    client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"], ipaddress=ip_address)
 
     ESSList = await client.getESSList()
     for unit in ESSList:
