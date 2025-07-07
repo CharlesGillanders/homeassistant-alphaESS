@@ -27,6 +27,8 @@ LIMITED_INVERTER_SENSOR_LIST = [
 # Inverters who do not support "getlastpowerdata"
 LOWER_INVERTER_API_CALL_LIST = ["Storion-S5"]
 
+LOCAL_API_INVERTER_BLACKLIST = []
+
 NAME = "Alpha ESS"
 ISSUE_URL = "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues"
 
