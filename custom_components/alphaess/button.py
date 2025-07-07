@@ -122,12 +122,12 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         if self._key == AlphaESSNames.stopcharging:
             _LOGGER.info("Stopped charging")
             self._movement_state = None
-            await self._coordinator.Control_EV(self._serial, self._ev_serial, 0)
+            await self._coordinator.control_ev(self._serial, self._ev_serial, 0)
 
         if self._key == AlphaESSNames.startcharging:
             _LOGGER.info("started charging")
             self._movement_state = None
-            await self._coordinator.Control_EV(self._serial, self._ev_serial, 1)
+            await self._coordinator.control_ev(self._serial, self._ev_serial, 1)
 
         global last_discharge_update
         global last_charge_update
