@@ -13,6 +13,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.SolarProduction,
         name="Solar Production",
+        icon="mdi:solar-power",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -20,6 +21,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.SolarToBattery,
         name="Solar to Battery",
+        icon="mdi:battery-arrow-up",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -27,6 +29,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.SolarToGrid,
         name="Solar to Grid",
+        icon="mdi:transmission-tower-export",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -34,6 +37,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.SolarToLoad,
         name="Solar to Load",
+        icon="mdi:solar-power",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -48,6 +52,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.GridToLoad,
         name="Grid to Load",
+        icon="mdi:transmission-tower-import",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -55,6 +60,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.GridToBattery,
         name="Grid to Battery",
+        icon="mdi:battery-arrow-down",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -118,6 +124,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOL1,
         name="Instantaneous Grid I/O L1",
+        icon="mdi:transmission-tower",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -125,6 +132,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOL2,
         name="Instantaneous Grid I/O L2",
+        icon="mdi:transmission-tower",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -132,6 +140,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOL3,
         name="Instantaneous Grid I/O L3",
+        icon="mdi:transmission-tower",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -153,6 +162,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOTotal,
         name="Instantaneous Grid I/O Total",
+        icon="mdi:transmission-tower",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -167,6 +177,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.Total_Generation,
         name="Total Generation",
+        icon="mdi:solar-power-variant",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -393,6 +404,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.SolarProduction,
         name="Solar Production",
+        icon="mdi:solar-power",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -400,6 +412,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.SolarToBattery,
         name="Solar to Battery",
+        icon="mdi:battery-arrow-up",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -407,6 +420,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.TotalLoad,
         name="Total Load",
+        icon="mdi:home-lightning-bolt",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -414,6 +428,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.GridToLoad,
         name="Grid to Load",
+        icon="mdi:transmission-tower-import",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -421,6 +436,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.GridToBattery,
         name="Grid to Battery",
+        icon="mdi:battery-arrow-down",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -449,6 +465,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.GridIOTotal,
         name="Instantaneous Grid I/O Total",
+        icon="mdi:transmission-tower",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -463,6 +480,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.Total_Generation,
         name="Total Generation",
+        icon="mdi:solar-power-variant",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -502,7 +520,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.usCapacity,
         name="Maximum Battery Capacity",
-        icon="mdi:home-percent",
+        icon="mdi:battery-high",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.TOTAL,
         entity_category=EntityCategory.DIAGNOSTIC
