@@ -66,10 +66,10 @@ class TimeHelper:
         return rounded_time.strftime("%H:%M")
 
     @staticmethod
-    def calculate_time_window(time_period_minutes: int) -> tuple[str, str]:
+    async def calculate_time_window(time_period_minutes: int) -> tuple[str, str]:
         """Calculate start and end time for a given period."""
         now = datetime.now()
-        start_time_str = TimeHelper.get_rounded_time()
+        start_time_str = await TimeHelper.get_rounded_time()
         start_time = datetime.strptime(start_time_str, "%H:%M").replace(
             year=now.year, month=now.month, day=now.day
         )
@@ -358,7 +358,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     async def update_discharge(self, name: str, serial: str, time_period: int) -> None:
         """Update discharge configuration for specified time period."""
         bat_use_cap = self.hass.data[DOMAIN][serial].get(name)
-        start_time, end_time = self.time_helper.calculate_time_window(time_period)
+        start_time, end_time = await self.time_helper.calculate_time_window(time_period)
 
         result = await self.api.updateDisChargeConfigInfo(
             serial, bat_use_cap, 1, end_time, "00:00", start_time, "00:00"
@@ -372,7 +372,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     async def update_charge(self, name: str, serial: str, time_period: int) -> None:
         """Update charge configuration for specified time period."""
         bat_high_cap = self.hass.data[DOMAIN][serial].get(name)
-        start_time, end_time = self.time_helper.calculate_time_window(time_period)
+        start_time, end_time = await self.time_helper.calculate_time_window(time_period)
 
         result = await self.api.updateChargeConfigInfo(
             serial, bat_high_cap, 1, end_time, "00:00", start_time, "00:00"
