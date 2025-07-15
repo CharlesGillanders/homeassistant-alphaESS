@@ -7,7 +7,7 @@
         "data": {
           "AppID": "AppID",
           "AppSecret": "AppSecret",
-          "IPAddress": "IP Address (for local API access), 0 to disable"
+          "IPAddress": "Inverter IP address (optional, 0 to disable)"
         }
       }
     },
@@ -24,7 +24,7 @@
     "step": {
       "init": {
         "data": {
-          "IPAddress": "IP Address (local API access), 0 to disable"
+          "IPAddress": "Inverter IP address (optional, 0 to disable)"
         }
       }
     }
