@@ -69,11 +69,19 @@ class TimeHelper:
     async def calculate_time_window(time_period_minutes: int) -> tuple[str, str]:
         """Calculate start and end time for a given period."""
         now = datetime.now()
-        start_time_str = await TimeHelper.get_rounded_time()
-        start_time = datetime.strptime(start_time_str, "%H:%M").replace(
+
+        # Get the rounded time (next 15-minute interval)
+        rounded_time_str = await TimeHelper.get_rounded_time()
+        rounded_time = datetime.strptime(rounded_time_str, "%H:%M").replace(
             year=now.year, month=now.month, day=now.day
         )
+
+        # Start time is 15 minutes BEFORE the rounded time
+        start_time = rounded_time - timedelta(minutes=15)
+
+        # End time is the time_period_minutes after the start time
         end_time = start_time + timedelta(minutes=time_period_minutes)
+
         return start_time.strftime("%H:%M"), end_time.strftime("%H:%M")
 
 
