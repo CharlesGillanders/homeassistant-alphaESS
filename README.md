@@ -48,8 +48,8 @@ If you had previously been using this custom component in Home Assistant you wil
 
 
 
-## Alpha ESS: GUI based Set Battery Charge/Discharge Times information<br>
- 
+## Alpha ESS: GUI based Set Battery Charge/Discharge Times information
+
 These settings will only use slot 1 for charging and discharging, while you are not able to modify slot 2 from this integration, you are able to view its current settings
 
 Alpha has recently, and unannounced removed most of the restrictions around the POST API calls that can be made. The current restrictions are:
@@ -68,8 +68,41 @@ An error will be placed in the logs
 
 The current charge config, discharge config and charging range will only update once the API is re-called (can be up to 1 min)
 
-If you want to adjust the restrictions yourself, you are able to by modifying the `ALPHA_POST_REQUEST_RESTRICTION` varible in const.py to the amount of seconds allowed per call
+If you want to adjust the restrictions yourself, you are able to by modifying the `ALPHA_POST_REQUEST_RESTRICTION` variable in const.py to the amount of seconds allowed per call
 
+### Time Window Calculation
+
+The time window calculation has been updated to ensure that charge/discharge periods start immediately when activated. The system now:
+- Rounds the current time to the next 15-minute interval
+- Sets the start time to 15 minutes BEFORE the rounded time (alphaess requires a 15-minute interval to be set)
+- Calculates the end time based on the selected duration
+
+This ensures the current time always falls within the configured window, allowing immediate effect.
+
+#### Examples:
+
+**Example 1: 30-minute charge at 10:23**
+- Current time: 10:23
+- Rounded to: 10:30
+- Start time: 10:15 (10:30 - 15 minutes)
+- End time: 10:45 (10:15 + 30 minutes)
+- Result: Charging window 10:15 - 10:45
+
+**Example 2: 60-minute discharge at 14:46**
+- Current time: 14:46
+- Rounded to: 15:00
+- Start time: 14:45 (15:00 - 15 minutes)
+- End time: 15:45 (14:45 + 60 minutes)
+- Result: Discharging window 14:45 - 15:45
+
+**Example 3: 15-minute charge at 09:02**
+- Current time: 09:02
+- Rounded to: 09:15
+- Start time: 09:00 (09:15 - 15 minutes)
+- End time: 09:15 (09:00 + 15 minutes)
+- Result: Charging window 09:00 - 09:15
+
+This approach maintains the 15-minute interval alignment while ensuring the battery immediately begins charging or discharging when the button is pressed.
 ## Local Inverter Support
 
 To use the local inverter support, you will need to have a local inverter that is able to reach your HA instance (preferably on the same subnet). 

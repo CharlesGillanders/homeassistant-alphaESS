@@ -1,7 +1,7 @@
 """Coordinator for AlphaEss integration."""
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 import aiohttp
 from alphaess import alphaess
@@ -56,12 +56,15 @@ class TimeHelper:
         """Get time rounded to next 15-minute interval."""
         now = datetime.now()
 
-        if now.minute > 45:
-            rounded_time = now + timedelta(hours=1)
-            rounded_time = rounded_time.replace(minute=0, second=0, microsecond=0)
-        else:
-            rounded_time = now + timedelta(minutes=15 - (now.minute % 15))
-            rounded_time = rounded_time.replace(second=0, microsecond=0)
+        # Calculate minutes to add to reach next 15-minute interval
+        minutes_to_add = 15 - (now.minute % 15)
+        if minutes_to_add == 15:  # Already on a 15-minute mark
+            minutes_to_add = 0
+
+        rounded_time = (now + timedelta(minutes=minutes_to_add)).replace(
+            second=0,
+            microsecond=0
+        )
 
         return rounded_time.strftime("%H:%M")
 
@@ -69,11 +72,19 @@ class TimeHelper:
     async def calculate_time_window(time_period_minutes: int) -> tuple[str, str]:
         """Calculate start and end time for a given period."""
         now = datetime.now()
-        start_time_str = await TimeHelper.get_rounded_time()
-        start_time = datetime.strptime(start_time_str, "%H:%M").replace(
+
+        # Get the rounded time (next 15-minute interval)
+        rounded_time_str = await TimeHelper.get_rounded_time()
+        rounded_time = datetime.strptime(rounded_time_str, "%H:%M").replace(
             year=now.year, month=now.month, day=now.day
         )
-        end_time = start_time + timedelta(minutes=time_period_minutes)
+
+        # Start time is 15 minutes BEFORE the rounded time
+        start_time = rounded_time - timedelta(minutes=15)
+
+        # End time is the rounded time PLUS the time period
+        end_time = rounded_time + timedelta(minutes=time_period_minutes)
+
         return start_time.strftime("%H:%M"), end_time.strftime("%H:%M")
 
 

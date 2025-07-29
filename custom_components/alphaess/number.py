@@ -45,6 +45,7 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         self._native_unit_of_measurement = full_number_supported_states.native_unit_of_measurement
         self._icon = full_number_supported_states.icon
         self._name = full_number_supported_states.name
+        self._has_local_connection = has_local_connection
 
         if self.key is AlphaESSNames.batHighCap:
             self._def_initial_value = float(90)

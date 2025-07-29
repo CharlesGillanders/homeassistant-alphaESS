@@ -118,6 +118,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         self._state_class = key_supported_states.state_class
         self._serial = serial
         self._coordinator = coordinator
+        self._has_local_connection = has_local_connection
 
         if key_supported_states.native_unit_of_measurement is CURRENCY_DOLLAR:
             self._native_unit_of_measurement = currency
@@ -157,7 +158,6 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                     model_id=self._serial,
                     name=f"Alpha ESS Energy Statistics : {serial}",
                 )
-
 
     @property
     def unique_id(self):
