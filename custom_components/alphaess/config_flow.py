@@ -9,7 +9,7 @@ from alphaess import alphaess
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
@@ -22,7 +22,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
 })
 
 
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
+async def validate_input(data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
 
     client = alphaess.alphaess(data["AppID"], data["AppSecret"], ipaddress=data["IPAddress"])
@@ -66,7 +66,7 @@ class AlphaESSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input:
 
             try:
-                await validate_input(self.hass, user_input)
+                await validate_input(user_input)
 
             except CannotConnect:
                 errors["base"] = "cannot_connect"
