@@ -56,12 +56,15 @@ class TimeHelper:
         """Get time rounded to next 15-minute interval."""
         now = datetime.now()
 
-        if now.minute > 45:
-            rounded_time = now + timedelta(hours=1)
-            rounded_time = rounded_time.replace(minute=0, second=0, microsecond=0)
-        else:
-            rounded_time = now + timedelta(minutes=15 - (now.minute % 15))
-            rounded_time = rounded_time.replace(second=0, microsecond=0)
+        # Calculate minutes to add to reach next 15-minute interval
+        minutes_to_add = 15 - (now.minute % 15)
+        if minutes_to_add == 15:  # Already on a 15-minute mark
+            minutes_to_add = 0
+
+        rounded_time = (now + timedelta(minutes=minutes_to_add)).replace(
+            second=0,
+            microsecond=0
+        )
 
         return rounded_time.strftime("%H:%M")
 
