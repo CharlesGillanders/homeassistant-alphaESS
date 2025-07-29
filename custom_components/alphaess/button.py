@@ -42,21 +42,22 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in EV_DISCHARGE_AND_CHARGE_BUTTONS
     }
 
-
     for serial, data in coordinator.data.items():
         model = data.get("Model")
         has_local_ip_data = 'Local IP' in data
         if model not in INVERTER_SETTING_BLACKLIST:
             for description in full_button_supported_states:
                 button_entities.append(
-                    AlphaESSBatteryButton(coordinator, entry, serial, full_button_supported_states[description], has_local_connection=has_local_ip_data))
+                    AlphaESSBatteryButton(coordinator, entry, serial, full_button_supported_states[description],
+                                          has_local_connection=has_local_ip_data))
 
         ev_charger = data.get("EV Charger S/N")
         if ev_charger:
             for description in ev_charging_supported_states:
                 button_entities.append(
                     AlphaESSBatteryButton(
-                        coordinator, entry, serial, ev_charging_supported_states[description], True, has_local_connection=has_local_ip_data
+                        coordinator, entry, serial, ev_charging_supported_states[description], True,
+                        has_local_connection=has_local_ip_data
                     )
                 )
 
@@ -65,10 +66,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
 class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
-    def __init__(self, coordinator, config, serial, key_supported_states, ev_charger=False, has_local_connection=False):
+    def __init__(self, coordinator: AlphaESSDataUpdateCoordinator, config, serial, key_supported_states, ev_charger=False, has_local_connection=False):
         super().__init__(coordinator)
         self._serial = serial
-        self._coordinator = coordinator
+        self._coordinator: AlphaESSDataUpdateCoordinator = coordinator
         self._name = key_supported_states.name
         self._key = key_supported_states.key
         if not ev_charger:
@@ -77,6 +78,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         self._icon = key_supported_states.icon
         self._entity_category = key_supported_states.entity_category
         self._config = config
+        self._has_local_connection = has_local_connection
 
         self._time = None
 
@@ -145,13 +147,13 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 last_update_dict[self._serial] = local_current_time
                 await update_fn(update_key, self._serial, self._time)
             else:
-                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (local_current_time - last_update)
-                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
-
-                await create_persistent_notification(self.hass,
-                                                     message=f"HPlease wait {int(minutes)} minutes and {int(seconds)} seconds.",
-                                                     title=f"{self._serial} cannot call {movement_direction}")
-
+                time_remaining = ALPHA_POST_REQUEST_RESTRICTION - (local_current_time - last_update)
+                mins, secs = divmod(time_remaining.total_seconds(), 60)
+                await create_persistent_notification(
+                    self.hass,
+                    message=f"Please wait {int(mins)} minutes and {int(secs)} seconds.",
+                    title=f"{self._serial} cannot call {movement_direction}"
+                )
             return last_update_dict
 
         current_time = datetime.now()
@@ -169,11 +171,11 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
                 if last_charge_update.get(self._serial) is not None:
                     charge_remaining = ALPHA_POST_REQUEST_RESTRICTION - (
-                                current_time - last_charge_update[self._serial])
+                            current_time - last_charge_update[self._serial])
 
                 if last_discharge_update.get(self._serial) is not None:
                     discharge_remaining = ALPHA_POST_REQUEST_RESTRICTION - (
-                                current_time - last_discharge_update[self._serial])
+                            current_time - last_discharge_update[self._serial])
 
                 remaining_time = max(charge_remaining, discharge_remaining)
                 minutes, seconds = divmod(remaining_time.total_seconds(), 60)

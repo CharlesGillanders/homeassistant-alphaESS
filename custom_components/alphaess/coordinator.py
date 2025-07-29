@@ -1,7 +1,7 @@
 """Coordinator for AlphaEss integration."""
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 import aiohttp
 from alphaess import alphaess
