@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 import logging
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
@@ -78,9 +78,15 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         self._entity_category = key_supported_states.entity_category
         self._config = config
 
+        self._time = None
+
         if self._key != AlphaESSNames.ButtonRechargeConfig:
             if not ev_charger:
-                self._time = int(self._name.split()[0])
+                try:
+                    self._time = int(self._name.split()[0])
+                except (ValueError, IndexError):
+                    _LOGGER.warning(f"Could not extract time from button name: {self._name}")
+                    self._time = None
 
         for invertor in coordinator.data:
             serial = invertor.upper()
@@ -158,11 +164,23 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 last_discharge_update[self._serial] = last_charge_update[self._serial] = current_time
                 await self._coordinator.reset_config(self._serial)
             else:
-                last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
-                                                                   "charge", self._movement_state)
-                last_discharge_update = await handle_time_restriction(last_discharge_update,
-                                                                      self._coordinator.update_discharge, "discharge",
-                                                                      self._movement_state)
+                charge_remaining = timedelta(0)
+                discharge_remaining = timedelta(0)
+
+                if last_charge_update.get(self._serial) is not None:
+                    charge_remaining = ALPHA_POST_REQUEST_RESTRICTION - (
+                                current_time - last_charge_update[self._serial])
+
+                if last_discharge_update.get(self._serial) is not None:
+                    discharge_remaining = ALPHA_POST_REQUEST_RESTRICTION - (
+                                current_time - last_discharge_update[self._serial])
+
+                remaining_time = max(charge_remaining, discharge_remaining)
+                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+
+                await create_persistent_notification(self.hass,
+                                                     message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
+                                                     title=f"{self._serial} cannot reset configuration")
         elif self._movement_state == "Discharge":
             last_discharge_update = await handle_time_restriction(last_discharge_update,
                                                                   self._coordinator.update_discharge, "batUseCap",

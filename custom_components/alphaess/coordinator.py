@@ -79,8 +79,8 @@ class TimeHelper:
         # Start time is 15 minutes BEFORE the rounded time
         start_time = rounded_time - timedelta(minutes=15)
 
-        # End time is the time_period_minutes after the start time
-        end_time = start_time + timedelta(minutes=time_period_minutes)
+        # End time is the rounded time PLUS the time period
+        end_time = rounded_time + timedelta(minutes=time_period_minutes)
 
         return start_time.strftime("%H:%M"), end_time.strftime("%H:%M")
 
