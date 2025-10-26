@@ -44,8 +44,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
 
     ip_address = entry.options.get("IPAddress", entry.data.get("IPAddress"))
+    verify_ssl = entry.options.get("Verify SSL Certificate", entry.data.get("Verify SSL Certificate"))
 
-    client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"], ipaddress=ip_address)
+    client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"], ipaddress=ip_address, verify_ssl=verify_ssl)
 
     ESSList = await client.getESSList()
     for unit in ESSList:
