@@ -7,7 +7,8 @@
         "data": {
           "AppID": "AppID",
           "AppSecret": "AppSecret",
-          "IPAddress": "Inverter IP address (optional, 0 to disable)"
+          "IPAddress": "Inverter IP address (optional, 0 to disable)",
+          "Verify SSL Certificate": "Verify SSL Certificate"
         }
       }
     },
@@ -24,7 +25,8 @@
     "step": {
       "init": {
         "data": {
-          "IPAddress": "Inverter IP address (optional, 0 to disable)"
+        "IPAddress": "Inverter IP address (optional, 0 to disable)",
+        "Verify SSL Certificate": "Verify SSL Certificate"
         }
       }
     }
