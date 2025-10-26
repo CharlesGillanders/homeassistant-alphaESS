@@ -18,14 +18,15 @@ from .const import DOMAIN, add_inverter_to_list, increment_inverter_count
 STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required("AppID", description="AppID"): str,
     vol.Required("AppSecret", description="AppSecret"): str,
-    vol.Optional("IPAddress", default='0'): vol.Any(None, str)
+    vol.Optional("IPAddress", default='0'): vol.Any(None, str),
+    vol.Optional("Verify SSL Certificate", default=True): bool
 })
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
 
-    client = alphaess.alphaess(data["AppID"], data["AppSecret"], ipaddress=data["IPAddress"])
+    client = alphaess.alphaess(data["AppID"], data["AppSecret"], ipaddress=data["IPAddress"], verify_ssl=data["Verify SSL Certificate"])
 
     try:
         await client.authenticate()
@@ -116,7 +117,14 @@ class AlphaESSOptionsFlowHandler(config_entries.OptionsFlow):
                     "IPAddress",
                     self._config_entry.data.get("IPAddress", ""),
                 ),
-            ): str
+            ): str,
+            vol.Optional(
+                "Verify SSL Certificate",
+                default=self._config_entry.options.get(
+                    "Verify SSL Certificate",
+                    self._config_entry.data.get("Verify SSL Certificate", True),
+                ),
+            ): bool
         }
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))
