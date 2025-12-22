@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 
 import voluptuous as vol
 
@@ -44,6 +45,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
 
     ip_address = entry.options.get("IPAddress", entry.data.get("IPAddress"))
+
+    # Validate IP address
+    if ip_address and ip_address != "0":
+        try:
+            ipaddress.ip_address(ip_address)
+        except ValueError:
+            ip_address = None
+    else:
+        ip_address = None
+
     verify_ssl = entry.options.get("Verify SSL Certificate", entry.data.get("Verify SSL Certificate"))
 
     client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"], ipaddress=ip_address, verify_ssl=verify_ssl)
