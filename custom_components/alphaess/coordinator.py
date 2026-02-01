@@ -388,6 +388,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> Optional[Dict[str, Dict[str, Any]]]:
         """Update data via library."""
+        if self.data is None:
+            self.data = {}
+
         try:
             throttle_factor = THROTTLE_MULTIPLIER * self.LOCAL_INVERTER_COUNT
             jsondata = await self.api.getdata(True, True, throttle_factor)
