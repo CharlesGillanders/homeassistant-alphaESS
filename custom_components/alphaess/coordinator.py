@@ -448,19 +448,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.info(
                     "Cloud API unavailable - local IP sensors updated, cloud sensors unavailable"
                 )
-            else:
-                # No cached data yet — bootstrap from local data
-                sn = local_ip_raw.get("device_info", {}).get("sn")
-                if sn:
-                    self.data[sn] = {"Model": None, **parsed}
-                    _LOGGER.warning(
-                        f"Cloud API unavailable - created initial entry for {sn} using local data only"
-                    )
-                else:
-                    _LOGGER.warning(
-                        "Cloud API unavailable and local device did not return serial number"
-                    )
-                    return None
 
             return self.data
 
