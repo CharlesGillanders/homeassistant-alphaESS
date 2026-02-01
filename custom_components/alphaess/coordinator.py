@@ -303,6 +303,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.data: dict[str, dict[str, float]] = {}
 
+        # Track whether cloud API is reachable
+        self.cloud_available = True
+
         # Initialize helpers
         self.data_processor = DataProcessor()
         self.time_helper = TimeHelper()
@@ -385,6 +388,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> Optional[Dict[str, Dict[str, Any]]]:
         """Update data via library."""
+        if self.data is None:
+            self.data = {}
+
         try:
             throttle_factor = THROTTLE_MULTIPLIER * self.LOCAL_INVERTER_COUNT
             jsondata = await self.api.getdata(True, True, throttle_factor)
@@ -401,12 +407,56 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 inverter_data = await self._parse_inverter_data(invertor)
                 self.data[serial] = inverter_data
 
+            self.cloud_available = True
             return self.data
 
-        except (aiohttp.ClientConnectorError, aiohttp.ClientResponseError) as error:
-            _LOGGER.error(f"Error fetching data: {error}")
-            self.data = None
+        except (aiohttp.ClientConnectorError, aiohttp.ClientResponseError, TypeError) as error:
+            _LOGGER.warning(f"Cloud API error: {error}")
+            self.cloud_available = False
+            return await self._fallback_to_local_data()
+        except Exception as error:
+            _LOGGER.error(f"Unexpected error fetching data: {error}")
+            self.cloud_available = False
+            return await self._fallback_to_local_data()
+
+    async def _fallback_to_local_data(self) -> Optional[Dict[str, Dict[str, Any]]]:
+        """Attempt to fetch local IP data when cloud API is unavailable.
+
+        Cloud sensor keys are removed so those entities become unavailable.
+        Local IP sensor keys are kept with fresh data.
+        """
+        if not getattr(self.api, "ipaddress", None):
+            _LOGGER.debug("No local IP configured")
+            return None
+
+        try:
+            local_ip_raw = await self.api.getIPData()
+            if not local_ip_raw:
+                _LOGGER.warning("Cloud API unavailable and local IP returned no data")
+                return None
+
+            local_ip_data = {"ip": self.api.ipaddress, **local_ip_raw}
+            parsed = await self.parser.parse_local_ip_data(local_ip_data)
+
+            if self.data:
+                # Replace each inverter's data — cloud keys are dropped,
+                # local IP data only on the first inverter
+                first_serial = next(iter(self.data))
+                for serial in self.data:
+                    model = self.data[serial].get("Model")
+                    if serial == first_serial:
+                        self.data[serial] = {"Model": model, **parsed}
+                    else:
+                        self.data[serial] = {"Model": model}
+                _LOGGER.info(
+                    "Cloud API unavailable - local IP sensors updated, cloud sensors unavailable"
+                )
+
             return self.data
+
+        except Exception as local_error:
+            _LOGGER.warning(f"Cloud API unavailable, local IP fetch also failed: {local_error}")
+            return None
 
     async def _parse_inverter_data(self, invertor: Dict) -> Dict[str, Any]:
         """Parse all data for a single inverter."""

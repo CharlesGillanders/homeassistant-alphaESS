@@ -172,6 +172,13 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                                                                "batHighCap", self._movement_state)
 
     @property
+    def available(self) -> bool:
+        """Buttons require cloud API to function."""
+        if not self.coordinator.last_update_success:
+            return False
+        return self._coordinator.cloud_available
+
+    @property
     def unique_id(self):
         return f"{self._config.entry_id}_{self._serial} - {self._name}"
 

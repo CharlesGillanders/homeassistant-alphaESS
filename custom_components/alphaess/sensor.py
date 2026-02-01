@@ -170,6 +170,18 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         return f"{self._name}"
 
     @property
+    def available(self) -> bool:
+        """Return if entity is available based on whether its key exists in the data."""
+        if not self.coordinator.last_update_success:
+            return False
+        if self._coordinator.data is None:
+            return False
+        serial_data = self._coordinator.data.get(self._serial)
+        if serial_data is None:
+            return False
+        return self._key in serial_data
+
+    @property
     def native_value(self) -> StateType:
         """Return the value of the sensor."""
         if self._coordinator.data is None:

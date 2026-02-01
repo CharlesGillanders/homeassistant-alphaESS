@@ -9,7 +9,7 @@
     "step": {
         "user": {
             "title": "Set up Alpha ESS",
-            "description": "Please provide your credentials from the Alpha ESS Open API (https://open.alphaess.com/)",
+            "description": "Please provide your credentials from the Alpha ESS Open API at {open_api_url}",
             "data": {
                 "AppID": "[%key:common::config_flow::data::appid%]",
                 "AppSecret": "[%key:common::config_flow::data::appsecret%]"

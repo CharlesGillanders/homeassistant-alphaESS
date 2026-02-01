@@ -108,6 +108,13 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         self.async_write_ha_state()
 
     @property
+    def available(self) -> bool:
+        """Number controls require cloud API to function."""
+        if not self.coordinator.last_update_success:
+            return False
+        return self._coordinator.cloud_available
+
+    @property
     def native_value(self):
         return self._attr_native_value
 

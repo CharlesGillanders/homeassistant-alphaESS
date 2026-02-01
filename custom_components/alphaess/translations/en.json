@@ -3,7 +3,7 @@
   "config": {
     "step": {
       "user": {
-        "description": "Enter your AppID and AppSecret from the AlphaESS OpenAPI developer portal \n \n If you have any issues with the OpenAPI, read a list of potential fixes [here](https://github.com/CharlesGillanders/homeassistant-alphaESS?tab=readme-ov-file#issues-with-registering-systems-to-the-alphaess-openapi)",
+        "description": "Enter your AppID and AppSecret from the AlphaESS OpenAPI developer portal.\n\nIf you have any issues with the OpenAPI, read a list of potential fixes [here]({issues_url}).",
         "data": {
           "AppID": "AppID",
           "AppSecret": "AppSecret",
