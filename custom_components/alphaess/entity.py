@@ -9,7 +9,7 @@ from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.sensor import SensorEntityDescription
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class AlphaESSSensorDescription(SensorEntityDescription):
     """Class to describe an AlphaESS sensor."""
 
@@ -18,7 +18,7 @@ class AlphaESSSensorDescription(SensorEntityDescription):
                   ] | None = lambda val: val
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class AlphaESSButtonDescription(ButtonEntityDescription):
     """Class to describe an AlphaESS Button."""
 
@@ -27,7 +27,7 @@ class AlphaESSButtonDescription(ButtonEntityDescription):
                   ] | None = lambda val: val
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class AlphaESSNumberDescription(NumberEntityDescription):
     """Class to describe an AlphaESS Number."""
 

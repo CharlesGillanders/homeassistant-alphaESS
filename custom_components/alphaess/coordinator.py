@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    DEFAULT_POST_REQUEST_RESTRICTION,
     DOMAIN,
     SCAN_INTERVAL,
     THROTTLE_MULTIPLIER,
@@ -296,7 +297,7 @@ class InverterDataParser:
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
 
-    def __init__(self, hass: HomeAssistant, client: alphaess.alphaess) -> None:
+    def __init__(self, hass: HomeAssistant, client: alphaess.alphaess, post_request_restriction: int = DEFAULT_POST_REQUEST_RESTRICTION) -> None:
         """Initialize coordinator."""
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = client
@@ -305,6 +306,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Track whether cloud API is reachable
         self.cloud_available = True
+
+        # Rate-limit tracking for button presses
+        self.last_discharge_update: dict[str, datetime] = {}
+        self.last_charge_update: dict[str, datetime] = {}
+        self.post_request_restriction = timedelta(seconds=post_request_restriction)
+
+        # Previous state tracking for event firing
+        self._previous_ev_status: dict[str, Any] = {}
 
         # Initialize helpers
         self.data_processor = DataProcessor()
@@ -460,6 +469,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _parse_inverter_data(self, invertor: Dict) -> Dict[str, Any]:
         """Parse all data for a single inverter."""
+        serial = invertor.get("sysSn", "")
+
         # Start with basic info
         data = await self.parser.parse_basic_info(invertor)
 
@@ -472,6 +483,17 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         ev_data = invertor.get("EVData", {})
         if ev_data:
             data.update(await self.parser.parse_ev_data(ev_data, invertor))
+
+            # Fire event if EV charger status changed
+            new_ev_status = data.get(AlphaESSNames.evchargerstatus)
+            old_ev_status = self._previous_ev_status.get(serial)
+            if old_ev_status is not None and new_ev_status != old_ev_status:
+                self.hass.bus.async_fire(
+                    "alphaess_ev_status_changed",
+                    {"serial": serial, "old_status": old_ev_status, "new_status": new_ev_status},
+                )
+            if new_ev_status is not None:
+                self._previous_ev_status[serial] = new_ev_status
 
         # Add summary data
         sum_data = invertor.get("SumData", {})

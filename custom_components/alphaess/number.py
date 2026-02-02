@@ -4,10 +4,10 @@ from homeassistant.helpers.device_registry import DeviceInfo, DeviceEntryType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.number import RestoreNumber
 import logging
-from custom_components.alphaess import DOMAIN, AlphaESSDataUpdateCoordinator
-from custom_components.alphaess.const import INVERTER_SETTING_BLACKLIST
-from custom_components.alphaess.enums import AlphaESSNames
-from custom_components.alphaess.sensorlist import DISCHARGE_AND_CHARGE_NUMBERS
+from . import DOMAIN, AlphaESSDataUpdateCoordinator
+from .const import INVERTER_SETTING_BLACKLIST
+from .enums import AlphaESSNames
+from .sensorlist import DISCHARGE_AND_CHARGE_NUMBERS
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
