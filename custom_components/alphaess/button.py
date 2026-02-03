@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 import logging
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
@@ -134,7 +134,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         last_charge_update = self._coordinator.last_charge_update
 
         async def handle_time_restriction(last_update_dict, update_fn, update_key, movement_direction):
-            local_current_time = datetime.now()
+            local_current_time = datetime.now(timezone.utc)
             last_update = last_update_dict.get(self._serial)
             if last_update is None or local_current_time - last_update >= rate_limit:
                 last_update_dict[self._serial] = local_current_time
@@ -152,7 +152,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                                                      message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
                                                      title=f"{self._serial} cannot call {movement_direction}")
 
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
 
         if self._key == AlphaESSNames.ButtonRechargeConfig:
             if (last_charge_update.get(self._serial) is None or current_time - last_charge_update[
