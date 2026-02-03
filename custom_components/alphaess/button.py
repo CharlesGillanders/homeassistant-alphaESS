@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 import logging
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
@@ -6,14 +6,11 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import AlphaESSDataUpdateCoordinator
-from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION, INVERTER_SETTING_BLACKLIST
+from .const import DOMAIN, INVERTER_SETTING_BLACKLIST
 from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS, EV_DISCHARGE_AND_CHARGE_BUTTONS
 from .enums import AlphaESSNames
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
-
-last_discharge_update = {}
-last_charge_update = {}
 
 
 async def create_persistent_notification(hass, message, title="Error"):
@@ -119,57 +116,69 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
     async def async_press(self) -> None:
 
+        rate_limit = self._coordinator.post_request_restriction
+
         if self._key == AlphaESSNames.stopcharging:
-            _LOGGER.info("Stopped charging")
+            _LOGGER.info(f"EV charger stop charging for {self._ev_serial} start command sent successfully.")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 0)
+            return
 
         if self._key == AlphaESSNames.startcharging:
-            _LOGGER.info("started charging")
+            _LOGGER.info(f"EV charger start charging for {self._ev_serial} start command sent successfully.")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 1)
+            return
 
-        global last_discharge_update
-        global last_charge_update
+        last_discharge_update = self._coordinator.last_discharge_update
+        last_charge_update = self._coordinator.last_charge_update
 
         async def handle_time_restriction(last_update_dict, update_fn, update_key, movement_direction):
-            local_current_time = datetime.now()
+            local_current_time = datetime.now(timezone.utc)
             last_update = last_update_dict.get(self._serial)
-            if last_update is None or local_current_time - last_update >= ALPHA_POST_REQUEST_RESTRICTION:
+            if last_update is None or local_current_time - last_update >= rate_limit:
                 last_update_dict[self._serial] = local_current_time
                 await update_fn(update_key, self._serial, self._time)
+                await create_persistent_notification(
+                    self.hass,
+                    message=f"{movement_direction} command sent successfully for {self._serial}.",
+                    title=f"{self._serial} Battery Control",
+                )
             else:
-                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (local_current_time - last_update)
+                remaining_time = rate_limit - (local_current_time - last_update)
                 minutes, seconds = divmod(remaining_time.total_seconds(), 60)
 
                 await create_persistent_notification(self.hass,
-                                                     message=f"HPlease wait {int(minutes)} minutes and {int(seconds)} seconds.",
+                                                     message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
                                                      title=f"{self._serial} cannot call {movement_direction}")
 
-            return last_update_dict
-
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
 
         if self._key == AlphaESSNames.ButtonRechargeConfig:
             if (last_charge_update.get(self._serial) is None or current_time - last_charge_update[
-                self._serial] >= ALPHA_POST_REQUEST_RESTRICTION) and \
+                self._serial] >= rate_limit) and \
                     (last_discharge_update.get(self._serial) is None or current_time - last_discharge_update[
-                        self._serial] >= ALPHA_POST_REQUEST_RESTRICTION):
+                        self._serial] >= rate_limit):
                 last_discharge_update[self._serial] = last_charge_update[self._serial] = current_time
                 await self._coordinator.reset_config(self._serial)
+                await create_persistent_notification(
+                    self.hass,
+                    message=f"Charge/discharge configuration reset successfully for {self._serial}.",
+                    title=f"{self._serial} Battery Control",
+                )
             else:
-                last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
-                                                                   "charge", self._movement_state)
-                last_discharge_update = await handle_time_restriction(last_discharge_update,
-                                                                      self._coordinator.update_discharge, "discharge",
-                                                                      self._movement_state)
+                await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
+                                              "charge", self._movement_state)
+                await handle_time_restriction(last_discharge_update,
+                                              self._coordinator.update_discharge, "discharge",
+                                              self._movement_state)
         elif self._movement_state == "Discharge":
-            last_discharge_update = await handle_time_restriction(last_discharge_update,
-                                                                  self._coordinator.update_discharge, "batUseCap",
-                                                                  self._movement_state)
+            await handle_time_restriction(last_discharge_update,
+                                          self._coordinator.update_discharge, "batUseCap",
+                                          self._movement_state)
         elif self._movement_state == "Charge":
-            last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
-                                                               "batHighCap", self._movement_state)
+            await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
+                                          "batHighCap", self._movement_state)
 
     @property
     def available(self) -> bool:

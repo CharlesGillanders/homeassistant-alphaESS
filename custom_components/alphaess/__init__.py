@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 
 import homeassistant.helpers.config_validation as cv
 
-from .const import DOMAIN, PLATFORMS, add_inverter_to_list, increment_inverter_count
+from .const import DEFAULT_POST_REQUEST_RESTRICTION, DOMAIN, PLATFORMS, add_inverter_to_list, increment_inverter_count
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 SERVICE_BATTERY_CHARGE_SCHEMA = vol.Schema(
@@ -24,7 +24,7 @@ SERVICE_BATTERY_CHARGE_SCHEMA = vol.Schema(
         vol.Required('cp1end'): cv.string,
         vol.Required('cp2start'): cv.string,
         vol.Required('cp2end'): cv.string,
-        vol.Required('chargestopsoc'): cv.positive_int,
+        vol.Required('chargestopsoc'): vol.All(cv.positive_int, vol.Range(min=0, max=100)),
     }
 )
 
@@ -36,7 +36,7 @@ SERVICE_BATTERY_DISCHARGE_SCHEMA = vol.Schema(
         vol.Required('dp1end'): cv.string,
         vol.Required('dp2start'): cv.string,
         vol.Required('dp2end'): cv.string,
-        vol.Required('dischargecutoffsoc'): cv.positive_int,
+        vol.Required('dischargecutoffsoc'): vol.All(cv.positive_int, vol.Range(min=0, max=100)),
     }
 )
 
@@ -44,9 +44,9 @@ SERVICE_BATTERY_DISCHARGE_SCHEMA = vol.Schema(
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
 
-    ip_address = entry.options.get("IPAddress", entry.data.get("IPAddress"))
+    ip_address = (entry.options.get("IPAddress", entry.data.get("IPAddress")) or "").strip()
 
-    # Validate IP address
+    # Validate IP address - normalize blank/"0" to None
     if ip_address and ip_address != "0":
         try:
             ipaddress.ip_address(ip_address)
@@ -59,8 +59,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     client = alphaess.alphaess(entry.data["AppID"], entry.data["AppSecret"], ipaddress=ip_address, verify_ssl=verify_ssl)
 
-    ESSList = await client.getESSList()
-    for unit in ESSList:
+    ess_list = await client.getESSList()
+    for unit in ess_list:
         if "sysSn" in unit:
             name = unit["minv"]
             add_inverter_to_list(name)
@@ -68,7 +68,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await asyncio.sleep(1)
 
-    _coordinator = AlphaESSDataUpdateCoordinator(hass, client=client)
+    _coordinator = AlphaESSDataUpdateCoordinator(hass, client=client, post_request_restriction=DEFAULT_POST_REQUEST_RESTRICTION)
     await _coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = _coordinator

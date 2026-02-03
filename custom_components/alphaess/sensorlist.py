@@ -759,8 +759,7 @@ DISCHARGE_AND_CHARGE_NUMBERS: List[AlphaESSNumberDescription] = [
     )
 ]
 
-EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSNumberDescription] = [
-
+EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSButtonDescription] = [
     AlphaESSButtonDescription(
         key=AlphaESSNames.stopcharging,
         name="Stop Charging",
@@ -870,6 +869,7 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
         icon="mdi:ev-station",
         native_unit_of_measurement=None,
         state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.evchargermodel,
@@ -877,6 +877,7 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
         icon="mdi:ev-station",
         native_unit_of_measurement=None,
         state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.evchargerstatusraw,
@@ -884,12 +885,13 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
         icon="mdi:ev-station",
         native_unit_of_measurement=None,
         state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.evchargerstatus,
         name="EV Charger Status",
         icon="mdi:ev-station",
-        device_class="enum",
+        device_class=SensorDeviceClass.ENUM,
         native_unit_of_measurement=None,
         state_class=None,
     ),

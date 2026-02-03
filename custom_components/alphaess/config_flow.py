@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 from typing import Any
 
 import aiohttp
@@ -10,7 +11,6 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN, add_inverter_to_list, increment_inverter_count
@@ -18,7 +18,7 @@ from .const import DOMAIN, add_inverter_to_list, increment_inverter_count
 STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required("AppID", description="AppID"): str,
     vol.Required("AppSecret", description="AppSecret"): str,
-    vol.Optional("IPAddress", default='0'): vol.Any(None, str),
+    vol.Optional("IPAddress", default=''): str,
     vol.Optional("Verify SSL Certificate", default=True): bool
 })
 
@@ -26,13 +26,22 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
 
-    client = alphaess.alphaess(data["AppID"], data["AppSecret"], ipaddress=data["IPAddress"], verify_ssl=data["Verify SSL Certificate"])
+    ip = data.get("IPAddress").strip()
+    if ip and ip != "0":
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            raise InvalidIPAddress
+    else:
+        ip = None
+
+    client = alphaess.alphaess(data["AppID"], data["AppSecret"], ipaddress=ip, verify_ssl=data["Verify SSL Certificate"])
 
     try:
         await client.authenticate()
         await asyncio.sleep(1)
-        ESSList = await client.getESSList()
-        for unit in ESSList:
+        ess_list = await client.getESSList()
+        for unit in ess_list:
             if "sysSn" in unit:
                 name = unit["minv"]
                 add_inverter_to_list(name)
@@ -59,7 +68,7 @@ class AlphaESSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
             self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ):
         """Handle the initial step."""
 
         errors = {}
@@ -73,10 +82,13 @@ class AlphaESSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
+            except InvalidIPAddress:
+                errors["base"] = "invalid_ip"
 
-            return self.async_create_entry(
-                title=user_input["AppID"], data=user_input
-            )
+            if not errors:
+                return self.async_create_entry(
+                    title=user_input["AppID"], data=user_input
+                )
 
         return self.async_show_form(
             step_id="user",
@@ -104,6 +116,10 @@ class CannotConnect(HomeAssistantError):
     """Error to indicate there is a problem connecting."""
 
 
+class InvalidIPAddress(HomeAssistantError):
+    """Error to indicate the IP address is invalid."""
+
+
 class AlphaESSOptionsFlowHandler(config_entries.OptionsFlow):
     """AlphaESS options flow."""
 
@@ -112,9 +128,20 @@ class AlphaESSOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
+    ):
+        errors = {}
+
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            ip = (user_input.get("IPAddress") or "").strip()
+            user_input["IPAddress"] = ip
+            if ip and ip != "0":
+                try:
+                    ipaddress.ip_address(ip)
+                except ValueError:
+                    errors["base"] = "invalid_ip"
+
+            if not errors:
+                return self.async_create_entry(title="", data=user_input)
 
         schema = {
             vol.Optional(
@@ -133,4 +160,4 @@ class AlphaESSOptionsFlowHandler(config_entries.OptionsFlow):
             ): bool
         }
 
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema), errors=errors)
