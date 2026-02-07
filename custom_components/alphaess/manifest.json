@@ -10,7 +10,6 @@
   ],
   "config_flow": true,
   "documentation": "https://github.com/CharlesGillanders/homeassistant-alphaESS",
-  "homeassistant": "2025.1.0",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues",
   "requirements": [
