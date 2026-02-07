@@ -6,18 +6,18 @@ from typing import Any, Dict, Optional, Union
 import aiohttp
 from alphaess import alphaess
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
-    DEFAULT_POST_REQUEST_RESTRICTION,
+    CONF_IP_ADDRESS,
+    CONF_SERIAL_NUMBER,
     DOMAIN,
+    LOWER_INVERTER_API_CALL_LIST,
     SCAN_INTERVAL,
-    THROTTLE_MULTIPLIER,
-    get_inverter_count,
-    set_throttle_count_lower,
-    get_inverter_list,
-    LOWER_INVERTER_API_CALL_LIST
+    SUBENTRY_TYPE_EV_CHARGER,
+    SUBENTRY_TYPE_INVERTER,
 )
 from .enums import AlphaESSNames
 
@@ -297,44 +297,63 @@ class InverterDataParser:
 class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
 
-    def __init__(self, hass: HomeAssistant, client: alphaess.alphaess, post_request_restriction: int = DEFAULT_POST_REQUEST_RESTRICTION) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: alphaess.alphaess,
+        ip_address_map: dict[str, str | None] | None = None,
+        inverter_models: list[str] | None = None,
+        entry: ConfigEntry | None = None,
+    ) -> None:
         """Initialize coordinator."""
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = client
         self.hass = hass
         self.data: dict[str, dict[str, float]] = {}
+        self.entry = entry
+
+        # Per-inverter IP address mapping
+        self.ip_address_map = ip_address_map or {}
 
         # Track whether cloud API is reachable
         self.cloud_available = True
-
-        # Rate-limit tracking for button presses
-        self.last_discharge_update: dict[str, datetime] = {}
-        self.last_charge_update: dict[str, datetime] = {}
-        self.post_request_restriction = timedelta(seconds=post_request_restriction)
-
-        # Previous state tracking for event firing
-        self._previous_ev_status: dict[str, Any] = {}
 
         # Initialize helpers
         self.data_processor = DataProcessor()
         self.time_helper = TimeHelper()
         self.parser = InverterDataParser(self.data_processor)
 
-        # Configure based on inverter types
-        self._configure_inverter_settings()
-
-    def _configure_inverter_settings(self) -> None:
-        """Configure settings based on inverter types."""
-        self.model_list = get_inverter_list()
-        self.inverter_count = get_inverter_count()
+        # Store inverter info as instance state (no more globals)
+        self.model_list = inverter_models or []
+        self.inverter_count = len(self.model_list)
         self.LOCAL_INVERTER_COUNT = 0 if self.inverter_count <= 1 else self.inverter_count
 
-        # Check if we need reduced API calls
+        # Configure throttling based on inverter types
+        self.throttle_multiplier = 0.0
         self.has_throttle = True
         if (all(inverter not in self.model_list for inverter in LOWER_INVERTER_API_CALL_LIST)
                 and len(self.model_list) > 0):
             self.has_throttle = False
-            set_throttle_count_lower()
+            self.throttle_multiplier = 1.25
+
+        # Build subentry lookup for device info
+        self._inverter_subentry_map: dict[str, str] = {}
+        self._ev_charger_subentry_map: dict[str, str] = {}
+        if entry:
+            for subentry_id, subentry in entry.subentries.items():
+                serial = subentry.data.get(CONF_SERIAL_NUMBER, "")
+                if subentry.subentry_type == SUBENTRY_TYPE_INVERTER:
+                    self._inverter_subentry_map[serial] = subentry_id
+                elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
+                    self._ev_charger_subentry_map[serial] = subentry_id
+
+    def get_inverter_subentry_id(self, serial: str) -> str | None:
+        """Get the subentry ID for an inverter by its serial number."""
+        return self._inverter_subentry_map.get(serial)
+
+    def get_ev_charger_subentry_id(self, ev_serial: str) -> str | None:
+        """Get the subentry ID for an EV charger by its serial number."""
+        return self._ev_charger_subentry_map.get(ev_serial)
 
     async def control_ev(self, serial: str, ev_serial: str, direction: str) -> None:
         """Control EV charger."""
@@ -401,7 +420,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             self.data = {}
 
         try:
-            throttle_factor = THROTTLE_MULTIPLIER * self.LOCAL_INVERTER_COUNT
+            throttle_factor = self.throttle_multiplier * self.LOCAL_INVERTER_COUNT
             jsondata = await self.api.getdata(True, True, throttle_factor)
 
             if jsondata is None:
@@ -416,6 +435,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 inverter_data = await self._parse_inverter_data(invertor)
                 self.data[serial] = inverter_data
 
+            # Fetch local IP data per-inverter for those with configured IPs
+            await self._fetch_per_inverter_local_data()
+
             self.cloud_available = True
             return self.data
 
@@ -428,49 +450,84 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             self.cloud_available = False
             return await self._fallback_to_local_data()
 
+    async def _fetch_per_inverter_local_data(self) -> None:
+        """Fetch local IP data for each inverter that has a configured IP.
+
+        Temporarily sets the API client's ipaddress for each call,
+        then resets it to None.
+        """
+        for serial, ip in self.ip_address_map.items():
+            if not ip or serial not in self.data:
+                continue
+
+            # Skip if cloud API already provided LocalIPData for this inverter
+            if self.data[serial].get("Local IP"):
+                continue
+
+            try:
+                self.api.ipaddress = ip
+                local_ip_raw = await self.api.getIPData()
+                if local_ip_raw:
+                    local_ip_data = {"ip": ip, **local_ip_raw}
+                    parsed = await self.parser.parse_local_ip_data(local_ip_data)
+                    self.data[serial].update(parsed)
+                    _LOGGER.debug(f"Fetched local IP data for {serial} from {ip}")
+            except Exception as error:
+                _LOGGER.debug(f"Could not fetch local IP data for {serial} from {ip}: {error}")
+            finally:
+                self.api.ipaddress = None
+
     async def _fallback_to_local_data(self) -> Optional[Dict[str, Dict[str, Any]]]:
         """Attempt to fetch local IP data when cloud API is unavailable.
 
+        Uses per-inverter IP addresses from subentry configuration.
         Cloud sensor keys are removed so those entities become unavailable.
         Local IP sensor keys are kept with fresh data.
         """
-        if not getattr(self.api, "ipaddress", None):
-            _LOGGER.debug("No local IP configured")
+        has_any_local_ip = any(ip for ip in self.ip_address_map.values() if ip)
+
+        if not has_any_local_ip:
+            _LOGGER.debug("No local IP configured for any inverter")
             return None
 
-        try:
-            local_ip_raw = await self.api.getIPData()
-            if not local_ip_raw:
-                _LOGGER.warning("Cloud API unavailable and local IP returned no data")
-                return None
+        any_success = False
 
-            local_ip_data = {"ip": self.api.ipaddress, **local_ip_raw}
-            parsed = await self.parser.parse_local_ip_data(local_ip_data)
-
-            if self.data:
-                # Replace each inverter's data — cloud keys are dropped,
-                # local IP data only on the first inverter
-                first_serial = next(iter(self.data))
-                for serial in self.data:
+        for serial, ip in self.ip_address_map.items():
+            if not ip:
+                # No IP for this inverter - clear cloud data but keep model
+                if serial in self.data:
                     model = self.data[serial].get("Model")
-                    if serial == first_serial:
-                        self.data[serial] = {"Model": model, **parsed}
-                    else:
-                        self.data[serial] = {"Model": model}
-                _LOGGER.info(
-                    "Cloud API unavailable - local IP sensors updated, cloud sensors unavailable"
-                )
+                    self.data[serial] = {"Model": model}
+                continue
 
-            return self.data
+            try:
+                self.api.ipaddress = ip
+                local_ip_raw = await self.api.getIPData()
+                if local_ip_raw:
+                    local_ip_data = {"ip": ip, **local_ip_raw}
+                    parsed = await self.parser.parse_local_ip_data(local_ip_data)
+                    model = self.data.get(serial, {}).get("Model")
+                    self.data[serial] = {"Model": model, **parsed}
+                    any_success = True
+                    _LOGGER.info(f"Cloud unavailable - using local data for {serial} from {ip}")
+                else:
+                    model = self.data.get(serial, {}).get("Model")
+                    self.data[serial] = {"Model": model}
+            except Exception as error:
+                _LOGGER.warning(f"Local IP fetch failed for {serial} ({ip}): {error}")
+                model = self.data.get(serial, {}).get("Model")
+                self.data[serial] = {"Model": model}
+            finally:
+                self.api.ipaddress = None
 
-        except Exception as local_error:
-            _LOGGER.warning(f"Cloud API unavailable, local IP fetch also failed: {local_error}")
+        if not any_success:
+            _LOGGER.warning("Cloud API unavailable and all local IP fetches failed")
             return None
+
+        return self.data
 
     async def _parse_inverter_data(self, invertor: Dict) -> Dict[str, Any]:
         """Parse all data for a single inverter."""
-        serial = invertor.get("sysSn", "")
-
         # Start with basic info
         data = await self.parser.parse_basic_info(invertor)
 
@@ -483,17 +540,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         ev_data = invertor.get("EVData", {})
         if ev_data:
             data.update(await self.parser.parse_ev_data(ev_data, invertor))
-
-            # Fire event if EV charger status changed
-            new_ev_status = data.get(AlphaESSNames.evchargerstatus)
-            old_ev_status = self._previous_ev_status.get(serial)
-            if old_ev_status is not None and new_ev_status != old_ev_status:
-                self.hass.bus.async_fire(
-                    "alphaess_ev_status_changed",
-                    {"serial": serial, "old_status": old_ev_status, "new_status": new_ev_status},
-                )
-            if new_ev_status is not None:
-                self._previous_ev_status[serial] = new_ev_status
 
         # Add summary data
         sum_data = invertor.get("SumData", {})

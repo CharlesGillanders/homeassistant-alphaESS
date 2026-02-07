@@ -7,7 +7,6 @@
         "data": {
           "AppID": "AppID",
           "AppSecret": "AppSecret",
-          "IPAddress": "Inverter IP address (optional)",
           "Verify SSL Certificate": "Verify SSL Certificate"
         }
       }
@@ -18,16 +17,84 @@
     "error": {
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
-      "invalid_ip": "Invalid IP address format",
       "unknown": "Unexpected error"
+    }
+  },
+  "config_subentries": {
+    "inverter": {
+      "entry_type": "Inverter",
+      "error": {
+        "already_configured": "This inverter is already configured"
+      },
+      "initiate_flow": {
+        "user": "Add inverter"
+      },
+      "step": {
+        "user": {
+          "title": "Add inverter",
+          "data": {
+            "serial_number": "Serial number",
+            "inverter_model": "Inverter model",
+            "ip_address": "IP address (optional)"
+          },
+          "data_description": {
+            "serial_number": "The serial number of the inverter (sysSn)",
+            "inverter_model": "The model name of the inverter",
+            "ip_address": "Local IP address for direct connection to the inverter"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure inverter {serial_number}",
+          "data": {
+            "ip_address": "IP address (optional)"
+          },
+          "data_description": {
+            "ip_address": "Local IP address for direct connection to the inverter"
+          }
+        }
+      }
+    },
+    "ev_charger": {
+      "entry_type": "EV Charger",
+      "error": {
+        "already_configured": "This EV charger is already configured"
+      },
+      "initiate_flow": {
+        "user": "Add EV charger"
+      },
+      "step": {
+        "user": {
+          "title": "Add EV charger",
+          "data": {
+            "serial_number": "Serial number",
+            "ev_charger_model": "EV charger model",
+            "parent_inverter_serial": "Parent inverter serial number"
+          },
+          "data_description": {
+            "serial_number": "The serial number of the EV charger",
+            "ev_charger_model": "The model name of the EV charger",
+            "parent_inverter_serial": "The serial number of the inverter this charger is connected to"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure EV charger {serial_number}",
+          "data": {
+            "ev_charger_model": "EV charger model",
+            "parent_inverter_serial": "Parent inverter serial number"
+          },
+          "data_description": {
+            "ev_charger_model": "The model name of the EV charger",
+            "parent_inverter_serial": "The serial number of the inverter this charger is connected to"
+          }
+        }
+      }
     }
   },
   "options": {
     "step": {
       "init": {
         "data": {
-        "IPAddress": "Inverter IP address (optional), 0 to disable",
-        "Verify SSL Certificate": "Verify SSL Certificate"
+          "Verify SSL Certificate": "Verify SSL Certificate"
         }
       }
     }

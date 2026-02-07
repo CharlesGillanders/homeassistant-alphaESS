@@ -4,10 +4,12 @@ from homeassistant.helpers.device_registry import DeviceInfo, DeviceEntryType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.number import RestoreNumber
 import logging
-from . import DOMAIN, AlphaESSDataUpdateCoordinator
-from .const import INVERTER_SETTING_BLACKLIST
+
+from .const import DOMAIN, INVERTER_SETTING_BLACKLIST, CONF_SERIAL_NUMBER, SUBENTRY_TYPE_INVERTER
+from .coordinator import AlphaESSDataUpdateCoordinator
 from .enums import AlphaESSNames
 from .sensorlist import DISCHARGE_AND_CHARGE_NUMBERS
+from .sensor import _build_inverter_device_info
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -15,27 +17,45 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    number_entities: List[NumberEntity] = []
-
     full_number_supported_states = {
         description.key: description for description in DISCHARGE_AND_CHARGE_NUMBERS
     }
 
-    for serial, data in coordinator.data.items():
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_TYPE_INVERTER:
+            continue
+
+        serial = subentry.data.get(CONF_SERIAL_NUMBER)
+        if not serial or serial not in coordinator.data:
+            continue
+
+        data = coordinator.data[serial]
         model = data.get("Model")
-        has_local_ip_data = 'Local IP' in data
+        inverter_device_info = _build_inverter_device_info(coordinator, serial, data)
+
+        number_entities: List[NumberEntity] = []
+
         if model not in INVERTER_SETTING_BLACKLIST:
             for description in full_number_supported_states:
                 number_entities.append(
-                    AlphaNumber(coordinator, serial, entry, full_number_supported_states[description], has_local_connection=has_local_ip_data))
+                    AlphaNumber(
+                        coordinator, serial, entry,
+                        full_number_supported_states[description],
+                        device_info=inverter_device_info,
+                    )
+                )
 
-    async_add_entities(number_entities)
+        if number_entities:
+            async_add_entities(
+                number_entities,
+                config_subentry_id=subentry.subentry_id,
+            )
 
 
 class AlphaNumber(CoordinatorEntity, RestoreNumber):
     """Battery use capacity number entity."""
 
-    def __init__(self, coordinator, serial, config, full_number_supported_states, has_local_connection=False):
+    def __init__(self, coordinator, serial, config, full_number_supported_states, device_info=None):
         super().__init__(coordinator)
         self._coordinator = coordinator
         self._serial = serial
@@ -51,31 +71,8 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         else:
             self._def_initial_value = float(10)
 
-        for invertor in coordinator.data:
-            serial = invertor.upper()
-            if "Local IP" in coordinator.data[invertor] and coordinator.data[invertor].get('Local IP') != '0':
-                _LOGGER.info(f"INVERTER LOCAL DATA = {coordinator.data[invertor]}")
-                self._attr_device_info = DeviceInfo(
-                    entry_type=DeviceEntryType.SERVICE,
-                    identifiers={(DOMAIN, serial)},
-                    serial_number=coordinator.data[invertor]["Device Serial Number"],
-                    sw_version=coordinator.data[invertor]["Software Version"],
-                    hw_version=coordinator.data[invertor]["Hardware Version"],
-                    manufacturer="AlphaESS",
-                    model=coordinator.data[invertor]["Model"],
-                    model_id=self._serial,
-                    name=f"Alpha ESS Energy Statistics LOCAL : {serial}",
-                    configuration_url=f"http://{coordinator.data[invertor]["Local IP"]}"
-                )
-            elif self._serial == serial:
-                self._attr_device_info = DeviceInfo(
-                    entry_type=DeviceEntryType.SERVICE,
-                    identifiers={(DOMAIN, serial)},
-                    manufacturer="AlphaESS",
-                    model=coordinator.data[invertor]["Model"],
-                    model_id=self._serial,
-                    name=f"Alpha ESS Energy Statistics : {serial}",
-                )
+        if device_info:
+            self._attr_device_info = device_info
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
