@@ -11,12 +11,15 @@ from alphaess import alphaess
 
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
+    CONF_EV_CHARGER_MODEL,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
+    CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
     DOMAIN,
     PLATFORMS,
@@ -138,9 +141,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             hass.config_entries.async_add_subentry(entry, subentry)
 
-        # Clear the temporary migrated IP from options
+        # Clear the temporary migrated IP from options (keep cleanup flag)
         if migrated_ip:
-            hass.config_entries.async_update_entry(entry, options={})
+            remaining_options = {
+                k: v for k, v in entry.options.items()
+                if k != "_migrated_ip"
+            }
+            hass.config_entries.async_update_entry(entry, options=remaining_options)
 
         # Rebuild IP map now that subentries exist
         ip_address_map = _build_ip_address_map(entry)
@@ -159,6 +166,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = _coordinator
+
+    # Auto-create EV charger subentries for any discovered chargers
+    existing_ev_serials = {
+        sub.data.get(CONF_SERIAL_NUMBER)
+        for sub in entry.subentries.values()
+        if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
+    }
+    for serial, data in _coordinator.data.items():
+        ev_sn = data.get("EV Charger S/N")
+        if ev_sn and ev_sn not in existing_ev_serials:
+            ev_model = data.get("EV Charger Model", "Unknown")
+            ev_subentry = ConfigSubentry(
+                data={
+                    CONF_SERIAL_NUMBER: ev_sn,
+                    CONF_EV_CHARGER_MODEL: ev_model,
+                    CONF_PARENT_INVERTER: serial,
+                },
+                subentry_type=SUBENTRY_TYPE_EV_CHARGER,
+                title=f"{ev_model} ({ev_sn})",
+                unique_id=f"{SUBENTRY_TYPE_EV_CHARGER}_{ev_sn}",
+            )
+            hass.config_entries.async_add_subentry(entry, ev_subentry)
+            existing_ev_serials.add(ev_sn)
+
+    # One-time cleanup: remove old device associations from pre-subentry era.
+    # Old devices were registered with (config_entry_id, None) - no subentry.
+    # Remove them so platforms recreate devices with proper subentry associations.
+    if entry.options.get("_needs_device_cleanup"):
+        dev_reg = dr.async_get(hass)
+        devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+        for device_entry in devices:
+            dev_reg.async_update_device(
+                device_entry.id, remove_config_entry_id=entry.entry_id
+            )
+        # Clear the flag so this only runs once
+        new_options = {
+            k: v for k, v in entry.options.items()
+            if k != "_needs_device_cleanup"
+        }
+        hass.config_entries.async_update_entry(entry, options=new_options)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -232,8 +279,9 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         }
 
         # Store the old IP temporarily so async_setup_entry can assign it
-        # to the first inverter when it auto-creates subentries
-        new_options = {}
+        # to the first inverter when it auto-creates subentries.
+        # Also flag that old devices need cleanup (pre-subentry associations).
+        new_options = {"_needs_device_cleanup": True}
         if old_ip and old_ip != "0":
             new_options["_migrated_ip"] = old_ip
 
