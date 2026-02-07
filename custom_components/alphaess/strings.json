@@ -9,7 +9,7 @@
     "step": {
         "user": {
             "title": "Set up Alpha ESS",
-            "description": "Please provide your credentials from the Alpha ESS Open API at {open_api_url}",
+            "description": "Please provide your credentials from the Alpha ESS Open API at {open_api_url}\n\nAfter setup, you can configure a local IP address for each inverter via its sub-entry options to enable local access when the cloud API is unavailable.",
             "data": {
                 "AppID": "[%key:common::config_flow::data::appid%]",
                 "AppSecret": "[%key:common::config_flow::data::appsecret%]",
@@ -21,7 +21,8 @@
   "config_subentries": {
     "inverter": {
       "entry_type": "Inverter",
-      "error": {
+      "abort": {
+        "auto_discovered": "Inverters are automatically discovered from the AlphaESS API.",
         "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
       },
       "initiate_flow": {
@@ -54,7 +55,8 @@
     },
     "ev_charger": {
       "entry_type": "EV Charger",
-      "error": {
+      "abort": {
+        "auto_discovered": "EV chargers are automatically discovered from the AlphaESS API.",
         "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
       },
       "initiate_flow": {
