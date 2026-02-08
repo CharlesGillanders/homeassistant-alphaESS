@@ -1,16 +1,21 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List
 import logging
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import AlphaESSDataUpdateCoordinator
-from .const import DOMAIN, INVERTER_SETTING_BLACKLIST
+from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION, INVERTER_SETTING_BLACKLIST, CONF_SERIAL_NUMBER, \
+    SUBENTRY_TYPE_INVERTER, SUBENTRY_TYPE_EV_CHARGER, CONF_PARENT_INVERTER
+from .coordinator import AlphaESSDataUpdateCoordinator
 from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS, EV_DISCHARGE_AND_CHARGE_BUTTONS
 from .enums import AlphaESSNames
+from .sensor import _build_inverter_device_info, _build_ev_charger_device_info
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
+
+last_discharge_update = {}
+last_charge_update = {}
 
 
 async def create_persistent_notification(hass, message, title="Error"):
@@ -29,8 +34,6 @@ async def create_persistent_notification(hass, message, title="Error"):
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    button_entities: List[ButtonEntity] = []
-
     full_button_supported_states = {
         description.key: description for description in SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
     }
@@ -39,30 +42,85 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in EV_DISCHARGE_AND_CHARGE_BUTTONS
     }
 
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type == SUBENTRY_TYPE_INVERTER:
+            serial = subentry.data.get(CONF_SERIAL_NUMBER)
+            if not serial or serial not in coordinator.data:
+                continue
 
-    for serial, data in coordinator.data.items():
-        model = data.get("Model")
-        has_local_ip_data = 'Local IP' in data
-        if model not in INVERTER_SETTING_BLACKLIST:
-            for description in full_button_supported_states:
-                button_entities.append(
-                    AlphaESSBatteryButton(coordinator, entry, serial, full_button_supported_states[description], has_local_connection=has_local_ip_data))
+            data = coordinator.data[serial]
+            model = data.get("Model")
+            inverter_device_info = _build_inverter_device_info(coordinator, serial, data)
 
-        ev_charger = data.get("EV Charger S/N")
-        if ev_charger:
+            inverter_buttons: List[ButtonEntity] = []
+
+            if model not in INVERTER_SETTING_BLACKLIST:
+                for description in full_button_supported_states:
+                    inverter_buttons.append(
+                        AlphaESSBatteryButton(
+                            coordinator, entry, serial,
+                            full_button_supported_states[description],
+                            device_info=inverter_device_info,
+                        )
+                    )
+
+            # Auto-discovered EV charger buttons (no dedicated EV subentry)
+            ev_charger = data.get("EV Charger S/N")
+            ev_subentry_serials = {
+                sub.data.get(CONF_SERIAL_NUMBER)
+                for sub in entry.subentries.values()
+                if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
+            }
+            if ev_charger and ev_charger not in ev_subentry_serials:
+                ev_device_info = _build_ev_charger_device_info(coordinator, data)
+                for description in ev_charging_supported_states:
+                    inverter_buttons.append(
+                        AlphaESSBatteryButton(
+                            coordinator, entry, serial,
+                            ev_charging_supported_states[description],
+                            ev_charger=True,
+                            device_info=ev_device_info,
+                        )
+                    )
+
+            if inverter_buttons:
+                async_add_entities(
+                    inverter_buttons,
+                    config_subentry_id=subentry.subentry_id,
+                )
+
+        elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
+            parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
+            if not parent_serial or parent_serial not in coordinator.data:
+                continue
+
+            data = coordinator.data[parent_serial]
+            ev_charger = data.get("EV Charger S/N")
+            if not ev_charger:
+                continue
+
+            ev_device_info = _build_ev_charger_device_info(coordinator, data)
+            ev_buttons: List[ButtonEntity] = []
             for description in ev_charging_supported_states:
-                button_entities.append(
+                ev_buttons.append(
                     AlphaESSBatteryButton(
-                        coordinator, entry, serial, ev_charging_supported_states[description], True, has_local_connection=has_local_ip_data
+                        coordinator, entry, parent_serial,
+                        ev_charging_supported_states[description],
+                        ev_charger=True,
+                        device_info=ev_device_info,
                     )
                 )
 
-    async_add_entities(button_entities)
+            if ev_buttons:
+                async_add_entities(
+                    ev_buttons,
+                    config_subentry_id=subentry.subentry_id,
+                )
 
 
 class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
-    def __init__(self, coordinator, config, serial, key_supported_states, ev_charger=False, has_local_connection=False):
+    def __init__(self, coordinator, config, serial, key_supported_states, ev_charger=False, device_info=None):
         super().__init__(coordinator)
         self._serial = serial
         self._coordinator = coordinator
@@ -79,106 +137,69 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             if not ev_charger:
                 self._time = int(self._name.split()[0])
 
-        for invertor in coordinator.data:
-            serial = invertor.upper()
-            if ev_charger:
-                self._ev_serial = coordinator.data[invertor]["EV Charger S/N"]
-                self._attr_device_info = DeviceInfo(
-                    entry_type=DeviceEntryType.SERVICE,
-                    identifiers={(DOMAIN, coordinator.data[invertor]["EV Charger S/N"])},
-                    manufacturer="AlphaESS",
-                    model=coordinator.data[invertor]["EV Charger Model"],
-                    model_id=coordinator.data[invertor]["EV Charger S/N"],
-                    name=f"Alpha ESS Charger : {coordinator.data[invertor]["EV Charger S/N"]}",
-                )
-            elif "Local IP" in coordinator.data[invertor] and coordinator.data[invertor].get('Local IP') != '0':
-                self._attr_device_info = DeviceInfo(
-                    entry_type=DeviceEntryType.SERVICE,
-                    identifiers={(DOMAIN, serial)},
-                    serial_number=coordinator.data[invertor]["Device Serial Number"],
-                    sw_version=coordinator.data[invertor]["Software Version"],
-                    hw_version=coordinator.data[invertor]["Hardware Version"],
-                    manufacturer="AlphaESS",
-                    model=coordinator.data[invertor]["Model"],
-                    model_id=self._serial,
-                    name=f"Alpha ESS Energy Statistics : {serial}",
-                    configuration_url=f"http://{coordinator.data[invertor]["Local IP"]}"
-                )
-            elif self._serial == serial:
-                self._attr_device_info = DeviceInfo(
-                    entry_type=DeviceEntryType.SERVICE,
-                    identifiers={(DOMAIN, serial)},
-                    manufacturer="AlphaESS",
-                    model=coordinator.data[invertor]["Model"],
-                    model_id=self._serial,
-                    name=f"Alpha ESS Energy Statistics : {serial}",
-                )
+        if device_info:
+            self._attr_device_info = device_info
+
+        # Store EV serial for EV charger buttons
+        if ev_charger:
+            for invertor in coordinator.data:
+                if "EV Charger S/N" in coordinator.data[invertor]:
+                    self._ev_serial = coordinator.data[invertor]["EV Charger S/N"]
+                    break
 
     async def async_press(self) -> None:
 
-        rate_limit = self._coordinator.post_request_restriction
-
         if self._key == AlphaESSNames.stopcharging:
-            _LOGGER.info(f"EV charger stop charging for {self._ev_serial} start command sent successfully.")
+            _LOGGER.info("Stopped charging")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 0)
-            return
 
         if self._key == AlphaESSNames.startcharging:
-            _LOGGER.info(f"EV charger start charging for {self._ev_serial} start command sent successfully.")
+            _LOGGER.info("started charging")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 1)
-            return
 
-        last_discharge_update = self._coordinator.last_discharge_update
-        last_charge_update = self._coordinator.last_charge_update
+        global last_discharge_update
+        global last_charge_update
 
         async def handle_time_restriction(last_update_dict, update_fn, update_key, movement_direction):
-            local_current_time = datetime.now(timezone.utc)
+            local_current_time = datetime.now()
             last_update = last_update_dict.get(self._serial)
-            if last_update is None or local_current_time - last_update >= rate_limit:
+            if last_update is None or local_current_time - last_update >= ALPHA_POST_REQUEST_RESTRICTION:
                 last_update_dict[self._serial] = local_current_time
                 await update_fn(update_key, self._serial, self._time)
-                await create_persistent_notification(
-                    self.hass,
-                    message=f"{movement_direction} command sent successfully for {self._serial}.",
-                    title=f"{self._serial} Battery Control",
-                )
             else:
-                remaining_time = rate_limit - (local_current_time - last_update)
+                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (local_current_time - last_update)
                 minutes, seconds = divmod(remaining_time.total_seconds(), 60)
 
                 await create_persistent_notification(self.hass,
-                                                     message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
+                                                     message=f"HPlease wait {int(minutes)} minutes and {int(seconds)} seconds.",
                                                      title=f"{self._serial} cannot call {movement_direction}")
 
-        current_time = datetime.now(timezone.utc)
+            return last_update_dict
+
+        current_time = datetime.now()
 
         if self._key == AlphaESSNames.ButtonRechargeConfig:
             if (last_charge_update.get(self._serial) is None or current_time - last_charge_update[
-                self._serial] >= rate_limit) and \
+                self._serial] >= ALPHA_POST_REQUEST_RESTRICTION) and \
                     (last_discharge_update.get(self._serial) is None or current_time - last_discharge_update[
-                        self._serial] >= rate_limit):
+                        self._serial] >= ALPHA_POST_REQUEST_RESTRICTION):
                 last_discharge_update[self._serial] = last_charge_update[self._serial] = current_time
                 await self._coordinator.reset_config(self._serial)
-                await create_persistent_notification(
-                    self.hass,
-                    message=f"Charge/discharge configuration reset successfully for {self._serial}.",
-                    title=f"{self._serial} Battery Control",
-                )
             else:
-                await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
-                                              "charge", self._movement_state)
-                await handle_time_restriction(last_discharge_update,
-                                              self._coordinator.update_discharge, "discharge",
-                                              self._movement_state)
+                last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
+                                                                   "charge", self._movement_state)
+                last_discharge_update = await handle_time_restriction(last_discharge_update,
+                                                                      self._coordinator.update_discharge, "discharge",
+                                                                      self._movement_state)
         elif self._movement_state == "Discharge":
-            await handle_time_restriction(last_discharge_update,
-                                          self._coordinator.update_discharge, "batUseCap",
-                                          self._movement_state)
+            last_discharge_update = await handle_time_restriction(last_discharge_update,
+                                                                  self._coordinator.update_discharge, "batUseCap",
+                                                                  self._movement_state)
         elif self._movement_state == "Charge":
-            await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
-                                          "batHighCap", self._movement_state)
+            last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
+                                                               "batHighCap", self._movement_state)
 
     @property
     def available(self) -> bool:
