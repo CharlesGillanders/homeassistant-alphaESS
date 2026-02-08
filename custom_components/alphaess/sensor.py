@@ -67,6 +67,26 @@ def _build_ev_charger_device_info(
     return DeviceInfo(**kwargs)
 
 
+def _add_ev_entities(coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
+    """Create and register EV charger sensor entities."""
+    ev_charger = data.get("EV Charger S/N")
+    ev_model = data.get("EV Charger Model")
+    ev_device_info = _build_ev_charger_device_info(coordinator, data)
+    _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
+
+    ev_entities: List[AlphaESSSensor] = []
+    for description in EV_CHARGING_DETAILS:
+        ev_entities.append(
+            AlphaESSSensor(
+                coordinator, entry, serial,
+                ev_charging_supported_states[description.key],
+                currency, device_info=ev_device_info,
+            )
+        )
+
+    async_add_entities(ev_entities, config_subentry_id=subentry_id)
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up sensor entities for each subentry."""
 
@@ -163,19 +183,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             ev_device_info = _build_ev_charger_device_info(coordinator, data)
             _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
 
-            ev_entities: List[AlphaESSSensor] = []
-            for description in EV_CHARGING_DETAILS:
-                ev_entities.append(
-                    AlphaESSSensor(
-                        coordinator, entry, parent_serial,
-                        ev_charging_supported_states[description.key],
-                        currency, device_info=ev_device_info,
-                    )
-                )
-
-            async_add_entities(
-                ev_entities,
-                config_subentry_id=subentry.subentry_id,
+            _add_ev_entities(
+                coordinator, entry, parent_serial, data, currency,
+                ev_charging_supported_states, subentry.subentry_id, async_add_entities,
             )
 
     # Handle inverters with EV chargers that don't have a dedicated EV subentry
@@ -202,23 +212,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         if currency is None:
             currency = hass.config.currency
 
-        ev_model = data.get("EV Charger Model")
-        ev_device_info = _build_ev_charger_device_info(coordinator, data)
-        _LOGGER.info(f"New EV Charger (auto): Serial: {ev_charger}, Model: {ev_model}")
-
-        ev_entities: List[AlphaESSSensor] = []
-        for description in EV_CHARGING_DETAILS:
-            ev_entities.append(
-                AlphaESSSensor(
-                    coordinator, entry, serial,
-                    ev_charging_supported_states[description.key],
-                    currency, device_info=ev_device_info,
-                )
-            )
-
-        async_add_entities(
-            ev_entities,
-            config_subentry_id=subentry.subentry_id,
+        _add_ev_entities(
+            coordinator, entry, serial, data, currency,
+            ev_charging_supported_states, subentry.subentry_id, async_add_entities,
         )
 
 
@@ -281,49 +277,23 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                 return None
             return EV_CHARGER_STATE_KEYS.get(raw_state, "unknown")
 
-        # Handle TCP status for cloud connection
-        if self._key == AlphaESSNames.cloudConnectionStatus:
-            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
-            if raw_state is None:
-                return None
-            try:
-                tcp_status = int(raw_state)
-                return TCP_STATUS_KEYS.get(tcp_status, "connect_fail")
-            except (ValueError, TypeError):
-                return "connect_fail"
+        # Handle integer-mapped status sensors
+        _STATUS_LOOKUPS = {
+            AlphaESSNames.cloudConnectionStatus: (TCP_STATUS_KEYS, "connect_fail"),
+            AlphaESSNames.ethernetModule: (ETHERNET_STATUS_KEYS, "link_down"),
+            AlphaESSNames.fourGModule: (FOUR_G_STATUS_KEYS, "unknown_error"),
+            AlphaESSNames.wifiStatus: (WIFI_STATUS_KEYS, "unknown_error"),
+        }
 
-        # Handle Ethernet status
-        if self._key == AlphaESSNames.ethernetModule:
+        if self._key in _STATUS_LOOKUPS:
             raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
             if raw_state is None:
                 return None
+            lookup, default = _STATUS_LOOKUPS[self._key]
             try:
-                eth_status = int(raw_state)
-                return ETHERNET_STATUS_KEYS.get(eth_status, "link_down")
+                return lookup.get(int(raw_state), default)
             except (ValueError, TypeError):
-                return "link_down"
-
-        # Handle 4G status
-        if self._key == AlphaESSNames.fourGModule:
-            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
-            if raw_state is None:
-                return None
-            try:
-                g4_status = int(raw_state)
-                return FOUR_G_STATUS_KEYS.get(g4_status, "unknown_error")
-            except (ValueError, TypeError):
-                return "unknown_error"
-
-        # Handle WiFi status
-        if self._key == AlphaESSNames.wifiStatus:
-            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
-            if raw_state is None:
-                return None
-            try:
-                wifi_status = int(raw_state)
-                return WIFI_STATUS_KEYS.get(wifi_status, "unknown_error")
-            except (ValueError, TypeError):
-                return "unknown_error"
+                return default
 
         if self._key in [AlphaESSNames.ChargeTime1, AlphaESSNames.ChargeTime2,
                          AlphaESSNames.DischargeTime1, AlphaESSNames.DischargeTime2]:
