@@ -47,10 +47,12 @@
         "reconfigure": {
           "title": "Reconfigure inverter {serial_number}",
           "data": {
-            "ip_address": "IP address (optional)"
+            "ip_address": "IP address (optional)",
+            "disable_notifications": "Disable notifications on charge/discharge confirmation"
           },
           "data_description": {
-            "ip_address": "Local IP address for direct connection to the inverter"
+            "ip_address": "Local IP address for direct connection to the inverter",
+            "disable_notifications": "Disable persistent notifications when charge/discharge commands are sent"
           }
         }
       }

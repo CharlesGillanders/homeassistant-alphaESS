@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 from typing import Any
 
 import aiohttp
@@ -11,12 +12,15 @@ import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
+    ConfigSubentryFlow,
     OptionsFlow,
+    SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
+    CONF_DISABLE_NOTIFICATIONS,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
     CONF_SERIAL_NUMBER,
@@ -66,6 +70,14 @@ class AlphaESSConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> AlphaESSOptionsFlowHandler:
         return AlphaESSOptionsFlowHandler(config_entry)
 
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return subentry types supported by this integration."""
+        return {SUBENTRY_TYPE_INVERTER: AlphaESSInverterSubentryFlowHandler}
+
     async def async_step_user(
             self, user_input: dict[str, Any] | None = None
     ):
@@ -99,6 +111,7 @@ class AlphaESSConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_SERIAL_NUMBER: serial,
                             CONF_INVERTER_MODEL: model,
                             CONF_IP_ADDRESS: "",
+                            CONF_DISABLE_NOTIFICATIONS: True,
                         },
                     })
 
@@ -154,3 +167,54 @@ class AlphaESSOptionsFlowHandler(OptionsFlow):
         }
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))
+
+
+class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
+    """Handle inverter subentry flow for reconfiguration."""
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle reconfiguration of an inverter subentry."""
+        subentry = self._get_reconfigure_subentry()
+        errors = {}
+
+        if user_input is not None:
+            ip = (user_input.get(CONF_IP_ADDRESS) or "").strip()
+            user_input[CONF_IP_ADDRESS] = ip
+            if ip and ip != "0":
+                try:
+                    ipaddress.ip_address(ip)
+                except ValueError:
+                    errors["base"] = "invalid_ip"
+
+            if not errors:
+                return self.async_update_and_abort(
+                    self._get_entry(),
+                    subentry,
+                    data={
+                        **subentry.data,
+                        CONF_IP_ADDRESS: user_input[CONF_IP_ADDRESS],
+                        CONF_DISABLE_NOTIFICATIONS: user_input[CONF_DISABLE_NOTIFICATIONS],
+                    },
+                )
+
+        schema = vol.Schema({
+            vol.Optional(
+                CONF_IP_ADDRESS,
+                default=subentry.data.get(CONF_IP_ADDRESS, ""),
+            ): str,
+            vol.Optional(
+                CONF_DISABLE_NOTIFICATIONS,
+                default=subentry.data.get(CONF_DISABLE_NOTIFICATIONS, True),
+            ): bool,
+        })
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "serial_number": subentry.data.get(CONF_SERIAL_NUMBER, ""),
+            },
+        )

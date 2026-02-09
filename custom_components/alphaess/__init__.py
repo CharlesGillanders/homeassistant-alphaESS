@@ -12,10 +12,12 @@ from alphaess import alphaess
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.util import slugify
 
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
+    CONF_DISABLE_NOTIFICATIONS,
     CONF_EV_CHARGER_MODEL,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
@@ -94,6 +96,50 @@ def _has_inverter_subentries(entry: ConfigEntry) -> bool:
     )
 
 
+def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Rename entity IDs to include inverter serial prefix.
+
+    Parses unique_id format '{entry_id}_{serial} - {name}' to compute
+    desired entity_id '{domain}.{serial_lower}_{slugified_name}'.
+    Skips if entity already has the correct ID or if target ID is taken.
+    """
+    ent_reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+    prefix = f"{entry.entry_id}_"
+
+    for entity_entry in entities:
+        uid = entity_entry.unique_id
+        if not uid or not uid.startswith(prefix):
+            continue
+
+        remainder = uid[len(prefix):]
+        # Expected format: '{serial} - {name}'
+        if " - " not in remainder:
+            continue
+
+        serial, name = remainder.split(" - ", 1)
+        desired_id = f"{entity_entry.domain}.{serial.lower()}_{slugify(name)}"
+
+        if entity_entry.entity_id == desired_id:
+            continue
+
+        # Don't rename if target is already taken by a different entity
+        if ent_reg.async_get(desired_id) is not None:
+            _LOGGER.debug(
+                "Skipping entity_id rename for %s: target %s already exists",
+                entity_entry.entity_id,
+                desired_id,
+            )
+            continue
+
+        _LOGGER.debug(
+            "Renaming entity %s -> %s",
+            entity_entry.entity_id,
+            desired_id,
+        )
+        ent_reg.async_update_entity(entity_entry.entity_id, new_entity_id=desired_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
 
@@ -119,6 +165,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # If no subentries exist (e.g. after migration from v1), auto-create them
     if not _has_inverter_subentries(entry) and ess_list:
         migrated_ip = entry.options.get("_migrated_ip", "")
+        # Migrate entry-level notification setting to each subentry
+        migrated_disable_notif = entry.options.get(
+            "Disable Notifications On Charge/Discharge Confirmation",
+            entry.data.get("Disable Notifications On Charge/Discharge Confirmation", True),
+        )
 
         for idx, unit in enumerate(ess_list):
             serial = unit.get("sysSn")
@@ -134,6 +185,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     CONF_SERIAL_NUMBER: serial,
                     CONF_INVERTER_MODEL: model,
                     CONF_IP_ADDRESS: ip_for_inverter,
+                    CONF_DISABLE_NOTIFICATIONS: migrated_disable_notif,
                 },
                 subentry_type=SUBENTRY_TYPE_INVERTER,
                 title=f"{model} ({serial})",
@@ -208,6 +260,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.config_entries.async_update_entry(entry, options=new_options)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    _migrate_entity_ids(hass, entry)
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
 
