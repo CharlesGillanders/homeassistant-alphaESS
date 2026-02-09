@@ -25,7 +25,8 @@ CONF_INVERTER_MODEL = "inverter_model"
 CONF_EV_CHARGER_MODEL = "ev_charger_model"
 CONF_DISABLE_NOTIFICATIONS = "disable_notifications"
 
-KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000", "SMILE-T10-HV-INV"]  # List of known inverters
+KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000", "SMILE-T10-HV-INV", "SMILE-G3-B5-INV"]  # List of known inverters
+
 KNOWN_CHARGERS = ["SMILE-EVCT11"]
 # Set blacklist for certain inverters from certain sensors
 INVERTER_SETTING_BLACKLIST = [
