@@ -87,6 +87,12 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
     @property
     def native_value(self) -> time | None:
         """Return the current time value from coordinator data."""
+        if self._attr_native_value is not None:
+            return self._attr_native_value
+        return self._value_from_coordinator()
+
+    def _value_from_coordinator(self) -> time:
+        """Parse the time value from coordinator data."""
         data = self._coordinator.data.get(self._serial, {})
         raw_time = data.get(self._coordinator_key)
         if raw_time:
@@ -97,9 +103,24 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
                 pass
         return time(0, 0)
 
+    def _handle_coordinator_update(self) -> None:
+        """Update local value when coordinator refreshes."""
+        self._attr_native_value = self._value_from_coordinator()
+        super()._handle_coordinator_update()
+
     async def async_set_value(self, value: time) -> None:
-        """Update the time value via API."""
+        """Update the time value via API, rounded to nearest 15 minutes."""
+        # Round to nearest 15-minute interval
+        total_minutes = value.hour * 60 + value.minute
+        rounded_minutes = round(total_minutes / 15) * 15
+        # Handle 24:00 edge case (rounds back to 00:00)
+        rounded_minutes = rounded_minutes % 1440
+        value = time(rounded_minutes // 60, rounded_minutes % 60)
         time_str = value.strftime("%H:%M")
+
+        # Update displayed value immediately
+        self._attr_native_value = value
+        self.async_write_ha_state()
 
         if self._coordinator_key in CHARGE_TIME_KEYS:
             await self._update_charge_config(time_str)
