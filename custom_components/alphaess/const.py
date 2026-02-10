@@ -7,8 +7,9 @@ from homeassistant.const import Platform
 DOMAIN = "alphaess"
 PLATFORMS = [
     Platform.BUTTON,
-    Platform.SENSOR,
     Platform.NUMBER,
+    Platform.SENSOR,
+    Platform.SWITCH,
     Platform.TIME,
 ]
 SCAN_INTERVAL = timedelta(minutes=1)

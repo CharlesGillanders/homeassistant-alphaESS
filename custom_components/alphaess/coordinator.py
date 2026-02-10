@@ -151,6 +151,8 @@ class InverterDataParser:
             AlphaESSNames.Total_Generation: await self.dp.safe_get(sum_data, "epvtotal"),
             AlphaESSNames.treePlanted: await self.dp.safe_get(sum_data, "treeNum"),
             AlphaESSNames.carbonReduction: await self.dp.safe_get(sum_data, "carbonNum"),
+            AlphaESSNames.TodayGeneration: await self.dp.safe_get(sum_data, "epvtoday"),
+            AlphaESSNames.TodayIncome: await self.dp.safe_get(sum_data, "todayIncome"),
             "Currency": await self.dp.safe_get(sum_data, "moneyType"),
         }
 
@@ -354,6 +356,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
     def get_ev_charger_subentry_id(self, ev_serial: str) -> str | None:
         """Get the subentry ID for an EV charger by its serial number."""
         return self._ev_charger_subentry_map.get(ev_serial)
+
+    async def set_ev_charger_current(self, serial: str, value: int) -> None:
+        """Set EV charger current setting."""
+        result = await self.api.setEvChargerCurrentsBySn(serial, value)
+        _LOGGER.info(
+            "Set EV charger current for %s to %sA - Result: %s",
+            serial, value, result,
+        )
+        await self.async_request_refresh()
 
     async def control_ev(self, serial: str, ev_serial: str, direction: str) -> None:
         """Control EV charger."""
