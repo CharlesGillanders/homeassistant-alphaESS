@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 from typing import Any
 
@@ -296,12 +297,13 @@ class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Handle unbinding of an inverter."""
+        """Handle reconfiguration (IP, notifications) and unbinding of an inverter."""
         subentry = self._get_reconfigure_subentry()
         serial = subentry.data.get(CONF_SERIAL_NUMBER, "")
         errors = {}
 
         if user_input is not None:
+            # If unbind is requested, handle that first
             if user_input.get("confirm_unbind"):
                 try:
                     api = self._get_api()
@@ -321,7 +323,6 @@ class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
                     else:
                         await _notify(self.hass, f"Inverter {serial} has been successfully unbound from your account. The integration will reload.", "AlphaESS Unbind Successful")
 
-                        # Schedule reload to clean up
                         entry = self._get_entry()
                         self.hass.async_create_task(
                             self.hass.config_entries.async_reload(entry.entry_id)
@@ -331,9 +332,36 @@ class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
                             self._get_entry(),
                             subentry,
                         )
+            else:
+                # Save IP address and notification settings
+                ip = (user_input.get(CONF_IP_ADDRESS) or "").strip()
+                if ip and ip != "0":
+                    try:
+                        ipaddress.ip_address(ip)
+                    except ValueError:
+                        errors["base"] = "invalid_ip"
+
+                if not errors:
+                    return self.async_update_and_abort(
+                        self._get_entry(),
+                        subentry,
+                        data={
+                            **subentry.data,
+                            CONF_IP_ADDRESS: ip,
+                            CONF_DISABLE_NOTIFICATIONS: user_input.get(CONF_DISABLE_NOTIFICATIONS, True),
+                        },
+                    )
 
         schema = vol.Schema({
-            vol.Required("confirm_unbind", default=False): bool,
+            vol.Optional(
+                CONF_IP_ADDRESS,
+                default=subentry.data.get(CONF_IP_ADDRESS, ""),
+            ): str,
+            vol.Optional(
+                CONF_DISABLE_NOTIFICATIONS,
+                default=subentry.data.get(CONF_DISABLE_NOTIFICATIONS, True),
+            ): bool,
+            vol.Optional("confirm_unbind", default=False): bool,
         })
 
         return self.async_show_form(

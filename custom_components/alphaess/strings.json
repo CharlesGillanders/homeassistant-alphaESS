@@ -27,7 +27,8 @@
       "error": {
         "verification_request_failed": "Failed to request verification code. Please check the serial number and check code.",
         "bind_failed": "Failed to bind system. Please check the verification code.",
-        "unbind_failed": "Failed to unbind system. Please try again."
+        "unbind_failed": "Failed to unbind system. Please try again.",
+        "invalid_ip": "Invalid IP address format."
       },
       "step": {
         "user": {
@@ -53,13 +54,17 @@
           }
         },
         "reconfigure": {
-          "title": "Unbind Inverter {serial_number}",
-          "description": "This will unbind inverter {serial_number} from your AlphaESS account. The inverter and all its entities will be removed.",
+          "title": "Configure Inverter {serial_number}",
+          "description": "Configure local IP address and notification settings for inverter {serial_number}. To unbind this inverter from your account, check the unbind box.",
           "data": {
-            "confirm_unbind": "Confirm unbind"
+            "ip_address": "IP Address (optional)",
+            "disable_notifications": "Disable notifications on charge/discharge confirmation",
+            "confirm_unbind": "Unbind inverter from account"
           },
           "data_description": {
-            "confirm_unbind": "Check this box to confirm you want to unbind this inverter"
+            "ip_address": "Local IP address for direct connection to the inverter",
+            "disable_notifications": "Disable persistent notifications when charge/discharge commands are sent",
+            "confirm_unbind": "Check this box to unbind and remove this inverter from your AlphaESS account"
           }
         }
       }
