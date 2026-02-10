@@ -1,3 +1,4 @@
 
 /.idea
 custom_components/alphaess/__pycache__/
+.claude/settings.local.json

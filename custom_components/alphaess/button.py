@@ -139,18 +139,20 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             if last_update is None or local_current_time - last_update >= rate_limit:
                 last_update_dict[self._serial] = local_current_time
                 await update_fn(update_key, self._serial, self._time)
-                await create_persistent_notification(
-                    self.hass,
-                    message=f"{movement_direction} command sent successfully for {self._serial}.",
-                    title=f"{self._serial} Battery Control",
-                )
+                if not self._config.options.get("Disable Notifications On Charge/Discharge Confirmation", self._config.data.get("Disable Notifications On Charge/Discharge Confirmation", True)):
+                    await create_persistent_notification(
+                        self.hass,
+                        message=f"{movement_direction} command sent successfully for {self._serial}.",
+                        title=f"{self._serial} Battery Control",
+                    )
             else:
                 remaining_time = rate_limit - (local_current_time - last_update)
                 minutes, seconds = divmod(remaining_time.total_seconds(), 60)
 
-                await create_persistent_notification(self.hass,
-                                                     message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
-                                                     title=f"{self._serial} cannot call {movement_direction}")
+                if not self._config.options.get("Disable Notifications On Charge/Discharge Confirmation", self._config.data.get("Disable Notifications On Charge/Discharge Confirmation", True)):
+                    await create_persistent_notification(self.hass,
+                                                         message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
+                                                         title=f"{self._serial} cannot call {movement_direction}")
 
         current_time = datetime.now(timezone.utc)
 
@@ -161,11 +163,12 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                         self._serial] >= rate_limit):
                 last_discharge_update[self._serial] = last_charge_update[self._serial] = current_time
                 await self._coordinator.reset_config(self._serial)
-                await create_persistent_notification(
-                    self.hass,
-                    message=f"Charge/discharge configuration reset successfully for {self._serial}.",
-                    title=f"{self._serial} Battery Control",
-                )
+                if not self._config.options.get("Disable Notifications On Charge/Discharge Confirmation", self._config.data.get("Disable Notifications On Charge/Discharge Confirmation", True)):
+                    await create_persistent_notification(
+                        self.hass,
+                        message=f"Charge/discharge configuration reset successfully for {self._serial}.",
+                        title=f"{self._serial} Battery Control",
+                    )
             else:
                 await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
                                               "charge", self._movement_state)
