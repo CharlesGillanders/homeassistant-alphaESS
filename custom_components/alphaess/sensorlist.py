@@ -6,7 +6,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR, EntityCategory, UnitOfMass
 
-from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription, AlphaESSNumberDescription
+from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription, AlphaESSNumberDescription, AlphaESSTimeDescription
 from .enums import AlphaESSNames
 
 FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -757,6 +757,65 @@ DISCHARGE_AND_CHARGE_NUMBERS: List[AlphaESSNumberDescription] = [
         icon="mdi:battery-sync",
         native_unit_of_measurement=PERCENTAGE,
     )
+]
+
+CHARGE_DISCHARGE_TIMES: List[AlphaESSTimeDescription] = [
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.ChargeStartTime1,
+        name="Charge Start Time 1",
+        icon="mdi:clock-start",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="charge_timeChaf1",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.ChargeEndTime1,
+        name="Charge End Time 1",
+        icon="mdi:clock-end",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="charge_timeChae1",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.ChargeStartTime2,
+        name="Charge Start Time 2",
+        icon="mdi:clock-start",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="charge_timeChaf2",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.ChargeEndTime2,
+        name="Charge End Time 2",
+        icon="mdi:clock-end",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="charge_timeChae2",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.DischargeStartTime1,
+        name="Discharge Start Time 1",
+        icon="mdi:clock-start",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="discharge_timeDisf1",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.DischargeEndTime1,
+        name="Discharge End Time 1",
+        icon="mdi:clock-end",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="discharge_timeDise1",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.DischargeStartTime2,
+        name="Discharge Start Time 2",
+        icon="mdi:clock-start",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="discharge_timeDisf2",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.DischargeEndTime2,
+        name="Discharge End Time 2",
+        icon="mdi:clock-end",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="discharge_timeDise2",
+    ),
 ]
 
 EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSNumberDescription] = [

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from homeassistant.components.button import ButtonEntityDescription
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.sensor import SensorEntityDescription
+from homeassistant.components.time import TimeEntityDescription
 
 
 @dataclass(frozen=True)
@@ -34,3 +35,10 @@ class AlphaESSNumberDescription(NumberEntityDescription):
     native_value: Callable[
                       [str | int | float], str | int | float
                   ] | None = lambda val: val
+
+
+@dataclass(frozen=True)
+class AlphaESSTimeDescription(TimeEntityDescription):
+    """Class to describe an AlphaESS Time entity."""
+
+    coordinator_key: str | None = None

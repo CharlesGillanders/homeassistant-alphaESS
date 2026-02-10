@@ -8,7 +8,8 @@ DOMAIN = "alphaess"
 PLATFORMS = [
     Platform.BUTTON,
     Platform.SENSOR,
-    Platform.NUMBER
+    Platform.NUMBER,
+    Platform.TIME,
 ]
 SCAN_INTERVAL = timedelta(minutes=1)
 ALPHA_POST_REQUEST_RESTRICTION = timedelta(seconds=30)
