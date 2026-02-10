@@ -21,6 +21,9 @@
   "config_subentries": {
     "inverter": {
       "entry_type": "Inverter",
+      "abort": {
+        "reconfigure_successful": "Inverter settings saved successfully."
+      },
       "initiate_flow": {
         "user": "Bind Inverter"
       },

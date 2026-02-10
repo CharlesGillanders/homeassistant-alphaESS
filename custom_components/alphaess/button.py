@@ -153,8 +153,24 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
     @property
     def _notifications_disabled(self) -> bool:
         """Check if notifications are disabled for this inverter's subentry."""
+        # Look up live subentry data from config entry (not the stale snapshot)
         if self._subentry is not None:
-            return self._subentry.data.get(CONF_DISABLE_NOTIFICATIONS, True)
+            entry = self.hass.config_entries.async_get_entry(self._config.entry_id)
+            if entry:
+                live_subentry = entry.subentries.get(self._subentry.subentry_id)
+                if live_subentry:
+                    result = live_subentry.data.get(CONF_DISABLE_NOTIFICATIONS, True)
+                    _LOGGER.debug(
+                        "Notifications disabled check for %s: subentry=%s, value=%s",
+                        self._serial, self._subentry.subentry_id, result,
+                    )
+                    return result
+                else:
+                    _LOGGER.warning("Could not find live subentry %s", self._subentry.subentry_id)
+            else:
+                _LOGGER.warning("Could not find config entry %s", self._config.entry_id)
+        else:
+            _LOGGER.debug("No subentry set for button %s - notifications disabled", self._name)
         return True
 
     async def async_press(self) -> None:
@@ -163,11 +179,21 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             _LOGGER.info("Stopped charging")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 0)
+            if not self._notifications_disabled:
+                await create_persistent_notification(self.hass,
+                                                     message=f"EV charger stop command sent for {self._serial}.",
+                                                     title=f"{self._serial} EV Charger")
+            return
 
         if self._key == AlphaESSNames.startcharging:
             _LOGGER.info("started charging")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 1)
+            if not self._notifications_disabled:
+                await create_persistent_notification(self.hass,
+                                                     message=f"EV charger start command sent for {self._serial}.",
+                                                     title=f"{self._serial} EV Charger")
+            return
 
         global last_discharge_update
         global last_charge_update
@@ -178,6 +204,12 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             if last_update is None or local_current_time - last_update >= ALPHA_POST_REQUEST_RESTRICTION:
                 last_update_dict[self._serial] = local_current_time
                 await update_fn(update_key, self._serial, self._time)
+                _LOGGER.info("Notifications disabled = %s for %s", self._notifications_disabled, self._serial)
+                if not self._notifications_disabled:
+                    _LOGGER.info("Sending notification for %s %s", self._serial, movement_direction)
+                    await create_persistent_notification(self.hass,
+                                                         message=f"{movement_direction} command sent successfully for {self._serial}.",
+                                                         title=f"{self._serial} {movement_direction}")
             else:
                 remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (local_current_time - last_update)
                 minutes, seconds = divmod(remaining_time.total_seconds(), 60)
@@ -198,12 +230,20 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                         self._serial] >= ALPHA_POST_REQUEST_RESTRICTION):
                 last_discharge_update[self._serial] = last_charge_update[self._serial] = current_time
                 await self._coordinator.reset_config(self._serial)
+                if not self._notifications_disabled:
+                    await create_persistent_notification(self.hass,
+                                                         message=f"Charge and discharge configuration reset for {self._serial}.",
+                                                         title=f"{self._serial} Reset")
             else:
-                last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
-                                                                   "charge", self._movement_state)
-                last_discharge_update = await handle_time_restriction(last_discharge_update,
-                                                                      self._coordinator.update_discharge, "discharge",
-                                                                      self._movement_state)
+                # Reset button is throttled - just show wait message
+                last_update = last_charge_update.get(self._serial) or last_discharge_update.get(self._serial)
+                if last_update:
+                    remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_update)
+                    minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                    if not self._notifications_disabled:
+                        await create_persistent_notification(self.hass,
+                                                             message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
+                                                             title=f"{self._serial} cannot reset yet")
         elif self._movement_state == "Discharge":
             last_discharge_update = await handle_time_restriction(last_discharge_update,
                                                                   self._coordinator.update_discharge, "batUseCap",
