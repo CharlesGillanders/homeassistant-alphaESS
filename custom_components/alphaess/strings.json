@@ -18,6 +18,53 @@
         }
     }
   },
+  "config_subentries": {
+    "inverter": {
+      "entry_type": "Inverter",
+      "initiate_flow": {
+        "user": "Bind Inverter"
+      },
+      "error": {
+        "verification_request_failed": "Failed to request verification code. Please check the serial number and check code.",
+        "bind_failed": "Failed to bind system. Please check the verification code.",
+        "unbind_failed": "Failed to unbind system. Please try again."
+      },
+      "step": {
+        "user": {
+          "title": "Bind Inverter",
+          "description": "Enter the serial number (SN) and check code from your inverter to request a verification code.",
+          "data": {
+            "serial_number": "Serial Number (SN)",
+            "check_code": "Check Code"
+          },
+          "data_description": {
+            "serial_number": "The serial number found on your inverter label",
+            "check_code": "The check code found on your inverter label"
+          }
+        },
+        "verify": {
+          "title": "Enter Verification Code",
+          "description": "A verification code has been sent for inverter {serial_number}. Enter it below to complete binding.",
+          "data": {
+            "verification_code": "Verification Code"
+          },
+          "data_description": {
+            "verification_code": "The verification code sent to your registered email or phone"
+          }
+        },
+        "reconfigure": {
+          "title": "Unbind Inverter {serial_number}",
+          "description": "This will unbind inverter {serial_number} from your AlphaESS account. The inverter and all its entities will be removed.",
+          "data": {
+            "confirm_unbind": "Confirm unbind"
+          },
+          "data_description": {
+            "confirm_unbind": "Check this box to confirm you want to unbind this inverter"
+          }
+        }
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {

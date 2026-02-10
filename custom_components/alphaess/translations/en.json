@@ -23,72 +23,45 @@
   "config_subentries": {
     "inverter": {
       "entry_type": "Inverter",
-      "abort": {
-        "auto_discovered": "Inverters are automatically discovered from the AlphaESS API.",
-        "already_configured": "This inverter is already configured"
-      },
       "initiate_flow": {
-        "user": "Add inverter"
+        "user": "Bind Inverter"
+      },
+      "error": {
+        "verification_request_failed": "Failed to request verification code. Please check the serial number and check code.",
+        "bind_failed": "Failed to bind system. Please check the verification code.",
+        "unbind_failed": "Failed to unbind system. Please try again."
       },
       "step": {
         "user": {
-          "title": "Add inverter",
+          "title": "Bind Inverter",
+          "description": "Enter the serial number (SN) and check code from your inverter to request a verification code.",
           "data": {
-            "serial_number": "Serial number",
-            "inverter_model": "Inverter model",
-            "ip_address": "IP address (optional)"
+            "serial_number": "Serial Number (SN)",
+            "check_code": "Check Code"
           },
           "data_description": {
-            "serial_number": "The serial number of the inverter (sysSn)",
-            "inverter_model": "The model name of the inverter",
-            "ip_address": "Local IP address for direct connection to the inverter"
+            "serial_number": "The serial number found on your inverter label",
+            "check_code": "The check code found on your inverter label"
+          }
+        },
+        "verify": {
+          "title": "Enter Verification Code",
+          "description": "A verification code has been sent for inverter {serial_number}. Enter it below to complete binding.",
+          "data": {
+            "verification_code": "Verification Code"
+          },
+          "data_description": {
+            "verification_code": "The verification code sent to your registered email or phone"
           }
         },
         "reconfigure": {
-          "title": "Reconfigure inverter {serial_number}",
+          "title": "Unbind Inverter {serial_number}",
+          "description": "This will unbind inverter {serial_number} from your AlphaESS account. The inverter and all its entities will be removed.",
           "data": {
-            "ip_address": "IP address (optional)",
-            "disable_notifications": "Disable notifications on charge/discharge confirmation"
+            "confirm_unbind": "Confirm unbind"
           },
           "data_description": {
-            "ip_address": "Local IP address for direct connection to the inverter",
-            "disable_notifications": "Disable persistent notifications when charge/discharge commands are sent"
-          }
-        }
-      }
-    },
-    "ev_charger": {
-      "entry_type": "EV Charger",
-      "abort": {
-        "auto_discovered": "EV chargers are automatically discovered from the AlphaESS API.",
-        "already_configured": "This EV charger is already configured"
-      },
-      "initiate_flow": {
-        "user": "Add EV charger"
-      },
-      "step": {
-        "user": {
-          "title": "Add EV charger",
-          "data": {
-            "serial_number": "Serial number",
-            "ev_charger_model": "EV charger model",
-            "parent_inverter_serial": "Parent inverter serial number"
-          },
-          "data_description": {
-            "serial_number": "The serial number of the EV charger",
-            "ev_charger_model": "The model name of the EV charger",
-            "parent_inverter_serial": "The serial number of the inverter this charger is connected to"
-          }
-        },
-        "reconfigure": {
-          "title": "Reconfigure EV charger {serial_number}",
-          "data": {
-            "ev_charger_model": "EV charger model",
-            "parent_inverter_serial": "Parent inverter serial number"
-          },
-          "data_description": {
-            "ev_charger_model": "The model name of the EV charger",
-            "parent_inverter_serial": "The serial number of the inverter this charger is connected to"
+            "confirm_unbind": "Check this box to confirm you want to unbind this inverter"
           }
         }
       }

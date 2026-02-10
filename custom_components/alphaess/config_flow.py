@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import aiohttp
@@ -11,7 +12,9 @@ import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
+    ConfigSubentryFlow,
     OptionsFlow,
+    SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -24,6 +27,18 @@ from .const import (
     DOMAIN,
     SUBENTRY_TYPE_INVERTER,
 )
+
+_LOGGER = logging.getLogger(__name__)
+
+
+async def _notify(hass: HomeAssistant, message: str, title: str = "AlphaESS") -> None:
+    """Create a persistent notification."""
+    await hass.services.async_call(
+        "persistent_notification",
+        "create",
+        {"title": title, "message": message},
+        blocking=True,
+    )
 
 
 STEP_USER_DATA_SCHEMA = vol.Schema({
@@ -67,6 +82,14 @@ class AlphaESSConfigFlow(ConfigFlow, domain=DOMAIN):
         config_entry: ConfigEntry,
     ) -> AlphaESSOptionsFlowHandler:
         return AlphaESSOptionsFlowHandler(config_entry)
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return subentry types supported by this integration."""
+        return {SUBENTRY_TYPE_INVERTER: AlphaESSInverterSubentryFlowHandler}
 
     async def async_step_user(
             self, user_input: dict[str, Any] | None = None
@@ -159,3 +182,165 @@ class AlphaESSOptionsFlowHandler(OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))
 
 
+class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
+    """Handle inverter subentry flow for bind/unbind."""
+
+    def __init__(self) -> None:
+        """Initialize the subentry flow."""
+        super().__init__()
+        self._sysSn: str | None = None
+
+    def _get_api(self):
+        """Get the API client from the coordinator."""
+        entry = self._get_entry()
+        coordinator = self.hass.data[DOMAIN][entry.entry_id]
+        return coordinator.api
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step 1: Ask for serial number and check code to request verification."""
+        errors = {}
+
+        if user_input is not None:
+            sys_sn = user_input["serial_number"].strip()
+            check_code = user_input["check_code"].strip()
+
+            try:
+                api = self._get_api()
+                result = await api.getVerificationCode(sys_sn, check_code)
+                _LOGGER.info(
+                    "Requested verification code for %s - Result: %s",
+                    sys_sn, result,
+                )
+            except Exception as e:
+                _LOGGER.error("Failed to get verification code for %s: %s", sys_sn, e)
+                errors["base"] = "verification_request_failed"
+                await _notify(self.hass, f"Failed to request verification code for {sys_sn}: {e}", "AlphaESS Bind Failed")
+            else:
+                if result is None:
+                    errors["base"] = "verification_request_failed"
+                    await _notify(self.hass, f"Failed to request verification code for {sys_sn}. Please check the serial number and check code.", "AlphaESS Bind Failed")
+                else:
+                    await _notify(self.hass, f"Verification code requested for {sys_sn}. Please check your email or phone for the code.", "AlphaESS Verification Sent")
+                    self._sysSn = sys_sn
+                    return await self.async_step_verify()
+
+        schema = vol.Schema({
+            vol.Required("serial_number"): str,
+            vol.Required("check_code"): str,
+        })
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=schema,
+            errors=errors,
+        )
+
+    async def async_step_verify(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step 2: Ask for verification code and bind the system."""
+        errors = {}
+
+        if user_input is not None:
+            code = user_input["verification_code"].strip()
+
+            try:
+                api = self._get_api()
+                result = await api.bindSn(self._sysSn, code)
+                _LOGGER.info(
+                    "Bind system %s - Result: %s",
+                    self._sysSn, result,
+                )
+            except Exception as e:
+                _LOGGER.error("Failed to bind system %s: %s", self._sysSn, e)
+                errors["base"] = "bind_failed"
+                await _notify(self.hass, f"Failed to bind inverter {self._sysSn}: {e}", "AlphaESS Bind Failed")
+            else:
+                if result is None:
+                    errors["base"] = "bind_failed"
+                    await _notify(self.hass, f"Failed to bind inverter {self._sysSn}. Please check the verification code.", "AlphaESS Bind Failed")
+                else:
+                    await _notify(self.hass, f"Inverter {self._sysSn} has been successfully bound to your account. The integration will reload to discover the new system.", "AlphaESS Bind Successful")
+
+                    # Schedule reload so the new system is discovered
+                    entry = self._get_entry()
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(entry.entry_id)
+                    )
+
+                    return self.async_create_entry(
+                        title=f"Inverter ({self._sysSn})",
+                        data={
+                            CONF_SERIAL_NUMBER: self._sysSn,
+                            CONF_INVERTER_MODEL: "Unknown",
+                            CONF_IP_ADDRESS: "",
+                            CONF_DISABLE_NOTIFICATIONS: True,
+                        },
+                    )
+
+        schema = vol.Schema({
+            vol.Required("verification_code"): str,
+        })
+
+        return self.async_show_form(
+            step_id="verify",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "serial_number": self._sysSn or "",
+            },
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle unbinding of an inverter."""
+        subentry = self._get_reconfigure_subentry()
+        serial = subentry.data.get(CONF_SERIAL_NUMBER, "")
+        errors = {}
+
+        if user_input is not None:
+            if user_input.get("confirm_unbind"):
+                try:
+                    api = self._get_api()
+                    result = await api.unBindSn(serial)
+                    _LOGGER.info(
+                        "Unbind system %s - Result: %s",
+                        serial, result,
+                    )
+                except Exception as e:
+                    _LOGGER.error("Failed to unbind system %s: %s", serial, e)
+                    errors["base"] = "unbind_failed"
+                    await _notify(self.hass, f"Failed to unbind inverter {serial}: {e}", "AlphaESS Unbind Failed")
+                else:
+                    if result is None:
+                        errors["base"] = "unbind_failed"
+                        await _notify(self.hass, f"Failed to unbind inverter {serial}. Please try again.", "AlphaESS Unbind Failed")
+                    else:
+                        await _notify(self.hass, f"Inverter {serial} has been successfully unbound from your account. The integration will reload.", "AlphaESS Unbind Successful")
+
+                        # Schedule reload to clean up
+                        entry = self._get_entry()
+                        self.hass.async_create_task(
+                            self.hass.config_entries.async_reload(entry.entry_id)
+                        )
+
+                        return self.async_remove_and_abort(
+                            self._get_entry(),
+                            subentry,
+                        )
+
+        schema = vol.Schema({
+            vol.Required("confirm_unbind", default=False): bool,
+        })
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "serial_number": serial,
+            },
+        )
