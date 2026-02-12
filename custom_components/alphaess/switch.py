@@ -68,6 +68,7 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
         self._icon = description.icon
         self._entity_category = description.entity_category
         self._coordinator_key = description.coordinator_key
+        self._optimistic_state: bool | None = None
 
         if device_info:
             self._attr_device_info = device_info
@@ -75,18 +76,29 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool | None:
         """Return True if the switch is on."""
+        if self._optimistic_state is not None:
+            return self._optimistic_state
         data = self._coordinator.data.get(self._serial, {})
         value = data.get(self._coordinator_key)
         if value is None:
             return None
         return int(value) == 1
 
+    def _handle_coordinator_update(self) -> None:
+        """Clear optimistic state when coordinator provides fresh data."""
+        self._optimistic_state = None
+        super()._handle_coordinator_update()
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on (enable) the setting."""
+        self._optimistic_state = True
+        self.async_write_ha_state()
         await self._set_value(1)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off (disable) the setting."""
+        self._optimistic_state = False
+        self.async_write_ha_state()
         await self._set_value(0)
 
     async def _set_value(self, value: int) -> None:
@@ -124,7 +136,8 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
                 self._serial, value, result,
             )
 
-        await self._coordinator.async_request_refresh()
+        # No immediate refresh — optimistic state is shown until the next
+        # scheduled coordinator update confirms the value from the API.
 
     @property
     def available(self) -> bool:
