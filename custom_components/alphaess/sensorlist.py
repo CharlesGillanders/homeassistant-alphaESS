@@ -6,7 +6,9 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR, EntityCategory, UnitOfMass
 
-from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription, AlphaESSNumberDescription
+from homeassistant.components.number import NumberMode
+
+from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription, AlphaESSNumberDescription, AlphaESSSwitchDescription, AlphaESSTimeDescription
 from .enums import AlphaESSNames
 
 FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -390,7 +392,23 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:tree",
-    )
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.TodayGeneration,
+        name="Today's Generation",
+        icon="mdi:solar-power-variant",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.TodayIncome,
+        name="Today's Income",
+        icon="mdi:cash-multiple",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+    ),
 ]
 
 LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -693,7 +711,23 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:tree",
-    )
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.TodayGeneration,
+        name="Today's Generation",
+        icon="mdi:solar-power-variant",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.TodayIncome,
+        name="Today's Income",
+        icon="mdi:cash-multiple",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+    ),
 ]
 
 SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription] = [
@@ -759,7 +793,67 @@ DISCHARGE_AND_CHARGE_NUMBERS: List[AlphaESSNumberDescription] = [
     )
 ]
 
+CHARGE_DISCHARGE_TIMES: List[AlphaESSTimeDescription] = [
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.ChargeStartTime1,
+        name="Charge Start Time 1",
+        icon="mdi:clock-start",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="charge_timeChaf1",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.ChargeEndTime1,
+        name="Charge End Time 1",
+        icon="mdi:clock-end",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="charge_timeChae1",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.ChargeStartTime2,
+        name="Charge Start Time 2",
+        icon="mdi:clock-start",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="charge_timeChaf2",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.ChargeEndTime2,
+        name="Charge End Time 2",
+        icon="mdi:clock-end",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="charge_timeChae2",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.DischargeStartTime1,
+        name="Discharge Start Time 1",
+        icon="mdi:clock-start",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="discharge_timeDisf1",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.DischargeEndTime1,
+        name="Discharge End Time 1",
+        icon="mdi:clock-end",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="discharge_timeDise1",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.DischargeStartTime2,
+        name="Discharge Start Time 2",
+        icon="mdi:clock-start",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="discharge_timeDisf2",
+    ),
+    AlphaESSTimeDescription(
+        key=AlphaESSNames.DischargeEndTime2,
+        name="Discharge End Time 2",
+        icon="mdi:clock-end",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="discharge_timeDise2",
+    ),
+]
+
 EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSButtonDescription] = [
+
     AlphaESSButtonDescription(
         key=AlphaESSNames.stopcharging,
         name="Stop Charging",
@@ -869,7 +963,6 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
         icon="mdi:ev-station",
         native_unit_of_measurement=None,
         state_class=None,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.evchargermodel,
@@ -877,7 +970,6 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
         icon="mdi:ev-station",
         native_unit_of_measurement=None,
         state_class=None,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.evchargerstatusraw,
@@ -885,7 +977,6 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
         icon="mdi:ev-station",
         native_unit_of_measurement=None,
         state_class=None,
-        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.evchargerstatus,
@@ -895,13 +986,35 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
         native_unit_of_measurement=None,
         state_class=None,
     ),
-    AlphaESSSensorDescription(
-        key=AlphaESSNames.evcurrentsetting,
-        name="Household current setup",
-        icon="mdi:ev-station",
-        device_class=SensorDeviceClass.CURRENT,
-        native_unit_of_measurement="A",
-        state_class=None,
-    )
+]
 
+EV_CHARGER_NUMBERS: List[AlphaESSNumberDescription] = [
+    AlphaESSNumberDescription(
+        key=AlphaESSNames.EVChargerCurrentSetting,
+        name="EV Charger Current Setting",
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:current-ac",
+        native_unit_of_measurement="A",
+        native_min_value=6,
+        native_max_value=32,
+        native_step=1,
+        mode=NumberMode.BOX,
+    ),
+]
+
+CHARGE_DISCHARGE_SWITCHES: List[AlphaESSSwitchDescription] = [
+    AlphaESSSwitchDescription(
+        key=AlphaESSNames.GridChargeEnabled,
+        name="Grid Charge Enabled",
+        icon="mdi:battery-charging",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="gridCharge",
+    ),
+    AlphaESSSwitchDescription(
+        key=AlphaESSNames.DischargeTimeControlEnabled,
+        name="Discharge Time Control Enabled",
+        icon="mdi:battery-minus",
+        entity_category=EntityCategory.CONFIG,
+        coordinator_key="ctrDis",
+    ),
 ]

@@ -15,18 +15,82 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS, TCP_STATUS_KEYS, ETHERNET_STATUS_KEYS, \
-    FOUR_G_STATUS_KEYS, WIFI_STATUS_KEYS
+    FOUR_G_STATUS_KEYS, WIFI_STATUS_KEYS, CONF_SERIAL_NUMBER, SUBENTRY_TYPE_INVERTER, SUBENTRY_TYPE_EV_CHARGER, \
+    CONF_PARENT_INVERTER
 from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
+def _build_inverter_device_info(
+    coordinator: AlphaESSDataUpdateCoordinator,
+    serial: str,
+    data: dict,
+) -> DeviceInfo:
+    """Build DeviceInfo for an inverter."""
+    serial_upper = serial.upper()
+
+    kwargs = {
+        "entry_type": DeviceEntryType.SERVICE,
+        "identifiers": {(DOMAIN, serial_upper)},
+        "manufacturer": "AlphaESS",
+        "model": data.get("Model"),
+        "model_id": serial,
+        "name": f"Alpha ESS Energy Statistics : {serial_upper}",
+    }
+
+    if "Local IP" in data and data.get("Local IP") != "0" and data.get("Device Status") is not None:
+        kwargs["serial_number"] = data.get("Device Serial Number")
+        kwargs["sw_version"] = data.get("Software Version")
+        kwargs["hw_version"] = data.get("Hardware Version")
+        kwargs["configuration_url"] = f"http://{data['Local IP']}"
+
+    return DeviceInfo(**kwargs)
+
+
+def _build_ev_charger_device_info(
+    coordinator: AlphaESSDataUpdateCoordinator,
+    data: dict,
+) -> DeviceInfo:
+    """Build DeviceInfo for an EV charger."""
+    ev_sn = data.get("EV Charger S/N")
+
+    kwargs = {
+        "entry_type": DeviceEntryType.SERVICE,
+        "identifiers": {(DOMAIN, ev_sn)},
+        "manufacturer": "AlphaESS",
+        "model": data.get("EV Charger Model"),
+        "model_id": ev_sn,
+        "name": f"Alpha ESS Charger : {ev_sn}",
+    }
+
+    return DeviceInfo(**kwargs)
+
+
+def _add_ev_entities(coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
+    """Create and register EV charger sensor entities."""
+    ev_charger = data.get("EV Charger S/N")
+    ev_model = data.get("EV Charger Model")
+    ev_device_info = _build_ev_charger_device_info(coordinator, data)
+    _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
+
+    ev_entities: List[AlphaESSSensor] = []
+    for description in EV_CHARGING_DETAILS:
+        ev_entities.append(
+            AlphaESSSensor(
+                coordinator, entry, serial,
+                ev_charging_supported_states[description.key],
+                currency, device_info=ev_device_info,
+            )
+        )
+
+    async_add_entities(ev_entities, config_subentry_id=subentry_id)
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    """Defer sensor setup to the shared sensor module."""
+    """Set up sensor entities for each subentry."""
 
     coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
-
-    entities: List[AlphaESSSensor] = []
 
     full_key_supported_states = {
         description.key: description for description in FULL_SENSOR_DESCRIPTIONS
@@ -44,69 +108,118 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     }
 
     _LOGGER.info(f"Initializing Inverters")
-    for serial, data in coordinator.data.items():
-        model = data.get("Model")
+
+    # Create entities per inverter subentry
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type == SUBENTRY_TYPE_INVERTER:
+            serial = subentry.data.get(CONF_SERIAL_NUMBER)
+            if not serial or serial not in coordinator.data:
+                continue
+
+            data = coordinator.data[serial]
+            model = data.get("Model")
+            currency = data.get("Currency")
+            if currency is None:
+                currency = hass.config.currency
+
+            _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
+
+            has_local_ip_data = 'Local IP' in data
+            inverter_device_info = _build_inverter_device_info(coordinator, serial, data)
+
+            inverter_entities: List[AlphaESSSensor] = []
+
+            if model in LIMITED_INVERTER_SENSOR_LIST:
+                for description in limited_key_supported_states:
+                    inverter_entities.append(
+                        AlphaESSSensor(
+                            coordinator, entry, serial,
+                            limited_key_supported_states[description],
+                            currency, device_info=inverter_device_info,
+                        )
+                    )
+            else:
+                for description in full_key_supported_states:
+                    inverter_entities.append(
+                        AlphaESSSensor(
+                            coordinator, entry, serial,
+                            full_key_supported_states[description],
+                            currency, device_info=inverter_device_info,
+                        )
+                    )
+
+            if has_local_ip_data and data.get('Local IP') != '0' and data.get('Device Status') is not None:
+                _LOGGER.info(f"New local IP system sensor for {serial}")
+                for description in LOCAL_IP_SYSTEM_SENSORS:
+                    inverter_entities.append(
+                        AlphaESSSensor(
+                            coordinator, entry, serial,
+                            local_ip_supported_states[description.key],
+                            currency, device_info=inverter_device_info,
+                        )
+                    )
+
+            async_add_entities(
+                inverter_entities,
+                config_subentry_id=subentry.subentry_id,
+            )
+
+        elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
+            parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
+            if not parent_serial or parent_serial not in coordinator.data:
+                continue
+
+            data = coordinator.data[parent_serial]
+            ev_charger = data.get("EV Charger S/N")
+            if not ev_charger:
+                continue
+
+            currency = data.get("Currency")
+            if currency is None:
+                currency = hass.config.currency
+
+            ev_model = data.get("EV Charger Model")
+            _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
+
+            _add_ev_entities(
+                coordinator, entry, parent_serial, data, currency,
+                ev_charging_supported_states, subentry.subentry_id, async_add_entities,
+            )
+
+    # Handle inverters with EV chargers that don't have a dedicated EV subentry
+    # (auto-discovered EV chargers without explicit subentries)
+    ev_subentry_serials = {
+        sub.data.get(CONF_SERIAL_NUMBER)
+        for sub in entry.subentries.values()
+        if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
+    }
+
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_TYPE_INVERTER:
+            continue
+        serial = subentry.data.get(CONF_SERIAL_NUMBER)
+        if not serial or serial not in coordinator.data:
+            continue
+
+        data = coordinator.data[serial]
+        ev_charger = data.get("EV Charger S/N")
+        if not ev_charger or ev_charger in ev_subentry_serials:
+            continue
+
         currency = data.get("Currency")
         if currency is None:
             currency = hass.config.currency
 
-        _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
-
-        _LOGGER.info("DATA RECEIVED IS: %s", data)
-
-        has_local_ip_data = 'Local IP' in data
-
-        # This is done due to the limited data that inverters like the Storion-S5 support
-        if model in LIMITED_INVERTER_SENSOR_LIST:
-            for description in limited_key_supported_states:
-                entities.append(
-                    AlphaESSSensor(
-                        coordinator, entry, serial, limited_key_supported_states[description], currency, has_local_connection=has_local_ip_data
-                    )
-                )
-        else:
-            for description in full_key_supported_states:
-                entities.append(
-                    AlphaESSSensor(
-                        coordinator, entry, serial, full_key_supported_states[description], currency, has_local_connection=has_local_ip_data
-                    )
-                )
-
-        ev_charger = data.get("EV Charger S/N")
-
-        if ev_charger:
-            ev_model = data.get("EV Charger Model")
-            _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
-            for description in EV_CHARGING_DETAILS:
-                entities.append(
-                    AlphaESSSensor(
-                        coordinator, entry, serial, ev_charging_supported_states[description.key], currency, True, has_local_connection=has_local_ip_data
-                    )
-                )
-
-        if has_local_ip_data and data.get('Local IP') != '0' and data.get('Device Status') is not None:
-            _LOGGER.info(f"New local IP system sensor for {serial}")
-            for description in LOCAL_IP_SYSTEM_SENSORS:
-                entities.append(
-                    AlphaESSSensor(
-                        coordinator,
-                        entry,
-                        serial,
-                        local_ip_supported_states[description.key],
-                        currency,
-                        has_local_connection=has_local_ip_data
-                    )
-                )
-
-    async_add_entities(entities)
-
-    return
+        _add_ev_entities(
+            coordinator, entry, serial, data, currency,
+            ev_charging_supported_states, subentry.subentry_id, async_add_entities,
+        )
 
 
 class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     """Alpha ESS Base Sensor."""
 
-    def __init__(self, coordinator, config, serial, key_supported_states, currency, ev_charger=False, has_local_connection=False):
+    def __init__(self, coordinator, config, serial, key_supported_states, currency, device_info=None):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._config = config
@@ -124,40 +237,8 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         else:
             self._native_unit_of_measurement = key_supported_states.native_unit_of_measurement
 
-        for invertor in coordinator.data:
-            serial = invertor.upper()
-            if ev_charger:
-                self._attr_device_info = DeviceInfo(
-                    entry_type=DeviceEntryType.SERVICE,
-                    identifiers={(DOMAIN, coordinator.data[invertor]["EV Charger S/N"])},
-                    manufacturer="AlphaESS",
-                    model=coordinator.data[invertor]["EV Charger Model"],
-                    model_id=coordinator.data[invertor]["EV Charger S/N"],
-                    name=f"Alpha ESS Charger : {coordinator.data[invertor]["EV Charger S/N"]}",
-                )
-            elif "Local IP" in coordinator.data[invertor]:
-                self._attr_device_info = DeviceInfo(
-                    entry_type=DeviceEntryType.SERVICE,
-                    identifiers={(DOMAIN, serial)},
-                    serial_number=coordinator.data[invertor]["Device Serial Number"],
-                    sw_version=coordinator.data[invertor]["Software Version"],
-                    hw_version=coordinator.data[invertor]["Hardware Version"],
-                    manufacturer="AlphaESS",
-                    model=coordinator.data[invertor]["Model"],
-                    model_id=self._serial,
-                    name=f"Alpha ESS Energy Statistics : {serial}",
-                    configuration_url=f"http://{coordinator.data[invertor]["Local IP"]}"
-                )
-            elif self._serial == serial:
-                self._attr_device_info = DeviceInfo(
-                    entry_type=DeviceEntryType.SERVICE,
-                    identifiers={(DOMAIN, serial)},
-                    manufacturer="AlphaESS",
-                    model=coordinator.data[invertor]["Model"],
-                    model_id=self._serial,
-                    name=f"Alpha ESS Energy Statistics : {serial}",
-                )
-
+        if device_info:
+            self._attr_device_info = device_info
 
     @property
     def unique_id(self):
@@ -194,49 +275,23 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
                 return None
             return EV_CHARGER_STATE_KEYS.get(raw_state, "unknown")
 
-        # Handle TCP status for cloud connection
-        if self._key == AlphaESSNames.cloudConnectionStatus:
-            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
-            if raw_state is None:
-                return None
-            try:
-                tcp_status = int(raw_state)
-                return TCP_STATUS_KEYS.get(tcp_status, "connect_fail")
-            except (ValueError, TypeError):
-                return "connect_fail"
+        # Handle integer-mapped status sensors
+        _STATUS_LOOKUPS = {
+            AlphaESSNames.cloudConnectionStatus: (TCP_STATUS_KEYS, "connect_fail"),
+            AlphaESSNames.ethernetModule: (ETHERNET_STATUS_KEYS, "link_down"),
+            AlphaESSNames.fourGModule: (FOUR_G_STATUS_KEYS, "unknown_error"),
+            AlphaESSNames.wifiStatus: (WIFI_STATUS_KEYS, "unknown_error"),
+        }
 
-        # Handle Ethernet status
-        if self._key == AlphaESSNames.ethernetModule:
+        if self._key in _STATUS_LOOKUPS:
             raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
             if raw_state is None:
                 return None
+            lookup, default = _STATUS_LOOKUPS[self._key]
             try:
-                eth_status = int(raw_state)
-                return ETHERNET_STATUS_KEYS.get(eth_status, "link_down")
+                return lookup.get(int(raw_state), default)
             except (ValueError, TypeError):
-                return "link_down"
-
-        # Handle 4G status
-        if self._key == AlphaESSNames.fourGModule:
-            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
-            if raw_state is None:
-                return None
-            try:
-                g4_status = int(raw_state)
-                return FOUR_G_STATUS_KEYS.get(g4_status, "unknown_error")
-            except (ValueError, TypeError):
-                return "unknown_error"
-
-        # Handle WiFi status
-        if self._key == AlphaESSNames.wifiStatus:
-            raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
-            if raw_state is None:
-                return None
-            try:
-                wifi_status = int(raw_state)
-                return WIFI_STATUS_KEYS.get(wifi_status, "unknown_error")
-            except (ValueError, TypeError):
-                return "unknown_error"
+                return default
 
         if self._key in [AlphaESSNames.ChargeTime1, AlphaESSNames.ChargeTime2,
                          AlphaESSNames.DischargeTime1, AlphaESSNames.DischargeTime2]:

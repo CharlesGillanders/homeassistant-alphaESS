@@ -7,17 +7,28 @@ from homeassistant.const import Platform
 DOMAIN = "alphaess"
 PLATFORMS = [
     Platform.BUTTON,
+    Platform.NUMBER,
     Platform.SENSOR,
-    Platform.NUMBER
+    Platform.SWITCH,
+    Platform.TIME,
 ]
 SCAN_INTERVAL = timedelta(minutes=1)
-DEFAULT_POST_REQUEST_RESTRICTION = 30
 ALPHA_POST_REQUEST_RESTRICTION = timedelta(seconds=30)
-THROTTLE_MULTIPLIER = 0
-INVERTER_COUNT = 0
-INVERTER_LIST = []
 
-KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000", "SMILE-T10-HV-INV"]  # List of known inverters
+# Subentry types
+SUBENTRY_TYPE_INVERTER = "inverter"
+SUBENTRY_TYPE_EV_CHARGER = "ev_charger"
+
+# Subentry data keys
+CONF_SERIAL_NUMBER = "serial_number"
+CONF_IP_ADDRESS = "ip_address"
+CONF_PARENT_INVERTER = "parent_inverter_serial"
+CONF_INVERTER_MODEL = "inverter_model"
+CONF_EV_CHARGER_MODEL = "ev_charger_model"
+CONF_DISABLE_NOTIFICATIONS = "disable_notifications"
+
+KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000", "SMILE-T10-HV-INV", "SMILE-G3-B5-INV", "SMILE-G3-T10-INV"]  # List of known inverters
+
 KNOWN_CHARGERS = ["SMILE-EVCT11"]
 # Set blacklist for certain inverters from certain sensors
 INVERTER_SETTING_BLACKLIST = [
@@ -92,27 +103,3 @@ FOUR_G_STATUS_KEYS = {
     -4: "connected_fail"
     # All other values default to unknown_error
 }
-
-
-def increment_inverter_count():
-    global INVERTER_COUNT
-    INVERTER_COUNT += 1
-
-
-def get_inverter_count():
-    return INVERTER_COUNT
-
-
-# If no Storion-S5, make the throttle amount smaller
-def set_throttle_count_lower():
-    global THROTTLE_MULTIPLIER
-    THROTTLE_MULTIPLIER = 1.25
-
-
-def add_inverter_to_list(inverter):
-    global INVERTER_LIST
-    INVERTER_LIST.append(inverter)
-
-
-def get_inverter_list():
-    return INVERTER_LIST

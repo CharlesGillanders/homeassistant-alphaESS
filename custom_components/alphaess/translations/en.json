@@ -3,11 +3,10 @@
   "config": {
     "step": {
       "user": {
-        "description": "Enter your AppID and AppSecret from the AlphaESS OpenAPI developer portal.\n\nIf you have any issues with the OpenAPI, read a list of potential fixes [here]({issues_url}).",
+        "description": "Enter your AppID and AppSecret from the AlphaESS OpenAPI developer portal.\n\nAfter setup, you can configure a local IP address for each inverter via its sub-entry options to enable local access when the cloud API is unavailable.\n\nIf you have any issues with the OpenAPI, read a list of potential fixes [here]({issues_url}).",
         "data": {
           "AppID": "AppID",
           "AppSecret": "AppSecret",
-          "IPAddress": "Inverter IP address (optional)",
           "Verify SSL Certificate": "Verify SSL Certificate"
         }
       }
@@ -18,16 +17,69 @@
     "error": {
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
-      "invalid_ip": "Invalid IP address format",
       "unknown": "Unexpected error"
+    }
+  },
+  "config_subentries": {
+    "inverter": {
+      "entry_type": "Inverter",
+      "abort": {
+        "reconfigure_successful": "Inverter settings saved successfully."
+      },
+      "initiate_flow": {
+        "user": "Bind Inverter"
+      },
+      "error": {
+        "verification_request_failed": "Failed to request verification code. Please check the serial number and check code.",
+        "bind_failed": "Failed to bind system. Please check the verification code.",
+        "unbind_failed": "Failed to unbind system. Please try again.",
+        "invalid_ip": "Invalid IP address format."
+      },
+      "step": {
+        "user": {
+          "title": "Bind Inverter",
+          "description": "Enter the serial number (SN) and check code from your inverter to request a verification code.",
+          "data": {
+            "serial_number": "Serial Number (SN)",
+            "check_code": "Check Code"
+          },
+          "data_description": {
+            "serial_number": "The serial number found on your inverter label",
+            "check_code": "The check code found on your inverter label"
+          }
+        },
+        "verify": {
+          "title": "Enter Verification Code",
+          "description": "A verification code has been sent for inverter {serial_number}. Enter it below to complete binding.",
+          "data": {
+            "verification_code": "Verification Code"
+          },
+          "data_description": {
+            "verification_code": "The verification code sent to your registered email or phone"
+          }
+        },
+        "reconfigure": {
+          "title": "Configure Inverter {serial_number}",
+          "description": "Configure local IP address and notification settings for inverter {serial_number}. To unbind this inverter from your account, check the unbind box.",
+          "data": {
+            "ip_address": "IP Address (optional)",
+            "disable_notifications": "Disable notifications on charge/discharge confirmation",
+            "confirm_unbind": "Unbind inverter from account"
+          },
+          "data_description": {
+            "ip_address": "Local IP address for direct connection to the inverter",
+            "disable_notifications": "Disable persistent notifications when charge/discharge commands are sent",
+            "confirm_unbind": "Check this box to unbind and remove this inverter from your AlphaESS account"
+          }
+        }
+      }
     }
   },
   "options": {
     "step": {
       "init": {
         "data": {
-        "IPAddress": "Inverter IP address (optional), 0 to disable",
-        "Verify SSL Certificate": "Verify SSL Certificate"
+          "Verify SSL Certificate": "Verify SSL Certificate"
         }
       }
     }

@@ -4,18 +4,147 @@
     "error": {
         "already_configured": "[%key:common::config_flow::abort::already_configured_account%]",
         "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-        "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-        "invalid_ip": "Invalid IP address format"
+        "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
     },
     "step": {
         "user": {
             "title": "Set up Alpha ESS",
-            "description": "Please provide your credentials from the Alpha ESS Open API at {open_api_url}",
+            "description": "Please provide your credentials from the Alpha ESS Open API at {open_api_url}\n\nAfter setup, you can configure a local IP address for each inverter via its sub-entry options to enable local access when the cloud API is unavailable.",
             "data": {
                 "AppID": "[%key:common::config_flow::data::appid%]",
-                "AppSecret": "[%key:common::config_flow::data::appsecret%]"
+                "AppSecret": "[%key:common::config_flow::data::appsecret%]",
+                "Verify SSL Certificate": "Verify SSL Certificate"
             }
         }
     }
+  },
+  "config_subentries": {
+    "inverter": {
+      "entry_type": "Inverter",
+      "abort": {
+        "reconfigure_successful": "Inverter settings saved successfully."
+      },
+      "initiate_flow": {
+        "user": "Bind Inverter"
+      },
+      "error": {
+        "verification_request_failed": "Failed to request verification code. Please check the serial number and check code.",
+        "bind_failed": "Failed to bind system. Please check the verification code.",
+        "unbind_failed": "Failed to unbind system. Please try again.",
+        "invalid_ip": "Invalid IP address format."
+      },
+      "step": {
+        "user": {
+          "title": "Bind Inverter",
+          "description": "Enter the serial number (SN) and check code from your inverter to request a verification code.",
+          "data": {
+            "serial_number": "Serial Number (SN)",
+            "check_code": "Check Code"
+          },
+          "data_description": {
+            "serial_number": "The serial number found on your inverter label",
+            "check_code": "The check code found on your inverter label"
+          }
+        },
+        "verify": {
+          "title": "Enter Verification Code",
+          "description": "A verification code has been sent for inverter {serial_number}. Enter it below to complete binding.",
+          "data": {
+            "verification_code": "Verification Code"
+          },
+          "data_description": {
+            "verification_code": "The verification code sent to your registered email or phone"
+          }
+        },
+        "reconfigure": {
+          "title": "Configure Inverter {serial_number}",
+          "description": "Configure local IP address and notification settings for inverter {serial_number}. To unbind this inverter from your account, check the unbind box.",
+          "data": {
+            "ip_address": "IP Address (optional)",
+            "disable_notifications": "Disable notifications on charge/discharge confirmation",
+            "confirm_unbind": "Unbind inverter from account"
+          },
+          "data_description": {
+            "ip_address": "Local IP address for direct connection to the inverter",
+            "disable_notifications": "Disable persistent notifications when charge/discharge commands are sent",
+            "confirm_unbind": "Check this box to unbind and remove this inverter from your AlphaESS account"
+          }
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "Verify SSL Certificate": "Verify SSL Certificate"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "ev_charger_status": {
+        "name": "EV Charger Status",
+        "state": {
+          "available": "Available (not plugged in)",
+          "preparing": "Preparing (plugged in)",
+          "charging": "Charging",
+          "suspended_evse": "Suspended by EVSE",
+          "suspended_ev": "Suspended by EV",
+          "finishing": "Finishing",
+          "faulted": "Faulted",
+          "unknown": "Unknown"
+        }
+      },
+      "tcp_status": {
+        "name": "TCP Status",
+        "state": {
+          "connected_ok": "Connected OK",
+          "initialization": "Initialization",
+          "not_connected_router": "Not connected to a router",
+          "dns_lookup_error": "DNS lookup error",
+          "connect_fail": "Connect fail",
+          "signal_too_weak": "Signal too weak",
+          "failed_register_base_station": "Failed to register base station",
+          "sim_card_not_inserted": "SIM Card not inserted",
+          "not_bound_plant": "Not bound to a plant",
+          "key_error": "KEY error",
+          "sn_error": "SN error",
+          "communication_timeout": "Communication timeout",
+          "communication_abort_server": "Communication abort by server",
+          "server_address_error": "Server address error"
+        }
+      },
+      "ethernet_status": {
+        "name": "Ethernet Status",
+        "state": {
+          "link_up": "Link Up",
+          "link_down": "Link Down"
+        }
+      },
+      "four_g_status": {
+        "name": "4G Status",
+        "state": {
+          "ok": "OK",
+          "initialization": "Initialization",
+          "connected_fail": "Connected fail",
+          "connected_lost": "Connected lost",
+          "unknown_error": "Unknown Error"
+        }
+      },
+      "wifi_status": {
+        "name": "WiFi Status",
+        "state": {
+          "connection_idle": "Connection Idle",
+          "connecting": "Connecting...",
+          "password_error": "Password Error",
+          "ap_not_found": "AP Not Found",
+          "connect_fail": "Connect Fail",
+          "connected_ok": "Connected OK",
+          "unknown_error": "Unknown Error"
+        }
+      }
+    }
   }
-} 
+}
