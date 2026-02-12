@@ -177,7 +177,14 @@ class AlphaESSOptionsFlowHandler(OptionsFlow):
                     "Verify SSL Certificate",
                     self._config_entry.data.get("Verify SSL Certificate", True),
                 ),
-            ): bool
+            ): bool,
+            vol.Optional(
+                "Disable Notifications On Charge/Discharge Confirmation",
+                default=self._config_entry.options.get(
+                    "Disable Notifications On Charge/Discharge Confirmation",
+                    self._config_entry.data.get("Disable Notifications On Charge/Discharge Confirmation", True),
+                ),
+            ): bool,
         }
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))
