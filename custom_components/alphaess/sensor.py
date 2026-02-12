@@ -180,7 +180,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 currency = hass.config.currency
 
             ev_model = data.get("EV Charger Model")
-            ev_device_info = _build_ev_charger_device_info(coordinator, data)
             _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
 
             _add_ev_entities(
