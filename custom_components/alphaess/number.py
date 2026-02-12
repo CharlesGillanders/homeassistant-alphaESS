@@ -64,6 +64,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         AlphaEVNumber(
                             coordinator, serial, entry,
                             ev_number_supported_states[description],
+                            ev_serial=ev_charger,
                             device_info=ev_device_info,
                         )
                     )
@@ -91,6 +92,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     AlphaEVNumber(
                         coordinator, parent_serial, entry,
                         ev_number_supported_states[description],
+                        ev_serial=ev_charger,
                         device_info=ev_device_info,
                     )
                 )
@@ -223,10 +225,11 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
 class AlphaEVNumber(CoordinatorEntity, NumberEntity):
     """EV charger current setting number entity."""
 
-    def __init__(self, coordinator, serial, config, description, device_info=None):
+    def __init__(self, coordinator, serial, config, description, ev_serial=None, device_info=None):
         super().__init__(coordinator)
         self._coordinator = coordinator
         self._serial = serial
+        self._ev_serial = ev_serial
         self._config = config
         self._description = description
         self._name = description.name
@@ -251,7 +254,7 @@ class AlphaEVNumber(CoordinatorEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set EV charger current via API."""
-        await self._coordinator.set_ev_charger_current(self._serial, int(value))
+        await self._coordinator.set_ev_charger_current(self._ev_serial, int(value))
 
     @property
     def available(self) -> bool:

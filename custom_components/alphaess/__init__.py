@@ -40,7 +40,7 @@ SERVICE_BATTERY_CHARGE_SCHEMA = vol.Schema(
         vol.Required('cp1end'): cv.string,
         vol.Required('cp2start'): cv.string,
         vol.Required('cp2end'): cv.string,
-        vol.Required('chargestopsoc'): cv.positive_int,
+        vol.Required('chargestopsoc'): vol.All(cv.positive_int, vol.Range(min=0, max=100)),
     }
 )
 
@@ -52,7 +52,7 @@ SERVICE_BATTERY_DISCHARGE_SCHEMA = vol.Schema(
         vol.Required('dp1end'): cv.string,
         vol.Required('dp2start'): cv.string,
         vol.Required('dp2end'): cv.string,
-        vol.Required('dischargecutoffsoc'): cv.positive_int,
+        vol.Required('dischargecutoffsoc'): vol.All(cv.positive_int, vol.Range(min=0, max=100)),
     }
 )
 

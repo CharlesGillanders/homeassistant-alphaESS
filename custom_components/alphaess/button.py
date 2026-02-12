@@ -14,9 +14,6 @@ from .sensor import _build_inverter_device_info, _build_ev_charger_device_info
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
-last_discharge_update = {}
-last_charge_update = {}
-
 
 async def create_persistent_notification(hass, message, title="Error"):
     """Create a persistent notification in the Home Assistant frontend."""
@@ -195,8 +192,8 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                                                      title=f"{self._serial} EV Charger")
             return
 
-        global last_discharge_update
-        global last_charge_update
+        last_discharge_update = self._coordinator.last_discharge_update
+        last_charge_update = self._coordinator.last_charge_update
 
         async def handle_time_restriction(last_update_dict, update_fn, update_key, movement_direction):
             local_current_time = datetime.now()
@@ -218,8 +215,6 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                     await create_persistent_notification(self.hass,
                                                          message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
                                                          title=f"{self._serial} cannot call {movement_direction}")
-
-            return last_update_dict
 
         current_time = datetime.now()
 
@@ -245,12 +240,12 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                                                              message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
                                                              title=f"{self._serial} cannot reset yet")
         elif self._movement_state == "Discharge":
-            last_discharge_update = await handle_time_restriction(last_discharge_update,
-                                                                  self._coordinator.update_discharge, "batUseCap",
-                                                                  self._movement_state)
+            await handle_time_restriction(last_discharge_update,
+                                          self._coordinator.update_discharge, "batUseCap",
+                                          self._movement_state)
         elif self._movement_state == "Charge":
-            last_charge_update = await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
-                                                               "batHighCap", self._movement_state)
+            await handle_time_restriction(last_charge_update, self._coordinator.update_charge,
+                                          "batHighCap", self._movement_state)
 
     @property
     def available(self) -> bool:

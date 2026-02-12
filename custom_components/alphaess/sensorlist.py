@@ -852,7 +852,7 @@ CHARGE_DISCHARGE_TIMES: List[AlphaESSTimeDescription] = [
     ),
 ]
 
-EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSNumberDescription] = [
+EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSButtonDescription] = [
 
     AlphaESSButtonDescription(
         key=AlphaESSNames.stopcharging,

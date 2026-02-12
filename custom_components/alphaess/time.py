@@ -118,14 +118,21 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
         value = time(rounded_minutes // 60, rounded_minutes % 60)
         time_str = value.strftime("%H:%M")
 
-        # Update displayed value immediately
+        # Update displayed value immediately (optimistic)
+        previous_value = self._attr_native_value
         self._attr_native_value = value
         self.async_write_ha_state()
 
-        if self._coordinator_key in CHARGE_TIME_KEYS:
-            await self._update_charge_config(time_str)
-        elif self._coordinator_key in DISCHARGE_TIME_KEYS:
-            await self._update_discharge_config(time_str)
+        try:
+            if self._coordinator_key in CHARGE_TIME_KEYS:
+                await self._update_charge_config(time_str)
+            elif self._coordinator_key in DISCHARGE_TIME_KEYS:
+                await self._update_discharge_config(time_str)
+        except Exception:
+            _LOGGER.exception("Failed to update time for %s, reverting", self._coordinator_key)
+            self._attr_native_value = previous_value
+            self.async_write_ha_state()
+            return
 
         await self._coordinator.async_request_refresh()
 

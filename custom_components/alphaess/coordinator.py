@@ -338,6 +338,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             self.has_throttle = False
             self.throttle_multiplier = 1.25
 
+        # Per-serial throttle tracking for charge/discharge buttons
+        self.last_discharge_update: dict[str, datetime] = {}
+        self.last_charge_update: dict[str, datetime] = {}
+
         # Build subentry lookup for device info
         self._inverter_subentry_map: dict[str, str] = {}
         self._ev_charger_subentry_map: dict[str, str] = {}
