@@ -100,6 +100,9 @@ class AlphaESSConfigFlow(ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input:
+            await self.async_set_unique_id(user_input["AppID"])
+            self._abort_if_unique_id_configured()
+
             try:
                 result = await validate_input(self.hass, user_input)
             except CannotConnect:
@@ -176,13 +179,6 @@ class AlphaESSOptionsFlowHandler(OptionsFlow):
                 default=self._config_entry.options.get(
                     "Verify SSL Certificate",
                     self._config_entry.data.get("Verify SSL Certificate", True),
-                ),
-            ): bool,
-            vol.Optional(
-                "Disable Notifications On Charge/Discharge Confirmation",
-                default=self._config_entry.options.get(
-                    "Disable Notifications On Charge/Discharge Confirmation",
-                    self._config_entry.data.get("Disable Notifications On Charge/Discharge Confirmation", True),
                 ),
             ): bool,
         }

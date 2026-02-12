@@ -380,8 +380,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def reset_config(self, serial: str) -> None:
         """Reset charge and discharge configuration."""
-        bat_use_cap = self.hass.data[DOMAIN][serial].get(AlphaESSNames.batUseCap, 10)
-        bat_high_cap = self.hass.data[DOMAIN][serial].get(AlphaESSNames.batHighCap, 90)
+        bat_use_cap = self.hass.data[DOMAIN][serial].get("batUseCap", 10)
+        bat_high_cap = self.hass.data[DOMAIN][serial].get("batHighCap", 90)
 
         results = await self._reset_charge_discharge_config(serial, bat_high_cap, bat_use_cap)
         _LOGGER.info(
