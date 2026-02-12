@@ -1,6 +1,5 @@
 """Coordinator for AlphaEss integration."""
 import logging
-import time as time_mod
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
