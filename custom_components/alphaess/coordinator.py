@@ -384,7 +384,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             f"Reset Charge and Discharge configuration - "
             f"Charge: {results['charge']}, Discharge: {results['discharge']}"
         )
-        await self.async_request_refresh()
+        # Optimistically update so switches reflect the change immediately
+        if serial in self.data:
+            self.data[serial]["gridCharge"] = 1
+            self.data[serial]["ctrDis"] = 1
+            self.async_set_updated_data(self.data)
 
     async def _reset_charge_discharge_config(
             self, serial: str, bat_high_cap: int, bat_use_cap: int
@@ -411,7 +415,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             f"Updated discharge config - Capacity: {bat_use_cap}, "
             f"Period: {start_time} to {end_time}, Result: {result}"
         )
-        await self.async_request_refresh()
+        # Optimistically update so the discharge switch reflects enabled immediately
+        if serial in self.data:
+            self.data[serial]["ctrDis"] = 1
+            self.async_set_updated_data(self.data)
 
     async def update_charge(self, name: str, serial: str, time_period: int) -> None:
         """Update charge configuration for specified time period."""
@@ -426,7 +433,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             f"Updated charge config - Capacity: {bat_high_cap}, "
             f"Period: {start_time} to {end_time}, Result: {result}"
         )
-        await self.async_request_refresh()
+        # Optimistically update so the charge switch reflects enabled immediately
+        if serial in self.data:
+            self.data[serial]["gridCharge"] = 1
+            self.async_set_updated_data(self.data)
 
     async def _async_update_data(self) -> Optional[Dict[str, Dict[str, Any]]]:
         """Update data via library."""
