@@ -165,7 +165,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             )
 
         elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
-            ev_serial = subentry.data.get(CONF_SERIAL_NUMBER)
             parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
             if not parent_serial or parent_serial not in coordinator.data:
                 continue

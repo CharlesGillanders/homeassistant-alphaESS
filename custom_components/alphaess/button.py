@@ -1,4 +1,4 @@
-from datetime import datetime
+import time as time_mod
 from typing import List
 import logging
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
@@ -77,6 +77,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                             coordinator, entry, serial,
                             ev_charging_supported_states[description],
                             ev_charger=True,
+                            ev_serial=ev_charger,
                             device_info=ev_device_info,
                             subentry=subentry,
                         )
@@ -106,6 +107,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         coordinator, entry, parent_serial,
                         ev_charging_supported_states[description],
                         ev_charger=True,
+                        ev_serial=ev_charger,
                         device_info=ev_device_info,
                     )
                 )
@@ -119,7 +121,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
 class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
-    def __init__(self, coordinator, config, serial, key_supported_states, ev_charger=False, device_info=None, subentry=None):
+    def __init__(self, coordinator, config, serial, key_supported_states, ev_charger=False, ev_serial=None, device_info=None, subentry=None):
         super().__init__(coordinator)
         self._serial = serial
         self._coordinator = coordinator
@@ -132,6 +134,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         self._entity_category = key_supported_states.entity_category
         self._config = config
         self._subentry = subentry
+        self._ev_serial = ev_serial
 
         if self._key != AlphaESSNames.ButtonRechargeConfig:
             if not ev_charger:
@@ -139,13 +142,6 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
         if device_info:
             self._attr_device_info = device_info
-
-        # Store EV serial for EV charger buttons
-        if ev_charger:
-            for invertor in coordinator.data:
-                if "EV Charger S/N" in coordinator.data[invertor]:
-                    self._ev_serial = coordinator.data[invertor]["EV Charger S/N"]
-                    break
 
     @property
     def _notifications_disabled(self) -> bool:
@@ -194,12 +190,13 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
         last_discharge_update = self._coordinator.last_discharge_update
         last_charge_update = self._coordinator.last_charge_update
+        rate_limit = ALPHA_POST_REQUEST_RESTRICTION.total_seconds()
 
         async def handle_time_restriction(last_update_dict, update_fn, update_key, movement_direction):
-            local_current_time = datetime.now()
+            now = time_mod.monotonic()
             last_update = last_update_dict.get(self._serial)
-            if last_update is None or local_current_time - last_update >= ALPHA_POST_REQUEST_RESTRICTION:
-                last_update_dict[self._serial] = local_current_time
+            if last_update is None or now - last_update >= rate_limit:
+                last_update_dict[self._serial] = now
                 await update_fn(update_key, self._serial, self._time)
                 _LOGGER.info("Notifications disabled = %s for %s", self._notifications_disabled, self._serial)
                 if not self._notifications_disabled:
@@ -208,22 +205,22 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                                                          message=f"{movement_direction} command sent successfully for {self._serial}.",
                                                          title=f"{self._serial} {movement_direction}")
             else:
-                remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (local_current_time - last_update)
-                minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                remaining = rate_limit - (now - last_update)
+                minutes, seconds = divmod(remaining, 60)
 
                 if not self._notifications_disabled:
                     await create_persistent_notification(self.hass,
                                                          message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
                                                          title=f"{self._serial} cannot call {movement_direction}")
 
-        current_time = datetime.now()
+        now = time_mod.monotonic()
 
         if self._key == AlphaESSNames.ButtonRechargeConfig:
-            if (last_charge_update.get(self._serial) is None or current_time - last_charge_update[
-                self._serial] >= ALPHA_POST_REQUEST_RESTRICTION) and \
-                    (last_discharge_update.get(self._serial) is None or current_time - last_discharge_update[
-                        self._serial] >= ALPHA_POST_REQUEST_RESTRICTION):
-                last_discharge_update[self._serial] = last_charge_update[self._serial] = current_time
+            if (last_charge_update.get(self._serial) is None or now - last_charge_update[
+                self._serial] >= rate_limit) and \
+                    (last_discharge_update.get(self._serial) is None or now - last_discharge_update[
+                        self._serial] >= rate_limit):
+                last_discharge_update[self._serial] = last_charge_update[self._serial] = now
                 await self._coordinator.reset_config(self._serial)
                 if not self._notifications_disabled:
                     await create_persistent_notification(self.hass,
@@ -233,8 +230,8 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 # Reset button is throttled - just show wait message
                 last_update = last_charge_update.get(self._serial) or last_discharge_update.get(self._serial)
                 if last_update:
-                    remaining_time = ALPHA_POST_REQUEST_RESTRICTION - (current_time - last_update)
-                    minutes, seconds = divmod(remaining_time.total_seconds(), 60)
+                    remaining = rate_limit - (now - last_update)
+                    minutes, seconds = divmod(remaining, 60)
                     if not self._notifications_disabled:
                         await create_persistent_notification(self.hass,
                                                              message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",

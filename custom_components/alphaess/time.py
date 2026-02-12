@@ -91,7 +91,7 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
             return self._attr_native_value
         return self._value_from_coordinator()
 
-    def _value_from_coordinator(self) -> time:
+    def _value_from_coordinator(self) -> time | None:
         """Parse the time value from coordinator data."""
         data = self._coordinator.data.get(self._serial, {})
         raw_time = data.get(self._coordinator_key)
@@ -101,7 +101,7 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
                 return time(int(parts[0]), int(parts[1]))
             except (ValueError, IndexError):
                 pass
-        return time(0, 0)
+        return None
 
     def _handle_coordinator_update(self) -> None:
         """Update local value when coordinator refreshes."""

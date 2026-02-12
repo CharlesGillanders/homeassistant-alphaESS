@@ -1,5 +1,6 @@
 """Coordinator for AlphaEss integration."""
 import logging
+import time as time_mod
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
@@ -338,9 +339,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             self.has_throttle = False
             self.throttle_multiplier = 1.25
 
-        # Per-serial throttle tracking for charge/discharge buttons
-        self.last_discharge_update: dict[str, datetime] = {}
-        self.last_charge_update: dict[str, datetime] = {}
+        # Per-serial throttle tracking for charge/discharge buttons (monotonic timestamps)
+        self.last_discharge_update: dict[str, float] = {}
+        self.last_charge_update: dict[str, float] = {}
 
         # Build subentry lookup for device info
         self._inverter_subentry_map: dict[str, str] = {}
