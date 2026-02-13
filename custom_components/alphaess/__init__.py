@@ -261,7 +261,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    _migrate_entity_ids(hass, entry)
+    # One-time migration: rename entity IDs to serial-prefixed format.
+    # Only runs once (when flag is set during config entry migration).
+    if entry.options.get("_needs_entity_id_migration"):
+        _migrate_entity_ids(hass, entry)
+        new_options = {
+            k: v for k, v in entry.options.items()
+            if k != "_needs_entity_id_migration"
+        }
+        hass.config_entries.async_update_entry(entry, options=new_options)
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
 
@@ -335,7 +343,10 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         # Store the old IP temporarily so async_setup_entry can assign it
         # to the first inverter when it auto-creates subentries.
         # Also flag that old devices need cleanup (pre-subentry associations).
-        new_options = {"_needs_device_cleanup": True}
+        new_options = {
+            "_needs_device_cleanup": True,
+            "_needs_entity_id_migration": True,
+        }
         if old_ip and old_ip != "0":
             new_options["_migrated_ip"] = old_ip
 
