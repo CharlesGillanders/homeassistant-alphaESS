@@ -251,6 +251,11 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         return f"{self._name}"
 
     @property
+    def suggested_object_id(self):
+        """Return suggested object id."""
+        return f"{self._serial} {self._name}"
+
+    @property
     def available(self) -> bool:
         """Return if entity is available based on whether its key exists in the data."""
         if not self.coordinator.last_update_success:

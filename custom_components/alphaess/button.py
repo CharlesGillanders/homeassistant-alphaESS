@@ -268,5 +268,10 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         return f"{self._name}"
 
     @property
+    def suggested_object_id(self):
+        """Return suggested object id."""
+        return f"{self._serial} {self._name}"
+
+    @property
     def icon(self):
         return self._icon

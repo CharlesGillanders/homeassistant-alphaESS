@@ -202,6 +202,11 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         return f"{self._name}"
 
     @property
+    def suggested_object_id(self):
+        """Return suggested object id."""
+        return f"{self._serial} {self._name}"
+
+    @property
     def mode(self):
         return "box"
 
@@ -266,6 +271,11 @@ class AlphaEVNumber(CoordinatorEntity, NumberEntity):
     @property
     def name(self):
         return f"{self._name}"
+
+    @property
+    def suggested_object_id(self):
+        """Return suggested object id."""
+        return f"{self._serial} {self._name}"
 
     @property
     def native_unit_of_measurement(self):
