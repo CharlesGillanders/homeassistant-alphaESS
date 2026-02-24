@@ -259,7 +259,7 @@ class AlphaEVNumber(CoordinatorEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set EV charger current via API."""
-        await self._coordinator.set_ev_charger_current(self._ev_serial, int(value))
+        await self._coordinator.set_ev_charger_current(self._serial, int(value))
 
     @property
     def available(self) -> bool:
