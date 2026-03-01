@@ -24,6 +24,18 @@ from .enums import AlphaESSNames
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
+def _normalize_currency_code(value: Any) -> str | None:
+    """Return ISO 4217 currency code if valid, otherwise None."""
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.strip()
+    if len(normalized) == 3 and normalized.isalpha():
+        return normalized.upper()
+
+    return None
+
+
 class DataProcessor:
     """Helper class for data processing utilities."""
 
@@ -145,6 +157,9 @@ class InverterDataParser:
 
     async def parse_summary_data(self, sum_data: Dict) -> Dict[str, Any]:
         """Parse summary statistics."""
+        currency = await self.dp.safe_get(sum_data, "moneyType")
+        currency_code = _normalize_currency_code(currency)
+
         data = {
             AlphaESSNames.TotalLoad: await self.dp.safe_get(sum_data, "eload"),
             AlphaESSNames.Income: await self.dp.safe_get(sum_data, "totalIncome"),
@@ -153,7 +168,8 @@ class InverterDataParser:
             AlphaESSNames.carbonReduction: await self.dp.safe_get(sum_data, "carbonNum"),
             AlphaESSNames.TodayGeneration: await self.dp.safe_get(sum_data, "epvtoday"),
             AlphaESSNames.TodayIncome: await self.dp.safe_get(sum_data, "todayIncome"),
-            "Currency": await self.dp.safe_get(sum_data, "moneyType"),
+            AlphaESSNames.CurrencyCode: currency_code,
+            "Currency": currency_code,
         }
 
         # Handle self consumption and sufficiency correctly
@@ -171,17 +187,29 @@ class InverterDataParser:
         feedin = await self.dp.safe_get(energy_data, "eOutput")
         gridcharge = await self.dp.safe_get(energy_data, "eGridCharge")
         charge = await self.dp.safe_get(energy_data, "eCharge")
+        grid_consumption = await self.dp.safe_get(energy_data, "eInput")
+        discharge = await self.dp.safe_get(energy_data, "eDischarge")
+        ev_energy = await self.dp.safe_get(energy_data, "eChargingPile")
+        energy_date = await self.dp.safe_get(energy_data, "theDate")
 
         return {
             AlphaESSNames.SolarProduction: pv,
             AlphaESSNames.SolarToLoad: await self.dp.safe_calculate(pv, feedin),
             AlphaESSNames.SolarToGrid: feedin,
             AlphaESSNames.SolarToBattery: await self.dp.safe_calculate(charge, gridcharge),
-            AlphaESSNames.GridToLoad: await self.dp.safe_get(energy_data, "eInput"),
+            AlphaESSNames.GridToLoad: grid_consumption,
             AlphaESSNames.GridToBattery: gridcharge,
             AlphaESSNames.Charge: charge,
-            AlphaESSNames.Discharge: await self.dp.safe_get(energy_data, "eDischarge"),
-            AlphaESSNames.EVCharger: await self.dp.safe_get(energy_data, "eChargingPile"),
+            AlphaESSNames.Discharge: discharge,
+            AlphaESSNames.EVCharger: ev_energy,
+            AlphaESSNames.DailyPvGeneration: pv,
+            AlphaESSNames.DailyGridConsumption: grid_consumption,
+            AlphaESSNames.DailyFeedIn: feedin,
+            AlphaESSNames.DailyGridCharge: gridcharge,
+            AlphaESSNames.DailyBatteryCharge: charge,
+            AlphaESSNames.DailyBatteryDischarge: discharge,
+            AlphaESSNames.DailyEvChargingEnergy: ev_energy,
+            AlphaESSNames.DailyEnergyDate: energy_date,
         }
 
     async def parse_power_data(self, power_data: Dict, one_day_power: Optional[list]) -> Dict[str, Any]:

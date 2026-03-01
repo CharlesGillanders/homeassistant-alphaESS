@@ -81,6 +81,21 @@ The integration exposes EV charger controls (start/stop and current setting) whe
   
 These track whether a start/stop command is currently valid based on the latest EV charger status.
 
+### Currency and daily history sensors
+
+- Monetary sensors now use ISO 4217 currency codes when provided by the API, and fall back to Home Assistant's configured currency when not available.
+- Diagnostic currency sensors are available for troubleshooting:
+  - `Currency Code`
+- Daily history energy breakdown sensors are exposed:
+  - `Daily PV Generation`
+  - `Daily Grid Consumption`
+  - `Daily Feed-in`
+  - `Daily Grid Charge`
+  - `Daily Battery Charge`
+  - `Daily Battery Discharge`
+  - `Daily EV Charging Energy`
+  - `Daily Energy Date`
+
 If you want to adjust the restrictions yourself, you are able to by modifying the `ALPHA_POST_REQUEST_RESTRICTION` varible in const.py to the amount of seconds allowed per call
 
 ## Local Inverter Support

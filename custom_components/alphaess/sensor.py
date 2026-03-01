@@ -21,6 +21,23 @@ from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
+
+def _normalize_currency_unit(value: str | None, fallback: str | None) -> str | None:
+    """
+    Normalize currency values to ISO 4217 codes only.
+    """
+    if value is None:
+        return fallback
+
+    normalized = value.strip()
+    if not normalized:
+        return fallback
+
+    if len(normalized) == 3 and normalized.isalpha():
+        return normalized.upper()
+
+    return fallback
+
 EV_RELATED_KEYS = {
     AlphaESSNames.evchargersn,
     AlphaESSNames.evchargermodel,
@@ -137,9 +154,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             data = coordinator.data[serial]
             model = data.get("Model")
-            currency = data.get("Currency")
-            if currency is None:
-                currency = hass.config.currency
+            currency = _normalize_currency_unit(
+                data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
+                hass.config.currency,
+            )
 
             _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
@@ -193,9 +211,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            currency = data.get("Currency")
-            if currency is None:
-                currency = hass.config.currency
+            currency = _normalize_currency_unit(
+                data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
+                hass.config.currency,
+            )
 
             ev_model = data.get("EV Charger Model")
             _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
@@ -225,9 +244,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         if not ev_charger or ev_charger in ev_subentry_serials:
             continue
 
-        currency = data.get("Currency")
-        if currency is None:
-            currency = hass.config.currency
+        currency = _normalize_currency_unit(
+            data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
+            hass.config.currency,
+        )
 
         _add_ev_entities(
             coordinator, entry, serial, data, currency,
