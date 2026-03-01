@@ -24,18 +24,6 @@ from .enums import AlphaESSNames
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-def _normalize_currency_code(value: Any) -> str | None:
-    """Return ISO 4217 currency code if valid, otherwise None."""
-    if not isinstance(value, str):
-        return None
-
-    normalized = value.strip()
-    if len(normalized) == 3 and normalized.isalpha():
-        return normalized.upper()
-
-    return None
-
-
 class DataProcessor:
     """Helper class for data processing utilities."""
 
@@ -158,7 +146,6 @@ class InverterDataParser:
     async def parse_summary_data(self, sum_data: Dict) -> Dict[str, Any]:
         """Parse summary statistics."""
         currency = await self.dp.safe_get(sum_data, "moneyType")
-        currency_code = _normalize_currency_code(currency)
 
         data = {
             AlphaESSNames.TotalLoad: await self.dp.safe_get(sum_data, "eload"),
@@ -168,9 +155,11 @@ class InverterDataParser:
             AlphaESSNames.carbonReduction: await self.dp.safe_get(sum_data, "carbonNum"),
             AlphaESSNames.TodayGeneration: await self.dp.safe_get(sum_data, "epvtoday"),
             AlphaESSNames.TodayIncome: await self.dp.safe_get(sum_data, "todayIncome"),
-            AlphaESSNames.CurrencyCode: currency_code,
-            "Currency": currency_code,
         }
+
+        if currency is not None:
+            data[AlphaESSNames.CurrencyCode] = currency
+            data["Currency"] = currency
 
         # Handle self consumption and sufficiency correctly
         self_consumption = await self.dp.safe_get(sum_data, "eselfConsumption")

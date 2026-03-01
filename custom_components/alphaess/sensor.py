@@ -38,6 +38,7 @@ def _normalize_currency_unit(value: str | None, fallback: str | None) -> str | N
 
     return fallback
 
+
 EV_RELATED_KEYS = {
     AlphaESSNames.evchargersn,
     AlphaESSNames.evchargermodel,
@@ -168,6 +169,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             if model in LIMITED_INVERTER_SENSOR_LIST:
                 for description in limited_key_supported_states:
+                    if (
+                        description == AlphaESSNames.pev
+                        and data.get(AlphaESSNames.ElectricVehiclePowerOne) is None
+                    ):
+                        continue
+                    if (
+                        description in EV_CONNECTOR_POWER_KEYS
+                        and data.get(description) is None
+                    ):
+                        continue
                     inverter_entities.append(
                         AlphaESSSensor(
                             coordinator, entry, serial,
@@ -177,6 +188,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
             else:
                 for description in full_key_supported_states:
+                    if (
+                        description == AlphaESSNames.pev
+                        and data.get(AlphaESSNames.ElectricVehiclePowerOne) is None
+                    ):
+                        continue
+                    if (
+                        description in EV_CONNECTOR_POWER_KEYS
+                        and data.get(description) is None
+                    ):
+                        continue
                     inverter_entities.append(
                         AlphaESSSensor(
                             coordinator, entry, serial,
@@ -307,6 +328,9 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
 
         if self._key in EV_RELATED_KEYS and serial_data.get(AlphaESSNames.evchargersn) is None:
             return False
+
+        if self._key in (AlphaESSNames.pev, AlphaESSNames.ElectricVehiclePowerOne):
+            return serial_data.get(AlphaESSNames.ElectricVehiclePowerOne) is not None
 
         if self._key in EV_CONNECTOR_POWER_KEYS:
             return serial_data.get(self._key) is not None
