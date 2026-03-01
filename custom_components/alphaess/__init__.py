@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+from datetime import timedelta
 
 import voluptuous as vol
 
@@ -17,10 +18,14 @@ from homeassistant.util import slugify
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
+    CONF_SCAN_INTERVAL_SECONDS,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_EV_CHARGER_MODEL,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
+    DEFAULT_SCAN_INTERVAL_SECONDS,
+    MAX_SCAN_INTERVAL_SECONDS,
+    MIN_SCAN_INTERVAL_SECONDS,
     CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
     DOMAIN,
@@ -29,6 +34,7 @@ from .const import (
     SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
+from .enums import AlphaESSNames
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -140,6 +146,53 @@ def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
         ent_reg.async_update_entity(entity_entry.entity_id, new_entity_id=desired_id)
 
 
+def _cleanup_stale_ev_entities(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: AlphaESSDataUpdateCoordinator,
+) -> None:
+    """Remove stale EV entities that are no longer supported for each inverter.
+
+    This is a one-time migration helper to remove old EV entities from the
+    registry when the latest coordinator data indicates they should not exist.
+    """
+    ent_reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+    prefix = f"{entry.entry_id}_"
+
+    connector_name_to_key = {
+        AlphaESSNames.ElectricVehiclePowerOne.value: AlphaESSNames.ElectricVehiclePowerOne,
+        AlphaESSNames.ElectricVehiclePowerTwo.value: AlphaESSNames.ElectricVehiclePowerTwo,
+        AlphaESSNames.ElectricVehiclePowerThree.value: AlphaESSNames.ElectricVehiclePowerThree,
+        AlphaESSNames.ElectricVehiclePowerFour.value: AlphaESSNames.ElectricVehiclePowerFour,
+    }
+
+    for entity_entry in entities:
+        uid = entity_entry.unique_id
+        if not uid or not uid.startswith(prefix) or " - " not in uid:
+            continue
+
+        remainder = uid[len(prefix):]
+        serial, entity_name = remainder.split(" - ", 1)
+        serial_data = coordinator.data.get(serial)
+        if not serial_data:
+            continue
+
+        ev_present = serial_data.get(AlphaESSNames.evchargersn) is not None
+        connector_one_present = serial_data.get(AlphaESSNames.ElectricVehiclePowerOne) is not None
+
+        should_remove = False
+        if entity_name == AlphaESSNames.pev.value:
+            should_remove = (not ev_present) or (not connector_one_present)
+        elif entity_name in connector_name_to_key:
+            connector_key = connector_name_to_key[entity_name]
+            should_remove = (not ev_present) or (serial_data.get(connector_key) is None)
+
+        if should_remove:
+            _LOGGER.info("Removing stale EV entity %s", entity_entry.entity_id)
+            ent_reg.async_remove(entity_entry.entity_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
 
@@ -206,6 +259,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     inverter_models = _build_inverter_model_list(entry)
 
+    scan_interval_seconds = entry.options.get(
+        CONF_SCAN_INTERVAL_SECONDS,
+        DEFAULT_SCAN_INTERVAL_SECONDS,
+    )
+    try:
+        scan_interval_seconds = int(scan_interval_seconds)
+    except (TypeError, ValueError):
+        scan_interval_seconds = DEFAULT_SCAN_INTERVAL_SECONDS
+
+    scan_interval_seconds = max(
+        MIN_SCAN_INTERVAL_SECONDS,
+        min(MAX_SCAN_INTERVAL_SECONDS, scan_interval_seconds),
+    )
+
     await asyncio.sleep(1)
 
     _coordinator = AlphaESSDataUpdateCoordinator(
@@ -214,6 +281,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ip_address_map=ip_address_map,
         inverter_models=inverter_models,
         entry=entry,
+        scan_interval=timedelta(seconds=scan_interval_seconds),
     )
     await _coordinator.async_config_entry_first_refresh()
 
@@ -241,6 +309,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             hass.config_entries.async_add_subentry(entry, ev_subentry)
             existing_ev_serials.add(ev_sn)
+
+    # One-time cleanup: remove stale EV entities no longer supported by data.
+    if not entry.options.get("_ev_entity_cleanup_done", False):
+        _cleanup_stale_ev_entities(hass, entry, _coordinator)
+        new_options = {**entry.options, "_ev_entity_cleanup_done": True}
+        hass.config_entries.async_update_entry(entry, options=new_options)
 
     # One-time cleanup: remove old device associations from pre-subentry era.
     # Old devices were registered with (config_entry_id, None) - no subentry.

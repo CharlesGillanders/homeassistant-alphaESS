@@ -14,6 +14,9 @@ PLATFORMS = [
     Platform.TIME,
 ]
 SCAN_INTERVAL = timedelta(minutes=1)
+DEFAULT_SCAN_INTERVAL_SECONDS = int(SCAN_INTERVAL.total_seconds())
+MIN_SCAN_INTERVAL_SECONDS = 10
+MAX_SCAN_INTERVAL_SECONDS = 3600
 ALPHA_POST_REQUEST_RESTRICTION = timedelta(seconds=30)
 
 # Subentry types
@@ -27,6 +30,7 @@ CONF_PARENT_INVERTER = "parent_inverter_serial"
 CONF_INVERTER_MODEL = "inverter_model"
 CONF_EV_CHARGER_MODEL = "ev_charger_model"
 CONF_DISABLE_NOTIFICATIONS = "disable_notifications"
+CONF_SCAN_INTERVAL_SECONDS = "scan_interval_seconds"
 
 KNOWN_INVERTERS = ["Storion-S5", "SMILE5-INV", "VT1000", "SMILE-T10-HV-INV", "SMILE-G3-B5-INV", "SMILE-G3-T10-INV", "SMILE-S6-HV-INV"]  # List of known inverters
 

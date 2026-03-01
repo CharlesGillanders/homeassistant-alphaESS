@@ -325,9 +325,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         ip_address_map: dict[str, str | None] | None = None,
         inverter_models: list[str] | None = None,
         entry: ConfigEntry | None = None,
+        scan_interval: timedelta | None = None,
     ) -> None:
         """Initialize coordinator."""
-        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=DOMAIN,
+            update_interval=scan_interval or SCAN_INTERVAL,
+        )
         self.api = client
         self.hass = hass
         self.data: dict[str, dict[str, float]] = {}
