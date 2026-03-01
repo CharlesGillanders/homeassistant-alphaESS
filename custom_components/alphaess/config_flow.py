@@ -21,11 +21,15 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
+    CONF_SCAN_INTERVAL_SECONDS,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
     CONF_SERIAL_NUMBER,
+    DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
+    MAX_SCAN_INTERVAL_SECONDS,
+    MIN_SCAN_INTERVAL_SECONDS,
     SUBENTRY_TYPE_INVERTER,
 )
 
@@ -181,6 +185,16 @@ class AlphaESSOptionsFlowHandler(OptionsFlow):
                     self._config_entry.data.get("Verify SSL Certificate", True),
                 ),
             ): bool,
+            vol.Optional(
+                CONF_SCAN_INTERVAL_SECONDS,
+                default=self._config_entry.options.get(
+                    CONF_SCAN_INTERVAL_SECONDS,
+                    DEFAULT_SCAN_INTERVAL_SECONDS,
+                ),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=MIN_SCAN_INTERVAL_SECONDS, max=MAX_SCAN_INTERVAL_SECONDS),
+            ),
         }
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))

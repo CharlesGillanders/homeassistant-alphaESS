@@ -77,7 +77,8 @@
     "step": {
       "init": {
         "data": {
-          "Verify SSL Certificate": "Verify SSL Certificate"
+          "Verify SSL Certificate": "Verify SSL Certificate",
+          "scan_interval_seconds": "Scan interval (seconds)"
         }
       }
     }

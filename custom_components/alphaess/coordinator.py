@@ -145,6 +145,8 @@ class InverterDataParser:
 
     async def parse_summary_data(self, sum_data: Dict) -> Dict[str, Any]:
         """Parse summary statistics."""
+        currency = await self.dp.safe_get(sum_data, "moneyType")
+
         data = {
             AlphaESSNames.TotalLoad: await self.dp.safe_get(sum_data, "eload"),
             AlphaESSNames.Income: await self.dp.safe_get(sum_data, "totalIncome"),
@@ -153,8 +155,11 @@ class InverterDataParser:
             AlphaESSNames.carbonReduction: await self.dp.safe_get(sum_data, "carbonNum"),
             AlphaESSNames.TodayGeneration: await self.dp.safe_get(sum_data, "epvtoday"),
             AlphaESSNames.TodayIncome: await self.dp.safe_get(sum_data, "todayIncome"),
-            "Currency": await self.dp.safe_get(sum_data, "moneyType"),
         }
+
+        if currency is not None:
+            data[AlphaESSNames.CurrencyCode] = currency
+            data["Currency"] = currency
 
         # Handle self consumption and sufficiency correctly
         self_consumption = await self.dp.safe_get(sum_data, "eselfConsumption")
@@ -171,17 +176,29 @@ class InverterDataParser:
         feedin = await self.dp.safe_get(energy_data, "eOutput")
         gridcharge = await self.dp.safe_get(energy_data, "eGridCharge")
         charge = await self.dp.safe_get(energy_data, "eCharge")
+        grid_consumption = await self.dp.safe_get(energy_data, "eInput")
+        discharge = await self.dp.safe_get(energy_data, "eDischarge")
+        ev_energy = await self.dp.safe_get(energy_data, "eChargingPile")
+        energy_date = await self.dp.safe_get(energy_data, "theDate")
 
         return {
             AlphaESSNames.SolarProduction: pv,
             AlphaESSNames.SolarToLoad: await self.dp.safe_calculate(pv, feedin),
             AlphaESSNames.SolarToGrid: feedin,
             AlphaESSNames.SolarToBattery: await self.dp.safe_calculate(charge, gridcharge),
-            AlphaESSNames.GridToLoad: await self.dp.safe_get(energy_data, "eInput"),
+            AlphaESSNames.GridToLoad: grid_consumption,
             AlphaESSNames.GridToBattery: gridcharge,
             AlphaESSNames.Charge: charge,
-            AlphaESSNames.Discharge: await self.dp.safe_get(energy_data, "eDischarge"),
-            AlphaESSNames.EVCharger: await self.dp.safe_get(energy_data, "eChargingPile"),
+            AlphaESSNames.Discharge: discharge,
+            AlphaESSNames.EVCharger: ev_energy,
+            AlphaESSNames.DailyPvGeneration: pv,
+            AlphaESSNames.DailyGridConsumption: grid_consumption,
+            AlphaESSNames.DailyFeedIn: feedin,
+            AlphaESSNames.DailyGridCharge: gridcharge,
+            AlphaESSNames.DailyBatteryCharge: charge,
+            AlphaESSNames.DailyBatteryDischarge: discharge,
+            AlphaESSNames.DailyEvChargingEnergy: ev_energy,
+            AlphaESSNames.DailyEnergyDate: energy_date,
         }
 
     async def parse_power_data(self, power_data: Dict, one_day_power: Optional[list]) -> Dict[str, Any]:
@@ -216,7 +233,9 @@ class InverterDataParser:
         # EV power data
         for i in range(1, 5):
             key_map = {1: "One", 2: "Two", 3: "Three", 4: "Four"}
-            data[getattr(AlphaESSNames, f"ElectricVehiclePower{key_map[i]}")] = await self.dp.safe_get(ev_details, f"ev{i}Power")
+            ev_power = await self.dp.safe_get(ev_details, f"ev{i}Power")
+            if ev_power is not None:
+                data[getattr(AlphaESSNames, f"ElectricVehiclePower{key_map[i]}")] = ev_power
 
         # Fallback SOC from daily data
         if one_day_power and soc == 0:
@@ -306,9 +325,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         ip_address_map: dict[str, str | None] | None = None,
         inverter_models: list[str] | None = None,
         entry: ConfigEntry | None = None,
+        scan_interval: timedelta | None = None,
     ) -> None:
         """Initialize coordinator."""
-        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=DOMAIN,
+            update_interval=scan_interval or SCAN_INTERVAL,
+        )
         self.api = client
         self.hass = hass
         self.data: dict[str, dict[str, float]] = {}
@@ -370,8 +395,46 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         )
         await self.async_request_refresh()
 
+    def get_ev_charger_status_raw(self, serial: str) -> int | None:
+        """Return EV charger raw status if available."""
+        serial_data = self.data.get(serial, {})
+        status = serial_data.get(AlphaESSNames.evchargerstatusraw)
+        if status is None:
+            status = serial_data.get(AlphaESSNames.evchargerstatus)
+
+        try:
+            return int(status) if status is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def can_control_ev(self, serial: str, direction: int) -> bool:
+        """Validate if EV remote command is compatible with current charger state.
+
+        Direction: 0 = stop, 1 = start.
+        """
+        status = self.get_ev_charger_status_raw(serial)
+        if status is None:
+            return False
+
+        if direction == 1:
+            return status in (2, 4, 5)
+        if direction == 0:
+            return status in (3, 4, 5)
+        return False
+
     async def control_ev(self, serial: str, ev_serial: str, direction: str) -> None:
         """Control EV charger."""
+        parsed_direction = int(direction)
+        if not self.can_control_ev(serial, parsed_direction):
+            _LOGGER.warning(
+                "Skipping EV control command for %s (%s), direction=%s due to incompatible state=%s",
+                serial,
+                ev_serial,
+                direction,
+                self.get_ev_charger_status_raw(serial),
+            )
+            return
+
         result = await self.api.remoteControlEvCharger(serial, ev_serial, direction)
         _LOGGER.info(
             f"Control EV Charger: {ev_serial} for serial: {serial} "

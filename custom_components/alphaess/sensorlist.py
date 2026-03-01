@@ -8,7 +8,14 @@ from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_
 
 from homeassistant.components.number import NumberMode
 
-from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription, AlphaESSNumberDescription, AlphaESSSwitchDescription, AlphaESSTimeDescription
+from .entity import (
+    AlphaESSSensorDescription,
+    AlphaESSButtonDescription,
+    AlphaESSBinarySensorDescription,
+    AlphaESSNumberDescription,
+    AlphaESSSwitchDescription,
+    AlphaESSTimeDescription,
+)
 from .enums import AlphaESSNames
 
 FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -409,6 +416,78 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
     ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyPvGeneration,
+        name="Daily PV Generation",
+        icon="mdi:solar-power-variant",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyGridConsumption,
+        name="Daily Grid Consumption",
+        icon="mdi:transmission-tower-import",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyFeedIn,
+        name="Daily Feed-in",
+        icon="mdi:transmission-tower-export",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyGridCharge,
+        name="Daily Grid Charge",
+        icon="mdi:battery-arrow-down",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyBatteryCharge,
+        name="Daily Battery Charge",
+        icon="mdi:battery-plus",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyBatteryDischarge,
+        name="Daily Battery Discharge",
+        icon="mdi:battery-minus",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyEvChargingEnergy,
+        name="Daily EV Charging Energy",
+        icon="mdi:car-electric",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyEnergyDate,
+        name="Daily Energy Date",
+        icon="mdi:calendar",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.CurrencyCode,
+        name="Currency Code",
+        icon="mdi:currency-usd",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 ]
 
 LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -728,6 +807,78 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
     ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyPvGeneration,
+        name="Daily PV Generation",
+        icon="mdi:solar-power-variant",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyGridConsumption,
+        name="Daily Grid Consumption",
+        icon="mdi:transmission-tower-import",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyFeedIn,
+        name="Daily Feed-in",
+        icon="mdi:transmission-tower-export",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyGridCharge,
+        name="Daily Grid Charge",
+        icon="mdi:battery-arrow-down",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyBatteryCharge,
+        name="Daily Battery Charge",
+        icon="mdi:battery-plus",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyBatteryDischarge,
+        name="Daily Battery Discharge",
+        icon="mdi:battery-minus",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyEvChargingEnergy,
+        name="Daily EV Charging Energy",
+        icon="mdi:car-electric",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.DailyEnergyDate,
+        name="Daily Energy Date",
+        icon="mdi:calendar",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.CurrencyCode,
+        name="Currency Code",
+        icon="mdi:currency-usd",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 ]
 
 SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription] = [
@@ -867,6 +1018,23 @@ EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSButtonDescription] = [
         entity_category=EntityCategory.CONFIG,
     )
 
+]
+
+EV_CHARGER_BINARY_SENSORS: List[AlphaESSBinarySensorDescription] = [
+    AlphaESSBinarySensorDescription(
+        key=AlphaESSNames.canstartcharging,
+        name="Can Start Charging",
+        icon="mdi:play-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        direction=1,
+    ),
+    AlphaESSBinarySensorDescription(
+        key=AlphaESSNames.canstopcharging,
+        name="Can Stop Charging",
+        icon="mdi:stop-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        direction=0,
+    ),
 ]
 
 LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
