@@ -24,7 +24,10 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 def _normalize_currency_unit(value: str | None, fallback: str | None) -> str | None:
     """
-    Normalize currency values to ISO 4217 codes only.
+    Normalize currency for monetary units while preserving API-provided symbols.
+
+    If AlphaESS provides a currency symbol (e.g. €), keep it to avoid
+    switching units to HA's configured currency.
     """
     if value is None:
         return fallback
@@ -36,7 +39,7 @@ def _normalize_currency_unit(value: str | None, fallback: str | None) -> str | N
     if len(normalized) == 3 and normalized.isalpha():
         return normalized.upper()
 
-    return fallback
+    return normalized
 
 
 EV_RELATED_KEYS = {
