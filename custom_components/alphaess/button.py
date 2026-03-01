@@ -168,7 +168,23 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
     async def async_press(self) -> None:
 
+        async def _notify_invalid_ev_command(action: str) -> None:
+            if not self._notifications_disabled:
+                await create_persistent_notification(
+                    self.hass,
+                    message=(
+                        f"EV charger cannot {action.lower()} right now for {self._serial}. "
+                        "Refresh and check EV Charger Status before retrying."
+                    ),
+                    title=f"{self._serial} EV Charger",
+                )
+
         if self._key == AlphaESSNames.stopcharging:
+            if not self._coordinator.can_control_ev(self._serial, 0):
+                _LOGGER.info("Stop charging ignored for %s due to EV state mismatch", self._serial)
+                await _notify_invalid_ev_command("Stop")
+                return
+
             _LOGGER.info("Stopped charging")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 0)
@@ -179,6 +195,11 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             return
 
         if self._key == AlphaESSNames.startcharging:
+            if not self._coordinator.can_control_ev(self._serial, 1):
+                _LOGGER.info("Start charging ignored for %s due to EV state mismatch", self._serial)
+                await _notify_invalid_ev_command("Start")
+                return
+
             _LOGGER.info("started charging")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 1)

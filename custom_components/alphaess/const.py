@@ -6,6 +6,7 @@ from homeassistant.const import Platform
 
 DOMAIN = "alphaess"
 PLATFORMS = [
+    Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.NUMBER,
     Platform.SENSOR,

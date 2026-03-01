@@ -79,6 +79,8 @@ class AlphaESSNames(str, Enum):
     EVChargerCurrentSetting = "EV Charger Current Setting"
     startcharging = "Start Charging"
     stopcharging = "Stop Charging"
+    canstartcharging = "Can Start Charging"
+    canstopcharging = "Can Stop Charging"
     GridChargeEnabled = "Grid Charge Enabled"
     DischargeTimeControlEnabled = "Discharge Time Control Enabled"
     TodayGeneration = "Today's Generation"

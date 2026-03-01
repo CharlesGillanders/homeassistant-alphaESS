@@ -21,6 +21,25 @@ from .coordinator import AlphaESSDataUpdateCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
+EV_RELATED_KEYS = {
+    AlphaESSNames.evchargersn,
+    AlphaESSNames.evchargermodel,
+    AlphaESSNames.evchargerstatus,
+    AlphaESSNames.evchargerstatusraw,
+    AlphaESSNames.pev,
+    AlphaESSNames.ElectricVehiclePowerOne,
+    AlphaESSNames.ElectricVehiclePowerTwo,
+    AlphaESSNames.ElectricVehiclePowerThree,
+    AlphaESSNames.ElectricVehiclePowerFour,
+}
+
+EV_CONNECTOR_POWER_KEYS = {
+    AlphaESSNames.ElectricVehiclePowerOne,
+    AlphaESSNames.ElectricVehiclePowerTwo,
+    AlphaESSNames.ElectricVehiclePowerThree,
+    AlphaESSNames.ElectricVehiclePowerFour,
+}
+
 
 def _build_inverter_device_info(
     coordinator: AlphaESSDataUpdateCoordinator,
@@ -265,6 +284,13 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         serial_data = self._coordinator.data.get(self._serial)
         if serial_data is None:
             return False
+
+        if self._key in EV_RELATED_KEYS and serial_data.get(AlphaESSNames.evchargersn) is None:
+            return False
+
+        if self._key in EV_CONNECTOR_POWER_KEYS:
+            return serial_data.get(self._key) is not None
+
         return self._key in serial_data
 
     @property
@@ -278,7 +304,10 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
             if raw_state is None:
                 return None
-            return EV_CHARGER_STATE_KEYS.get(raw_state, "unknown")
+            try:
+                return EV_CHARGER_STATE_KEYS.get(int(raw_state), "unknown")
+            except (TypeError, ValueError):
+                return "unknown"
 
         # Handle integer-mapped status sensors
         _STATUS_LOOKUPS = {

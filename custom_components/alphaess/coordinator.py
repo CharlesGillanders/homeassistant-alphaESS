@@ -216,7 +216,9 @@ class InverterDataParser:
         # EV power data
         for i in range(1, 5):
             key_map = {1: "One", 2: "Two", 3: "Three", 4: "Four"}
-            data[getattr(AlphaESSNames, f"ElectricVehiclePower{key_map[i]}")] = await self.dp.safe_get(ev_details, f"ev{i}Power")
+            ev_power = await self.dp.safe_get(ev_details, f"ev{i}Power")
+            if ev_power is not None:
+                data[getattr(AlphaESSNames, f"ElectricVehiclePower{key_map[i]}")] = ev_power
 
         # Fallback SOC from daily data
         if one_day_power and soc == 0:
@@ -370,8 +372,46 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         )
         await self.async_request_refresh()
 
+    def get_ev_charger_status_raw(self, serial: str) -> int | None:
+        """Return EV charger raw status if available."""
+        serial_data = self.data.get(serial, {})
+        status = serial_data.get(AlphaESSNames.evchargerstatusraw)
+        if status is None:
+            status = serial_data.get(AlphaESSNames.evchargerstatus)
+
+        try:
+            return int(status) if status is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def can_control_ev(self, serial: str, direction: int) -> bool:
+        """Validate if EV remote command is compatible with current charger state.
+
+        Direction: 0 = stop, 1 = start.
+        """
+        status = self.get_ev_charger_status_raw(serial)
+        if status is None:
+            return False
+
+        if direction == 1:
+            return status in (2, 4, 5)
+        if direction == 0:
+            return status in (3, 4, 5)
+        return False
+
     async def control_ev(self, serial: str, ev_serial: str, direction: str) -> None:
         """Control EV charger."""
+        parsed_direction = int(direction)
+        if not self.can_control_ev(serial, parsed_direction):
+            _LOGGER.warning(
+                "Skipping EV control command for %s (%s), direction=%s due to incompatible state=%s",
+                serial,
+                ev_serial,
+                direction,
+                self.get_ev_charger_status_raw(serial),
+            )
+            return
+
         result = await self.api.remoteControlEvCharger(serial, ev_serial, direction)
         _LOGGER.info(
             f"Control EV Charger: {ev_serial} for serial: {serial} "

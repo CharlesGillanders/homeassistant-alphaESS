@@ -8,7 +8,14 @@ from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_
 
 from homeassistant.components.number import NumberMode
 
-from .entity import AlphaESSSensorDescription, AlphaESSButtonDescription, AlphaESSNumberDescription, AlphaESSSwitchDescription, AlphaESSTimeDescription
+from .entity import (
+    AlphaESSSensorDescription,
+    AlphaESSButtonDescription,
+    AlphaESSBinarySensorDescription,
+    AlphaESSNumberDescription,
+    AlphaESSSwitchDescription,
+    AlphaESSTimeDescription,
+)
 from .enums import AlphaESSNames
 
 FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
@@ -867,6 +874,23 @@ EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSButtonDescription] = [
         entity_category=EntityCategory.CONFIG,
     )
 
+]
+
+EV_CHARGER_BINARY_SENSORS: List[AlphaESSBinarySensorDescription] = [
+    AlphaESSBinarySensorDescription(
+        key=AlphaESSNames.canstartcharging,
+        name="Can Start Charging",
+        icon="mdi:play-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        direction=1,
+    ),
+    AlphaESSBinarySensorDescription(
+        key=AlphaESSNames.canstopcharging,
+        name="Can Stop Charging",
+        icon="mdi:stop-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        direction=0,
+    ),
 ]
 
 LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [

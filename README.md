@@ -68,6 +68,19 @@ An error will be placed in the logs
 
 The current charge config, discharge config and charging range will only update once the API is re-called (can be up to 1 min)
 
+### EV charger controls
+
+The integration exposes EV charger controls (start/stop and current setting) when an EV charger is detected.
+
+- Start/stop commands are now validated against the current EV charger status before being sent.
+- If a command is not valid for the current state, the integration skips the API call and logs a clear message.
+- If notifications are enabled for that inverter, a persistent notification is shown when a command is rejected.
+- Two EV diagnostic binary sensors are exposed:
+  - `Can Start Charging`
+  - `Can Stop Charging`
+  
+These track whether a start/stop command is currently valid based on the latest EV charger status.
+
 If you want to adjust the restrictions yourself, you are able to by modifying the `ALPHA_POST_REQUEST_RESTRICTION` varible in const.py to the amount of seconds allowed per call
 
 ## Local Inverter Support
