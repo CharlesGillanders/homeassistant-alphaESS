@@ -26,7 +26,7 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         icon="mdi:solar-power-variant",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.DailyGridConsumption,
@@ -34,7 +34,7 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         icon="mdi:transmission-tower-import",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.DailyFeedIn,
@@ -42,7 +42,7 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         icon="mdi:transmission-tower-export",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.DailyGridCharge,
@@ -50,7 +50,7 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         icon="mdi:battery-arrow-down",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.DailyBatteryCharge,
@@ -58,7 +58,7 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         icon="mdi:battery-plus",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.DailyBatteryDischarge,
@@ -66,7 +66,7 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         icon="mdi:battery-minus",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.DailyEvChargingEnergy,
@@ -74,7 +74,7 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         icon="mdi:car-electric",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.TOTAL,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.DailyEnergyDate,

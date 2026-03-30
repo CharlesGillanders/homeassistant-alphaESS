@@ -311,7 +311,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             existing_ev_serials.add(ev_sn)
 
     # One-time cleanup: remove stale EV entities no longer supported by data.
-    if not entry.options.get("_ev_entity_cleanup_done", False):
+    # Only run when cloud data is available; in local-fallback mode EV keys are
+    # intentionally absent and we must not remove valid entities.
+    cloud_available = getattr(_coordinator, "cloud_available", True)
+    if cloud_available and not entry.options.get("_ev_entity_cleanup_done", False):
         _cleanup_stale_ev_entities(hass, entry, _coordinator)
         new_options = {**entry.options, "_ev_entity_cleanup_done": True}
         hass.config_entries.async_update_entry(entry, options=new_options)
