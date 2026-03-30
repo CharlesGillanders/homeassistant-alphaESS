@@ -175,7 +175,14 @@ class AlphaESSOptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ):
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            # Preserve internal flags (keys starting with '_') across option saves
+            merged = {
+                k: v
+                for k, v in self._config_entry.options.items()
+                if k.startswith("_")
+            }
+            merged.update(user_input)
+            return self.async_create_entry(title="", data=merged)
 
         schema = {
             vol.Optional(
