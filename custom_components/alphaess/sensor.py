@@ -66,7 +66,7 @@ def _add_ev_entities(coordinator, entry, serial, data, currency, ev_charging_sup
     """Create and register EV charger sensor entities."""
     ev_charger = data.get("EV Charger S/N")
     ev_model = data.get("EV Charger Model")
-    ev_device_info = build_ev_charger_device_info(coordinator, data)
+    ev_device_info = build_ev_charger_device_info(data)
     _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
 
     ev_entities: List[AlphaESSSensor] = []
@@ -121,7 +121,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
             has_local_ip_data = 'Local IP' in data
-            inverter_device_info = build_inverter_device_info(coordinator, serial, data)
+            inverter_device_info = build_inverter_device_info(serial, data)
 
             inverter_entities: List[AlphaESSSensor] = []
 

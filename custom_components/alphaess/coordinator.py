@@ -422,10 +422,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             return status in (3, 4, 5)
         return False
 
-    async def control_ev(self, serial: str, ev_serial: str, direction: str) -> None:
+    async def control_ev(self, serial: str, ev_serial: str, direction: int) -> None:
         """Control EV charger."""
-        parsed_direction = int(direction)
-        if not self.can_control_ev(serial, parsed_direction):
+        if not self.can_control_ev(serial, direction):
             _LOGGER.warning(
                 "Skipping EV control command for %s (%s), direction=%s due to incompatible state=%s",
                 serial,

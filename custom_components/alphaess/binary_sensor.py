@@ -27,6 +27,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in EV_CHARGER_BINARY_SENSORS
     }
 
+    ev_subentry_serials = {
+        sub.data.get(CONF_SERIAL_NUMBER)
+        for sub in entry.subentries.values()
+        if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
+    }
+
     for subentry in entry.subentries.values():
         if subentry.subentry_type == SUBENTRY_TYPE_INVERTER:
             serial = subentry.data.get(CONF_SERIAL_NUMBER)
@@ -38,15 +44,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            ev_subentry_serials = {
-                sub.data.get(CONF_SERIAL_NUMBER)
-                for sub in entry.subentries.values()
-                if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
-            }
             if ev_charger in ev_subentry_serials:
                 continue
 
-            ev_device_info = build_ev_charger_device_info(coordinator, data)
+            ev_device_info = build_ev_charger_device_info(data)
             ev_entities: List[BinarySensorEntity] = []
             for description in ev_binary_supported_states.values():
                 ev_entities.append(
@@ -73,7 +74,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            ev_device_info = build_ev_charger_device_info(coordinator, data)
+            ev_device_info = build_ev_charger_device_info(data)
             ev_entities: List[BinarySensorEntity] = []
             for description in ev_binary_supported_states.values():
                 ev_entities.append(
