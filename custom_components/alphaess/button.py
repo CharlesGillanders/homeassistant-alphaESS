@@ -46,7 +46,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             data = coordinator.data[serial]
             model = data.get("Model")
-            inverter_device_info = build_inverter_device_info(serial, data)
+            inverter_device_info = build_inverter_device_info(coordinator, serial, data)
 
             inverter_buttons: List[ButtonEntity] = []
 
@@ -69,7 +69,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
             }
             if ev_charger and ev_charger not in ev_subentry_serials:
-                ev_device_info = build_ev_charger_device_info(data)
+                ev_device_info = build_ev_charger_device_info(coordinator, data)
                 for description in ev_charging_supported_states:
                     inverter_buttons.append(
                         AlphaESSBatteryButton(
@@ -98,7 +98,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            ev_device_info = build_ev_charger_device_info(data)
+            ev_device_info = build_ev_charger_device_info(coordinator, data)
             ev_buttons: List[ButtonEntity] = []
             for description in ev_charging_supported_states:
                 ev_buttons.append(

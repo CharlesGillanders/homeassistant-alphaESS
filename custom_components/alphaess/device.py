@@ -4,9 +4,11 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN
+from .coordinator import AlphaESSDataUpdateCoordinator
 
 
 def build_inverter_device_info(
+    coordinator: AlphaESSDataUpdateCoordinator,
     serial: str,
     data: dict,
 ) -> DeviceInfo:
@@ -32,6 +34,7 @@ def build_inverter_device_info(
 
 
 def build_ev_charger_device_info(
+    coordinator: AlphaESSDataUpdateCoordinator,
     data: dict,
 ) -> DeviceInfo:
     """Build DeviceInfo for an EV charger."""
