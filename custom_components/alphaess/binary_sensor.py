@@ -46,7 +46,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if ev_charger in ev_subentry_serials:
                 continue
 
-            ev_device_info = build_ev_charger_device_info(coordinator, data)
+            ev_device_info = build_ev_charger_device_info(data)
             ev_entities: List[BinarySensorEntity] = []
             for description in ev_binary_supported_states.values():
                 ev_entities.append(
@@ -73,7 +73,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            ev_device_info = build_ev_charger_device_info(coordinator, data)
+            ev_device_info = build_ev_charger_device_info(data)
             ev_entities: List[BinarySensorEntity] = []
             for description in ev_binary_supported_states.values():
                 ev_entities.append(

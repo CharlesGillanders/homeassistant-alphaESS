@@ -34,7 +34,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
         data = coordinator.data[serial]
         model = data.get("Model")
-        inverter_device_info = build_inverter_device_info(coordinator, serial, data)
+        inverter_device_info = build_inverter_device_info(serial, data)
 
         switch_entities: List[SwitchEntity] = []
 
