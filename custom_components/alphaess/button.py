@@ -2,7 +2,6 @@ import time as time_mod
 from typing import List
 import logging
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION, INVERTER_SETTING_BLACKLIST, CONF_SERIAL_NUMBER, \
@@ -10,7 +9,7 @@ from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION, INVERTER_SETTING_BLAC
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS, EV_DISCHARGE_AND_CHARGE_BUTTONS
 from .enums import AlphaESSNames
-from .sensor import _build_inverter_device_info, _build_ev_charger_device_info
+from .device import build_inverter_device_info, build_ev_charger_device_info
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -47,7 +46,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             data = coordinator.data[serial]
             model = data.get("Model")
-            inverter_device_info = _build_inverter_device_info(coordinator, serial, data)
+            inverter_device_info = build_inverter_device_info(coordinator, serial, data)
 
             inverter_buttons: List[ButtonEntity] = []
 
@@ -70,7 +69,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
             }
             if ev_charger and ev_charger not in ev_subentry_serials:
-                ev_device_info = _build_ev_charger_device_info(coordinator, data)
+                ev_device_info = build_ev_charger_device_info(coordinator, data)
                 for description in ev_charging_supported_states:
                     inverter_buttons.append(
                         AlphaESSBatteryButton(
@@ -99,7 +98,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            ev_device_info = _build_ev_charger_device_info(coordinator, data)
+            ev_device_info = build_ev_charger_device_info(coordinator, data)
             ev_buttons: List[ButtonEntity] = []
             for description in ev_charging_supported_states:
                 ev_buttons.append(

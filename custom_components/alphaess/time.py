@@ -10,7 +10,7 @@ from .const import DOMAIN, INVERTER_SETTING_BLACKLIST, CONF_SERIAL_NUMBER, SUBEN
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .enums import AlphaESSNames
 from .sensorlist import CHARGE_DISCHARGE_TIMES
-from .sensor import _build_inverter_device_info
+from .device import build_inverter_device_info
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -46,7 +46,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
         data = coordinator.data[serial]
         model = data.get("Model")
-        inverter_device_info = _build_inverter_device_info(coordinator, serial, data)
+        inverter_device_info = build_inverter_device_info(coordinator, serial, data)
 
         time_entities: List[TimeEntity] = []
 

@@ -11,13 +11,12 @@ from homeassistant.helpers.typing import StateType
 from .enums import AlphaESSNames
 from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, EV_CHARGING_DETAILS, LOCAL_IP_SYSTEM_SENSORS
 
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS, TCP_STATUS_KEYS, ETHERNET_STATUS_KEYS, \
     FOUR_G_STATUS_KEYS, WIFI_STATUS_KEYS, CONF_SERIAL_NUMBER, SUBENTRY_TYPE_INVERTER, SUBENTRY_TYPE_EV_CHARGER, \
     CONF_PARENT_INVERTER
 from .coordinator import AlphaESSDataUpdateCoordinator
+from .device import build_inverter_device_info, build_ev_charger_device_info
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -62,56 +61,12 @@ EV_CONNECTOR_POWER_KEYS = {
 }
 
 
-def _build_inverter_device_info(
-    coordinator: AlphaESSDataUpdateCoordinator,
-    serial: str,
-    data: dict,
-) -> DeviceInfo:
-    """Build DeviceInfo for an inverter."""
-    serial_upper = serial.upper()
-
-    kwargs = {
-        "entry_type": DeviceEntryType.SERVICE,
-        "identifiers": {(DOMAIN, serial_upper)},
-        "manufacturer": "AlphaESS",
-        "model": data.get("Model"),
-        "model_id": serial,
-        "name": f"Alpha ESS Energy Statistics : {serial_upper}",
-    }
-
-    if "Local IP" in data and data.get("Local IP") != "0" and data.get("Device Status") is not None:
-        kwargs["serial_number"] = data.get("Device Serial Number")
-        kwargs["sw_version"] = data.get("Software Version")
-        kwargs["hw_version"] = data.get("Hardware Version")
-        kwargs["configuration_url"] = f"http://{data['Local IP']}"
-
-    return DeviceInfo(**kwargs)
-
-
-def _build_ev_charger_device_info(
-    coordinator: AlphaESSDataUpdateCoordinator,
-    data: dict,
-) -> DeviceInfo:
-    """Build DeviceInfo for an EV charger."""
-    ev_sn = data.get("EV Charger S/N")
-
-    kwargs = {
-        "entry_type": DeviceEntryType.SERVICE,
-        "identifiers": {(DOMAIN, ev_sn)},
-        "manufacturer": "AlphaESS",
-        "model": data.get("EV Charger Model"),
-        "model_id": ev_sn,
-        "name": f"Alpha ESS Charger : {ev_sn}",
-    }
-
-    return DeviceInfo(**kwargs)
-
 
 def _add_ev_entities(coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
     """Create and register EV charger sensor entities."""
     ev_charger = data.get("EV Charger S/N")
     ev_model = data.get("EV Charger Model")
-    ev_device_info = _build_ev_charger_device_info(coordinator, data)
+    ev_device_info = build_ev_charger_device_info(coordinator, data)
     _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
 
     ev_entities: List[AlphaESSSensor] = []
@@ -166,7 +121,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
             has_local_ip_data = 'Local IP' in data
-            inverter_device_info = _build_inverter_device_info(coordinator, serial, data)
+            inverter_device_info = build_inverter_device_info(coordinator, serial, data)
 
             inverter_entities: List[AlphaESSSensor] = []
 
