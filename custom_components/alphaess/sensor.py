@@ -11,67 +11,97 @@ from homeassistant.helpers.typing import StateType
 from .enums import AlphaESSNames
 from .sensorlist import FULL_SENSOR_DESCRIPTIONS, LIMITED_SENSOR_DESCRIPTIONS, EV_CHARGING_DETAILS, LOCAL_IP_SYSTEM_SENSORS
 
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, LIMITED_INVERTER_SENSOR_LIST, EV_CHARGER_STATE_KEYS, TCP_STATUS_KEYS, ETHERNET_STATUS_KEYS, \
     FOUR_G_STATUS_KEYS, WIFI_STATUS_KEYS, CONF_SERIAL_NUMBER, SUBENTRY_TYPE_INVERTER, SUBENTRY_TYPE_EV_CHARGER, \
     CONF_PARENT_INVERTER
 from .coordinator import AlphaESSDataUpdateCoordinator
+from .device import build_inverter_device_info, build_ev_charger_device_info
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-def _build_inverter_device_info(
-    coordinator: AlphaESSDataUpdateCoordinator,
-    serial: str,
-    data: dict,
-) -> DeviceInfo:
-    """Build DeviceInfo for an inverter."""
-    serial_upper = serial.upper()
+# Map common currency symbols to ISO 4217 codes.
+# SensorDeviceClass.MONETARY expects an ISO 4217 currency code; raw symbols
+# (e.g. '€') would produce invalid-unit warnings and broken statistics.
+_SYMBOL_TO_ISO: dict[str, str] = {
+    "$": "USD",
+    "€": "EUR",
+    "£": "GBP",
+    "¥": "JPY",
+    "₩": "KRW",
+    "₹": "INR",
+    "₽": "RUB",
+    "₺": "TRY",
+    "R$": "BRL",
+    "₫": "VND",
+    "₴": "UAH",
+    "₱": "PHP",
+    "₦": "NGN",
+    "Fr": "CHF",
+    "kr": "SEK",
+    "zł": "PLN",
+    "A$": "AUD",
+    "C$": "CAD",
+    "NZ$": "NZD",
+    "R": "ZAR",
+}
 
-    kwargs = {
-        "entry_type": DeviceEntryType.SERVICE,
-        "identifiers": {(DOMAIN, serial_upper)},
-        "manufacturer": "AlphaESS",
-        "model": data.get("Model"),
-        "model_id": serial,
-        "name": f"Alpha ESS Energy Statistics : {serial_upper}",
-    }
 
-    if "Local IP" in data and data.get("Local IP") != "0" and data.get("Device Status") is not None:
-        kwargs["serial_number"] = data.get("Device Serial Number")
-        kwargs["sw_version"] = data.get("Software Version")
-        kwargs["hw_version"] = data.get("Hardware Version")
-        kwargs["configuration_url"] = f"http://{data['Local IP']}"
+def _normalize_currency_unit(value: str | None, fallback: str | None) -> str | None:
+    """
+    Normalize currency for monetary units to an ISO 4217 code.
 
-    return DeviceInfo(**kwargs)
+    SensorDeviceClass.MONETARY expects an ISO 4217 currency code.
+    If the API returns a known symbol we map it; otherwise we fall back
+    to the HA-configured currency.
+    """
+    if value is None:
+        return fallback
+
+    normalized = value.strip()
+    if not normalized:
+        return fallback
+
+    # Already a 3-letter ISO code
+    if len(normalized) == 3 and normalized.isalpha():
+        return normalized.upper()
+
+    # Try to map a symbol to its ISO code
+    iso = _SYMBOL_TO_ISO.get(normalized)
+    if iso:
+        return iso
+
+    # Unknown symbol — fall back to HA's configured currency
+    return fallback
 
 
-def _build_ev_charger_device_info(
-    coordinator: AlphaESSDataUpdateCoordinator,
-    data: dict,
-) -> DeviceInfo:
-    """Build DeviceInfo for an EV charger."""
-    ev_sn = data.get("EV Charger S/N")
+EV_RELATED_KEYS = {
+    AlphaESSNames.evchargersn,
+    AlphaESSNames.evchargermodel,
+    AlphaESSNames.evchargerstatus,
+    AlphaESSNames.evchargerstatusraw,
+    AlphaESSNames.pev,
+    AlphaESSNames.ElectricVehiclePowerOne,
+    AlphaESSNames.ElectricVehiclePowerTwo,
+    AlphaESSNames.ElectricVehiclePowerThree,
+    AlphaESSNames.ElectricVehiclePowerFour,
+}
 
-    kwargs = {
-        "entry_type": DeviceEntryType.SERVICE,
-        "identifiers": {(DOMAIN, ev_sn)},
-        "manufacturer": "AlphaESS",
-        "model": data.get("EV Charger Model"),
-        "model_id": ev_sn,
-        "name": f"Alpha ESS Charger : {ev_sn}",
-    }
+EV_CONNECTOR_POWER_KEYS = {
+    AlphaESSNames.ElectricVehiclePowerOne,
+    AlphaESSNames.ElectricVehiclePowerTwo,
+    AlphaESSNames.ElectricVehiclePowerThree,
+    AlphaESSNames.ElectricVehiclePowerFour,
+}
 
-    return DeviceInfo(**kwargs)
 
 
 def _add_ev_entities(coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
     """Create and register EV charger sensor entities."""
     ev_charger = data.get("EV Charger S/N")
     ev_model = data.get("EV Charger Model")
-    ev_device_info = _build_ev_charger_device_info(coordinator, data)
+    ev_device_info = build_ev_charger_device_info(data)
     _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
 
     ev_entities: List[AlphaESSSensor] = []
@@ -118,19 +148,30 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             data = coordinator.data[serial]
             model = data.get("Model")
-            currency = data.get("Currency")
-            if currency is None:
-                currency = hass.config.currency
+            currency = _normalize_currency_unit(
+                data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
+                hass.config.currency,
+            )
 
             _LOGGER.info(f"New Inverter: Serial: {serial}, Model: {model}")
 
             has_local_ip_data = 'Local IP' in data
-            inverter_device_info = _build_inverter_device_info(coordinator, serial, data)
+            inverter_device_info = build_inverter_device_info(serial, data)
 
             inverter_entities: List[AlphaESSSensor] = []
 
             if model in LIMITED_INVERTER_SENSOR_LIST:
                 for description in limited_key_supported_states:
+                    if (
+                        description == AlphaESSNames.pev
+                        and data.get(AlphaESSNames.ElectricVehiclePowerOne) is None
+                    ):
+                        continue
+                    if (
+                        description in EV_CONNECTOR_POWER_KEYS
+                        and data.get(description) is None
+                    ):
+                        continue
                     inverter_entities.append(
                         AlphaESSSensor(
                             coordinator, entry, serial,
@@ -140,6 +181,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
             else:
                 for description in full_key_supported_states:
+                    if (
+                        description == AlphaESSNames.pev
+                        and data.get(AlphaESSNames.ElectricVehiclePowerOne) is None
+                    ):
+                        continue
+                    if (
+                        description in EV_CONNECTOR_POWER_KEYS
+                        and data.get(description) is None
+                    ):
+                        continue
                     inverter_entities.append(
                         AlphaESSSensor(
                             coordinator, entry, serial,
@@ -174,9 +225,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            currency = data.get("Currency")
-            if currency is None:
-                currency = hass.config.currency
+            currency = _normalize_currency_unit(
+                data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
+                hass.config.currency,
+            )
 
             ev_model = data.get("EV Charger Model")
             _LOGGER.info(f"New EV Charger: Serial: {ev_charger}, Model: {ev_model}")
@@ -206,9 +258,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         if not ev_charger or ev_charger in ev_subentry_serials:
             continue
 
-        currency = data.get("Currency")
-        if currency is None:
-            currency = hass.config.currency
+        currency = _normalize_currency_unit(
+            data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
+            hass.config.currency,
+        )
 
         _add_ev_entities(
             coordinator, entry, serial, data, currency,
@@ -265,6 +318,16 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         serial_data = self._coordinator.data.get(self._serial)
         if serial_data is None:
             return False
+
+        if self._key in EV_RELATED_KEYS and serial_data.get(AlphaESSNames.evchargersn) is None:
+            return False
+
+        if self._key in (AlphaESSNames.pev, AlphaESSNames.ElectricVehiclePowerOne):
+            return serial_data.get(AlphaESSNames.ElectricVehiclePowerOne) is not None
+
+        if self._key in EV_CONNECTOR_POWER_KEYS:
+            return serial_data.get(self._key) is not None
+
         return self._key in serial_data
 
     @property
@@ -278,7 +341,10 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             raw_state = self._coordinator.data.get(self._serial, {}).get(self._key)
             if raw_state is None:
                 return None
-            return EV_CHARGER_STATE_KEYS.get(raw_state, "unknown")
+            try:
+                return EV_CHARGER_STATE_KEYS.get(int(raw_state), "unknown")
+            except (TypeError, ValueError):
+                return "unknown"
 
         # Handle integer-mapped status sensors
         _STATUS_LOOKUPS = {

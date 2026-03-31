@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from homeassistant.components.button import ButtonEntityDescription
+from homeassistant.components.binary_sensor import BinarySensorEntityDescription
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.sensor import SensorEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
@@ -27,6 +28,13 @@ class AlphaESSButtonDescription(ButtonEntityDescription):
     native_value: Callable[
                       [str | int | float], str | int | float
                   ] | None = lambda val: val
+
+
+@dataclass(frozen=True)
+class AlphaESSBinarySensorDescription(BinarySensorEntityDescription):
+    """Class to describe an AlphaESS Binary Sensor."""
+
+    direction: int | None = None
 
 
 @dataclass(frozen=True)

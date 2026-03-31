@@ -1,6 +1,5 @@
 from typing import List
 from homeassistant.components.number import NumberEntity
-from homeassistant.helpers.device_registry import DeviceInfo, DeviceEntryType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.number import RestoreNumber
 import logging
@@ -12,7 +11,7 @@ from .const import (
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .enums import AlphaESSNames
 from .sensorlist import DISCHARGE_AND_CHARGE_NUMBERS, EV_CHARGER_NUMBERS
-from .sensor import _build_inverter_device_info, _build_ev_charger_device_info
+from .device import build_inverter_device_info, build_ev_charger_device_info
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -36,7 +35,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             data = coordinator.data[serial]
             model = data.get("Model")
-            inverter_device_info = _build_inverter_device_info(coordinator, serial, data)
+            inverter_device_info = build_inverter_device_info(serial, data)
 
             number_entities: List[NumberEntity] = []
 
@@ -58,7 +57,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
             }
             if ev_charger and ev_charger not in ev_subentry_serials:
-                ev_device_info = _build_ev_charger_device_info(coordinator, data)
+                ev_device_info = build_ev_charger_device_info(data)
                 for description in ev_number_supported_states:
                     number_entities.append(
                         AlphaEVNumber(
@@ -85,7 +84,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            ev_device_info = _build_ev_charger_device_info(coordinator, data)
+            ev_device_info = build_ev_charger_device_info(data)
             ev_entities: List[NumberEntity] = []
             for description in ev_number_supported_states:
                 ev_entities.append(

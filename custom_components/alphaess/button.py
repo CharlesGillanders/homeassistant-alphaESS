@@ -2,7 +2,6 @@ import time as time_mod
 from typing import List
 import logging
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION, INVERTER_SETTING_BLACKLIST, CONF_SERIAL_NUMBER, \
@@ -10,7 +9,7 @@ from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION, INVERTER_SETTING_BLAC
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS, EV_DISCHARGE_AND_CHARGE_BUTTONS
 from .enums import AlphaESSNames
-from .sensor import _build_inverter_device_info, _build_ev_charger_device_info
+from .device import build_inverter_device_info, build_ev_charger_device_info
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -47,7 +46,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             data = coordinator.data[serial]
             model = data.get("Model")
-            inverter_device_info = _build_inverter_device_info(coordinator, serial, data)
+            inverter_device_info = build_inverter_device_info(serial, data)
 
             inverter_buttons: List[ButtonEntity] = []
 
@@ -70,7 +69,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
             }
             if ev_charger and ev_charger not in ev_subentry_serials:
-                ev_device_info = _build_ev_charger_device_info(coordinator, data)
+                ev_device_info = build_ev_charger_device_info(data)
                 for description in ev_charging_supported_states:
                     inverter_buttons.append(
                         AlphaESSBatteryButton(
@@ -99,7 +98,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            ev_device_info = _build_ev_charger_device_info(coordinator, data)
+            ev_device_info = build_ev_charger_device_info(data)
             ev_buttons: List[ButtonEntity] = []
             for description in ev_charging_supported_states:
                 ev_buttons.append(
@@ -168,7 +167,23 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
     async def async_press(self) -> None:
 
+        async def _notify_invalid_ev_command(action: str) -> None:
+            if not self._notifications_disabled:
+                await create_persistent_notification(
+                    self.hass,
+                    message=(
+                        f"EV charger cannot {action.lower()} right now for {self._serial}. "
+                        "Refresh and check EV Charger Status before retrying."
+                    ),
+                    title=f"{self._serial} EV Charger",
+                )
+
         if self._key == AlphaESSNames.stopcharging:
+            if not self._coordinator.can_control_ev(self._serial, 0):
+                _LOGGER.info("Stop charging ignored for %s due to EV state mismatch", self._serial)
+                await _notify_invalid_ev_command("Stop")
+                return
+
             _LOGGER.info("Stopped charging")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 0)
@@ -179,6 +194,11 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             return
 
         if self._key == AlphaESSNames.startcharging:
+            if not self._coordinator.can_control_ev(self._serial, 1):
+                _LOGGER.info("Start charging ignored for %s due to EV state mismatch", self._serial)
+                await _notify_invalid_ev_command("Start")
+                return
+
             _LOGGER.info("started charging")
             self._movement_state = None
             await self._coordinator.control_ev(self._serial, self._ev_serial, 1)
