@@ -545,7 +545,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         self._last_poll_type = "normal"
 
         try:
-            throttle_delay = self.throttle_multiplier * self.LOCAL_INVERTER_COUNT
+            throttle_delay = self.throttle_multiplier
 
             # Get list of registered inverters
             units = await self.api.getESSList()
@@ -617,7 +617,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         )
 
         try:
-            throttle_delay = self.throttle_multiplier * self.LOCAL_INVERTER_COUNT
+            throttle_delay = self.throttle_multiplier
 
             if need_full:
                 # Full poll — per-inverter API calls
@@ -649,8 +649,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         self._inverter_error_count[serial] = self._inverter_error_count.get(serial, 0) + 1
 
                 self.cloud_available = any_success
-                self._last_full_poll = now
                 if any_success:
+                    self._last_full_poll = now
                     self._last_full_poll_utc = datetime.utcnow().isoformat(timespec="seconds") + "Z"
                 else:
                     _LOGGER.warning("Alt mode: all per-inverter fetches failed during full poll")
