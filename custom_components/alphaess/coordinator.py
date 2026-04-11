@@ -146,7 +146,7 @@ class InverterDataParser:
             AlphaESSNames.evcurrentsetting: await self.dp.safe_get(ev_current, "currentsetting"),
         }
 
-    async def parse_summary_data(self, sum_data: Dict) -> Dict[str, Any]:
+    async def parse_summary_data(self, sum_data: Dict, fallback_currency: str | None = None) -> Dict[str, Any]:
         """Parse summary statistics."""
         currency = await self.dp.safe_get(sum_data, "moneyType")
 
@@ -160,9 +160,9 @@ class InverterDataParser:
             AlphaESSNames.TodayIncome: await self.dp.safe_get(sum_data, "todayIncome"),
         }
 
-        if currency is not None:
-            data[AlphaESSNames.CurrencyCode] = currency
-            data["Currency"] = currency
+        resolved = currency or fallback_currency or "Unknown"
+        data[AlphaESSNames.CurrencyCode] = resolved
+        data["Currency"] = resolved
 
         # Handle self consumption and sufficiency correctly
         self_consumption = await self.dp.safe_get(sum_data, "eselfConsumption")
@@ -880,7 +880,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         # Add summary data
         sum_data = invertor.get("SumData", {})
         if sum_data:
-            data.update(await self.parser.parse_summary_data(sum_data))
+            data.update(await self.parser.parse_summary_data(sum_data, fallback_currency=self.hass.config.currency))
 
         # Add energy data
         energy_data = invertor.get("OneDateEnergy", {})
