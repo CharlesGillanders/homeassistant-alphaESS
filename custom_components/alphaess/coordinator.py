@@ -553,6 +553,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 return self.data
 
             # Fetch data per-inverter separately
+            any_success = False
             for idx, unit in enumerate(units):
                 serial = unit.get("sysSn")
                 if not serial:
@@ -575,6 +576,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     inverter_data = await self._parse_inverter_data(invertor)
                     self.data[serial] = inverter_data
                     self._inverter_error_count[serial] = 0
+                    any_success = True
+                except asyncio.CancelledError:
+                    raise
                 except Exception as err:
                     _LOGGER.warning(f"Error fetching data for {serial}: {err}")
                     self._inverter_error_count[serial] = self._inverter_error_count.get(serial, 0) + 1
@@ -582,8 +586,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             # Fetch local IP data per-inverter for those with configured IPs
             await self._fetch_per_inverter_local_data()
 
-            self.cloud_available = True
-            self._last_full_poll_utc = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            self.cloud_available = any_success
+            if any_success:
+                self._last_full_poll_utc = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            else:
+                _LOGGER.warning("All per-inverter fetches failed")
             self._update_diagnostics()
             return self.data
 
@@ -620,6 +627,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                 if not units:
                     return self.data
 
+                any_success = False
                 for idx, unit in enumerate(units):
                     serial = unit.get("sysSn")
                     if not serial:
@@ -633,12 +641,19 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         self.data[serial] = inverter_data
                         # Clear error count on success
                         self._inverter_error_count[serial] = 0
+                        any_success = True
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as err:
                         _LOGGER.debug(f"Alt mode full poll failed for {serial}: {err}")
                         self._inverter_error_count[serial] = self._inverter_error_count.get(serial, 0) + 1
 
+                self.cloud_available = any_success
                 self._last_full_poll = now
-                self._last_full_poll_utc = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                if any_success:
+                    self._last_full_poll_utc = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                else:
+                    _LOGGER.warning("Alt mode: all per-inverter fetches failed during full poll")
             else:
                 # Fast poll — stagger: pick one inverter per tick (round-robin)
                 self._last_poll_type = "fast"
@@ -661,12 +676,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug(f"Alt mode: fast poll for {serial}")
                     try:
                         import time
-                        # getLastPowerData — real-time watts/SOC
-                        power_data = await self.api.getLastPowerData(serial)
-                        if power_data:
-                            parsed = await self.parser.parse_power_data(power_data, None)
-                            self.data[serial].update(parsed)
-                        await asyncio.sleep(throttle_delay)
+                        # getLastPowerData — real-time watts/SOC (skip for unsupported models)
+                        model = self.data[serial].get("Model")
+                        if model not in LOWER_INVERTER_API_CALL_LIST:
+                            power_data = await self.api.getLastPowerData(serial)
+                            if power_data:
+                                parsed = await self.parser.parse_power_data(power_data, None)
+                                self.data[serial].update(parsed)
+                            await asyncio.sleep(throttle_delay)
 
                         # getOneDateEnergyBySn — daily energy counters
                         energy_data = await self.api.getOneDateEnergyBySn(
@@ -688,6 +705,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
 
                         # Clear error count on success
                         self._inverter_error_count[serial] = 0
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as err:
                         _LOGGER.debug(f"Alt mode fast poll failed for {serial}: {err}")
                         self._inverter_error_count[serial] = self._inverter_error_count.get(serial, 0) + 1
@@ -695,7 +714,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             # Fetch local IP data per-inverter for those with configured IPs
             await self._fetch_per_inverter_local_data()
 
-            self.cloud_available = True
             self._update_diagnostics()
             return self.data
 
@@ -740,8 +758,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         )
         await asyncio.sleep(throttle_delay)
 
-        unit["LastPower"] = await self.api.getLastPowerData(serial)
-        await asyncio.sleep(throttle_delay)
+        # Skip getLastPowerData for inverters that don't support it
+        if unit.get("minv") not in LOWER_INVERTER_API_CALL_LIST:
+            unit["LastPower"] = await self.api.getLastPowerData(serial)
+            await asyncio.sleep(throttle_delay)
 
         unit["ChargeConfig"] = await self.api.getChargeConfigInfo(serial)
         await asyncio.sleep(throttle_delay)
@@ -768,8 +788,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         await asyncio.sleep(throttle_delay)
                         unit["EVCurrent"] = await self.api.getEvChargerCurrentsBySn(serial)
                         await asyncio.sleep(throttle_delay)
+            except asyncio.CancelledError:
+                raise
             except Exception:
-                pass
+                _LOGGER.debug("Failed to fetch EV data for %s", serial, exc_info=True)
 
         # Include local IP data if available and this is the first inverter
         if include_local_ip and self.api.ipaddress:
@@ -781,8 +803,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
                         "ip": self.api.ipaddress,
                         **ip_data,
                     }
+            except asyncio.CancelledError:
+                raise
             except Exception:
-                pass
+                _LOGGER.debug("Failed to fetch local IP data", exc_info=True)
 
         return unit
 

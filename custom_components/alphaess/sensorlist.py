@@ -121,7 +121,7 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         key=AlphaESSNames.PollTickCount,
         name="Poll Tick Count",
         icon="mdi:counter",
-        native_unit_of_measurement=None,
+        native_unit_of_measurement="count",
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
