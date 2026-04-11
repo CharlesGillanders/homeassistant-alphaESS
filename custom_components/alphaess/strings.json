@@ -78,7 +78,14 @@
       "init": {
         "data": {
           "Verify SSL Certificate": "Verify SSL Certificate",
-          "scan_interval_seconds": "Scan interval (seconds)"
+          "scan_interval_seconds": "Full poll interval (seconds)",
+          "alt_polling_mode": "Alt polling mode (split fast/slow)",
+          "fast_scan_interval_seconds": "Fast poll interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval_seconds": "Interval for all data: summary, energy, config, and power. When alt polling mode is enabled this becomes the slow/full poll interval.",
+          "alt_polling_mode": "When enabled, live power data (SOC, PV, grid, battery, load) polls at the fast interval, while summary, energy, and config data polls at the full poll interval.",
+          "fast_scan_interval_seconds": "Interval for live power data when alt polling mode is enabled. Default 15 seconds."
         }
       }
     }

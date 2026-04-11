@@ -92,6 +92,39 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    # Poll diagnostics
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PollMode,
+        name="Poll Mode",
+        icon="mdi:swap-vertical",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.LastPollType,
+        name="Last Poll Type",
+        icon="mdi:clock-fast",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.LastFullPoll,
+        name="Last Full Poll",
+        icon="mdi:clock-check-outline",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PollTickCount,
+        name="Poll Tick Count",
+        icon="mdi:counter",
+        native_unit_of_measurement=None,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 ]
 
 FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [

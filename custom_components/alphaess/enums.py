@@ -116,3 +116,9 @@ class AlphaESSNames(str, Enum):
     password = "Password"
     ethernetModule = "Ethernet Module"
     fourGModule = "4G Module"
+
+    # Poll diagnostics
+    PollMode = "Poll Mode"
+    LastPollType = "Last Poll Type"
+    LastFullPoll = "Last Full Poll"
+    PollTickCount = "Poll Tick Count"
