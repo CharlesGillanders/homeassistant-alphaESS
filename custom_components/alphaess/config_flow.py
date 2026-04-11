@@ -21,14 +21,19 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
+    CONF_ALT_POLLING_MODE,
+    CONF_FAST_SCAN_INTERVAL_SECONDS,
     CONF_SCAN_INTERVAL_SECONDS,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
     CONF_SERIAL_NUMBER,
+    DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
+    MAX_FAST_SCAN_INTERVAL_SECONDS,
     MAX_SCAN_INTERVAL_SECONDS,
+    MIN_FAST_SCAN_INTERVAL_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
     SUBENTRY_TYPE_INVERTER,
 )
@@ -201,6 +206,23 @@ class AlphaESSOptionsFlowHandler(OptionsFlow):
             ): vol.All(
                 vol.Coerce(int),
                 vol.Range(min=MIN_SCAN_INTERVAL_SECONDS, max=MAX_SCAN_INTERVAL_SECONDS),
+            ),
+            vol.Optional(
+                CONF_ALT_POLLING_MODE,
+                default=self._config_entry.options.get(
+                    CONF_ALT_POLLING_MODE,
+                    False,
+                ),
+            ): bool,
+            vol.Optional(
+                CONF_FAST_SCAN_INTERVAL_SECONDS,
+                default=self._config_entry.options.get(
+                    CONF_FAST_SCAN_INTERVAL_SECONDS,
+                    DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
+                ),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=MIN_FAST_SCAN_INTERVAL_SECONDS, max=MAX_FAST_SCAN_INTERVAL_SECONDS),
             ),
         }
 

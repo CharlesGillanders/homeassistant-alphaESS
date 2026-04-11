@@ -1,4 +1,5 @@
 """Coordinator for AlphaEss integration."""
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
@@ -11,8 +12,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CONF_ALT_POLLING_MODE,
     CONF_IP_ADDRESS,
     CONF_SERIAL_NUMBER,
+    DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
     DOMAIN,
     LOWER_INVERTER_API_CALL_LIST,
     SCAN_INTERVAL,
@@ -143,7 +146,7 @@ class InverterDataParser:
             AlphaESSNames.evcurrentsetting: await self.dp.safe_get(ev_current, "currentsetting"),
         }
 
-    async def parse_summary_data(self, sum_data: Dict) -> Dict[str, Any]:
+    async def parse_summary_data(self, sum_data: Dict, fallback_currency: str | None = None) -> Dict[str, Any]:
         """Parse summary statistics."""
         currency = await self.dp.safe_get(sum_data, "moneyType")
 
@@ -157,9 +160,9 @@ class InverterDataParser:
             AlphaESSNames.TodayIncome: await self.dp.safe_get(sum_data, "todayIncome"),
         }
 
-        if currency is not None:
-            data[AlphaESSNames.CurrencyCode] = currency
-            data["Currency"] = currency
+        resolved = currency or fallback_currency or "Unknown"
+        data[AlphaESSNames.CurrencyCode] = resolved
+        data["Currency"] = resolved
 
         # Handle self consumption and sufficiency correctly
         self_consumption = await self.dp.safe_get(sum_data, "eselfConsumption")
@@ -326,18 +329,43 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         inverter_models: list[str] | None = None,
         entry: ConfigEntry | None = None,
         scan_interval: timedelta | None = None,
+        alt_polling_mode: bool = False,
+        fast_scan_interval: timedelta | None = None,
     ) -> None:
         """Initialize coordinator."""
+        self.alt_polling_mode = alt_polling_mode
+        self._full_poll_interval = scan_interval or SCAN_INTERVAL
+        self._fast_scan_interval = fast_scan_interval or timedelta(seconds=DEFAULT_FAST_SCAN_INTERVAL_SECONDS)
+
+        # In alt mode the coordinator ticks at the fast interval;
+        # full polls happen when _full_poll_interval has elapsed.
+        effective_interval = self._fast_scan_interval if alt_polling_mode else self._full_poll_interval
+
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=scan_interval or SCAN_INTERVAL,
+            update_interval=effective_interval,
         )
         self.api = client
         self.hass = hass
         self.data: dict[str, dict[str, float]] = {}
         self.entry = entry
+
+        self._last_full_poll: float | None = None  # monotonic timestamp of last full poll
+
+        # Stagger fast polls: round-robin index across inverters
+        self._fast_poll_index: int = 0
+
+        # Per-inverter consecutive error count for backoff
+        self._inverter_error_count: dict[str, int] = {}
+        self._ERROR_BACKOFF_THRESHOLD = 3  # skip inverter after this many consecutive failures
+        self._ERROR_BACKOFF_CYCLES = 5     # retry every N cycles when backed off
+
+        # Poll diagnostics (exposed as sensor data per-serial)
+        self._last_poll_type: str = "none"
+        self._last_full_poll_utc: str | None = None
+        self._poll_tick_count: int = 0
 
         # Per-inverter IP address mapping
         self.ip_address_map = ip_address_map or {}
@@ -510,36 +538,277 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         if self.data is None:
             self.data = {}
 
-        try:
-            throttle_factor = self.throttle_multiplier * self.LOCAL_INVERTER_COUNT
-            jsondata = await self.api.getdata(True, True, throttle_factor)
+        if self.alt_polling_mode:
+            return await self._async_update_data_alt()
 
-            if jsondata is None:
+        self._poll_tick_count += 1
+        self._last_poll_type = "normal"
+
+        try:
+            throttle_delay = self.throttle_multiplier
+
+            # Get list of registered inverters
+            units = await self.api.getESSList()
+            if not units:
                 return self.data
 
-            for invertor in jsondata:
-                serial = invertor.get("sysSn")
+            # Fetch data per-inverter separately
+            any_success = False
+            for idx, unit in enumerate(units):
+                serial = unit.get("sysSn")
                 if not serial:
                     continue
 
-                # Parse all data sections
-                inverter_data = await self._parse_inverter_data(invertor)
-                self.data[serial] = inverter_data
+                # Per-inverter error backoff
+                err_count = self._inverter_error_count.get(serial, 0)
+                if err_count >= self._ERROR_BACKOFF_THRESHOLD:
+                    if self._poll_tick_count % self._ERROR_BACKOFF_CYCLES != 0:
+                        _LOGGER.debug(
+                            f"Skipping {serial} (backed off, {err_count} consecutive errors)"
+                        )
+                        continue
+
+                try:
+                    invertor = await self._fetch_inverter_data(
+                        serial, unit, throttle_delay, get_power=True, get_ev=True,
+                        include_local_ip=(idx == 0),
+                    )
+                    inverter_data = await self._parse_inverter_data(invertor)
+                    self.data[serial] = inverter_data
+                    self._inverter_error_count[serial] = 0
+                    any_success = True
+                except asyncio.CancelledError:
+                    raise
+                except Exception as err:
+                    _LOGGER.warning(f"Error fetching data for {serial}: {err}")
+                    self._inverter_error_count[serial] = self._inverter_error_count.get(serial, 0) + 1
 
             # Fetch local IP data per-inverter for those with configured IPs
             await self._fetch_per_inverter_local_data()
 
-            self.cloud_available = True
+            self.cloud_available = any_success
+            if any_success:
+                self._last_full_poll_utc = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            else:
+                _LOGGER.warning("All per-inverter fetches failed")
+            self._update_diagnostics()
             return self.data
 
         except (aiohttp.ClientConnectorError, aiohttp.ClientResponseError, TypeError) as error:
             _LOGGER.warning(f"Cloud API error: {error}")
             self.cloud_available = False
+            self._update_diagnostics()
             return await self._fallback_to_local_data()
         except Exception as error:
             _LOGGER.error(f"Unexpected error fetching data: {error}")
             self.cloud_available = False
+            self._update_diagnostics()
             return await self._fallback_to_local_data()
+
+    async def _async_update_data_alt(self) -> Optional[Dict[str, Dict[str, Any]]]:
+        """Alt polling mode: fast poll for live power data, full poll at scan_interval cadence."""
+        import time as _time
+
+        now = _time.monotonic()
+        self._poll_tick_count += 1
+        need_full = (
+            self._last_full_poll is None
+            or (now - self._last_full_poll) >= self._full_poll_interval.total_seconds()
+        )
+
+        try:
+            throttle_delay = self.throttle_multiplier
+
+            if need_full:
+                # Full poll — per-inverter API calls
+                self._last_poll_type = "full"
+                _LOGGER.debug("Alt mode: performing full poll")
+                units = await self.api.getESSList()
+                if not units:
+                    return self.data
+
+                any_success = False
+                for idx, unit in enumerate(units):
+                    serial = unit.get("sysSn")
+                    if not serial:
+                        continue
+                    try:
+                        invertor = await self._fetch_inverter_data(
+                            serial, unit, throttle_delay, get_power=True, get_ev=True,
+                            include_local_ip=(idx == 0),
+                        )
+                        inverter_data = await self._parse_inverter_data(invertor)
+                        self.data[serial] = inverter_data
+                        # Clear error count on success
+                        self._inverter_error_count[serial] = 0
+                        any_success = True
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as err:
+                        _LOGGER.debug(f"Alt mode full poll failed for {serial}: {err}")
+                        self._inverter_error_count[serial] = self._inverter_error_count.get(serial, 0) + 1
+
+                self.cloud_available = any_success
+                if any_success:
+                    self._last_full_poll = now
+                    self._last_full_poll_utc = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                else:
+                    _LOGGER.warning("Alt mode: all per-inverter fetches failed during full poll")
+            else:
+                # Fast poll — stagger: pick one inverter per tick (round-robin)
+                self._last_poll_type = "fast"
+                serials = list(self.data.keys())
+                if serials:
+                    serial = serials[self._fast_poll_index % len(serials)]
+                    self._fast_poll_index += 1
+
+                    # Per-inverter error backoff
+                    err_count = self._inverter_error_count.get(serial, 0)
+                    if err_count >= self._ERROR_BACKOFF_THRESHOLD:
+                        # Retry every N cycles to see if it recovers
+                        if self._poll_tick_count % self._ERROR_BACKOFF_CYCLES != 0:
+                            _LOGGER.debug(
+                                f"Alt mode: skipping {serial} (backed off, {err_count} consecutive errors)"
+                            )
+                            self._update_diagnostics()
+                            return self.data
+
+                    _LOGGER.debug(f"Alt mode: fast poll for {serial}")
+                    try:
+                        import time
+                        # getLastPowerData — real-time watts/SOC (skip for unsupported models)
+                        model = self.data[serial].get("Model")
+                        if model not in LOWER_INVERTER_API_CALL_LIST:
+                            power_data = await self.api.getLastPowerData(serial)
+                            if power_data:
+                                parsed = await self.parser.parse_power_data(power_data, None)
+                                self.data[serial].update(parsed)
+                            await asyncio.sleep(throttle_delay)
+
+                        # getOneDateEnergyBySn — daily energy counters
+                        energy_data = await self.api.getOneDateEnergyBySn(
+                            serial, time.strftime("%Y-%m-%d")
+                        )
+                        if energy_data:
+                            parsed = await self.parser.parse_energy_data(energy_data)
+                            self.data[serial].update(parsed)
+                        await asyncio.sleep(throttle_delay)
+
+                        # EV charger status if one is known
+                        ev_sn = self.data[serial].get(AlphaESSNames.evchargersn)
+                        if ev_sn:
+                            ev_status = await self.api.getEvChargerStatusBySn(serial, ev_sn)
+                            if ev_status:
+                                self.data[serial][AlphaESSNames.evchargerstatus] = ev_status.get("evchargerStatus")
+                                self.data[serial][AlphaESSNames.evchargerstatusraw] = ev_status.get("evchargerStatus")
+                            await asyncio.sleep(throttle_delay)
+
+                        # Clear error count on success
+                        self._inverter_error_count[serial] = 0
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as err:
+                        _LOGGER.debug(f"Alt mode fast poll failed for {serial}: {err}")
+                        self._inverter_error_count[serial] = self._inverter_error_count.get(serial, 0) + 1
+
+            # Fetch local IP data per-inverter for those with configured IPs
+            await self._fetch_per_inverter_local_data()
+
+            self._update_diagnostics()
+            return self.data
+
+        except (aiohttp.ClientConnectorError, aiohttp.ClientResponseError, TypeError) as error:
+            _LOGGER.warning(f"Cloud API error (alt mode): {error}")
+            self.cloud_available = False
+            self._update_diagnostics()
+            return await self._fallback_to_local_data()
+        except Exception as error:
+            _LOGGER.error(f"Unexpected error fetching data (alt mode): {error}")
+            self.cloud_available = False
+            self._update_diagnostics()
+            return await self._fallback_to_local_data()
+
+    def _update_diagnostics(self) -> None:
+        """Write poll diagnostic data into each inverter's data dict."""
+        for serial in list(self.data.keys()):
+            if serial not in self.data:
+                continue
+            self.data[serial][AlphaESSNames.PollMode] = "alt" if self.alt_polling_mode else "normal"
+            self.data[serial][AlphaESSNames.LastPollType] = self._last_poll_type
+            self.data[serial][AlphaESSNames.LastFullPoll] = self._last_full_poll_utc or "never"
+            self.data[serial][AlphaESSNames.PollTickCount] = self._poll_tick_count
+
+    async def _fetch_inverter_data(
+        self,
+        serial: str,
+        unit: Dict,
+        throttle_delay: float,
+        get_power: bool = False,
+        get_ev: bool = False,
+        include_local_ip: bool = False,
+    ) -> Dict[str, Any]:
+        """Fetch all API data for a single inverter by its serial number."""
+        import time
+
+        unit["SumData"] = await self.api.getSumDataForCustomer(serial)
+        await asyncio.sleep(throttle_delay)
+
+        unit["OneDateEnergy"] = await self.api.getOneDateEnergyBySn(
+            serial, time.strftime("%Y-%m-%d")
+        )
+        await asyncio.sleep(throttle_delay)
+
+        # Skip getLastPowerData for inverters that don't support it
+        if unit.get("minv") not in LOWER_INVERTER_API_CALL_LIST:
+            unit["LastPower"] = await self.api.getLastPowerData(serial)
+            await asyncio.sleep(throttle_delay)
+
+        unit["ChargeConfig"] = await self.api.getChargeConfigInfo(serial)
+        await asyncio.sleep(throttle_delay)
+
+        unit["DisChargeConfig"] = await self.api.getDisChargeConfigInfo(serial)
+        await asyncio.sleep(throttle_delay)
+
+        if get_power:
+            unit["OneDayPower"] = await self.api.getOneDayPowerBySn(
+                serial, time.strftime("%Y-%m-%d")
+            )
+            await asyncio.sleep(throttle_delay)
+
+        if get_ev:
+            try:
+                unit["EVData"] = await self.api.getEvChargerConfigList(serial)
+                await asyncio.sleep(throttle_delay)
+                if unit["EVData"]:
+                    ev_list = unit["EVData"]
+                    ev_item = ev_list[0] if isinstance(ev_list, list) else ev_list
+                    ev_serial = ev_item.get("evchargerSn")
+                    if ev_serial:
+                        unit["EVStatus"] = await self.api.getEvChargerStatusBySn(serial, ev_serial)
+                        await asyncio.sleep(throttle_delay)
+                        unit["EVCurrent"] = await self.api.getEvChargerCurrentsBySn(serial)
+                        await asyncio.sleep(throttle_delay)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                _LOGGER.debug("Failed to fetch EV data for %s", serial, exc_info=True)
+
+        # Include local IP data if available and this is the first inverter
+        if include_local_ip and self.api.ipaddress:
+            try:
+                ip_data = await self.api.getIPData()
+                if ip_data:
+                    unit["LocalIPData"] = {
+                        "type": "local_ip_data",
+                        "ip": self.api.ipaddress,
+                        **ip_data,
+                    }
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                _LOGGER.debug("Failed to fetch local IP data", exc_info=True)
+
+        return unit
 
     async def _fetch_per_inverter_local_data(self) -> None:
         """Fetch local IP data for each inverter that has a configured IP.
@@ -635,7 +904,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
         # Add summary data
         sum_data = invertor.get("SumData", {})
         if sum_data:
-            data.update(await self.parser.parse_summary_data(sum_data))
+            data.update(await self.parser.parse_summary_data(sum_data, fallback_currency=self.hass.config.currency))
 
         # Add energy data
         energy_data = invertor.get("OneDateEnergy", {})

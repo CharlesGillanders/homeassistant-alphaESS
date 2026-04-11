@@ -18,13 +18,18 @@ from homeassistant.util import slugify
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
+    CONF_ALT_POLLING_MODE,
+    CONF_FAST_SCAN_INTERVAL_SECONDS,
     CONF_SCAN_INTERVAL_SECONDS,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_EV_CHARGER_MODEL,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
+    DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
     DEFAULT_SCAN_INTERVAL_SECONDS,
+    MAX_FAST_SCAN_INTERVAL_SECONDS,
     MAX_SCAN_INTERVAL_SECONDS,
+    MIN_FAST_SCAN_INTERVAL_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
     CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
@@ -273,6 +278,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         min(MAX_SCAN_INTERVAL_SECONDS, scan_interval_seconds),
     )
 
+    # Alt polling mode settings
+    alt_polling_mode = entry.options.get(CONF_ALT_POLLING_MODE, False)
+    fast_scan_interval_seconds = entry.options.get(
+        CONF_FAST_SCAN_INTERVAL_SECONDS,
+        DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
+    )
+    try:
+        fast_scan_interval_seconds = int(fast_scan_interval_seconds)
+    except (TypeError, ValueError):
+        fast_scan_interval_seconds = DEFAULT_FAST_SCAN_INTERVAL_SECONDS
+
+    fast_scan_interval_seconds = max(
+        MIN_FAST_SCAN_INTERVAL_SECONDS,
+        min(MAX_FAST_SCAN_INTERVAL_SECONDS, fast_scan_interval_seconds),
+    )
+
     await asyncio.sleep(1)
 
     _coordinator = AlphaESSDataUpdateCoordinator(
@@ -282,6 +303,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         inverter_models=inverter_models,
         entry=entry,
         scan_interval=timedelta(seconds=scan_interval_seconds),
+        alt_polling_mode=alt_polling_mode,
+        fast_scan_interval=timedelta(seconds=fast_scan_interval_seconds),
     )
     await _coordinator.async_config_entry_first_refresh()
 
