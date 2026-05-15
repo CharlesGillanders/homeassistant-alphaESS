@@ -417,7 +417,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
             return False
 
         if direction == 1:
-            return status in (2, 4, 5)
+            return status in (2, 4, 5, 6)
         if direction == 0:
             return status in (3, 4, 5)
         return False
