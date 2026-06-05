@@ -114,7 +114,7 @@ EV_CONNECTOR_POWER_KEYS = {
 # Note: the daily energy endpoint (getOneDateEnergyBySn -> parse_energy_data)
 # is NOT affected - it always returns populated values - so Charge, Discharge,
 # Solar Production, Solar to Battery, etc. are intentionally left out here.
-SUMMARY_DATA_KEYS = {
+AU_MIGRATION_NULLABLE_KEYS = {
     AlphaESSNames.TotalLoad,
     AlphaESSNames.Income,
     AlphaESSNames.Total_Generation,
@@ -364,7 +364,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         # missing, so report unavailable rather than a misleading Unknown/0.
         # Where the data still flows (other regions) a present value keeps it
         # available.
-        if self._key in SUMMARY_DATA_KEYS:
+        if self._key in AU_MIGRATION_NULLABLE_KEYS:
             return serial_data.get(self._key) is not None
 
         return self._key in serial_data
