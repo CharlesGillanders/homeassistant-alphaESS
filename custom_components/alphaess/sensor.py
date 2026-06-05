@@ -96,6 +96,37 @@ EV_CONNECTOR_POWER_KEYS = {
 }
 
 
+# Sensors whose values are sourced from the cloud summary endpoint
+# (getSumDataForCustomer -> parse_summary_data).
+#
+# Following the Australian server migration this endpoint intermittently returns
+# ``null`` for individual fields (e.g. epvtotal, todayIncome, eselfConsumption,
+# treeNum...). When that happens the coordinator stores the key with a ``None``
+# value, so the entity would otherwise stay "available" while publishing a
+# misleading Unknown/0 reading.
+#
+# For these keys we instead treat a ``None`` value as "data temporarily
+# missing": the entity is reported unavailable, so it can be removed from HA and
+# re-appears automatically once the data flows again. Regions where the data
+# still flows are unaffected - a present value keeps the entity available
+# exactly as before.
+#
+# Note: the daily energy endpoint (getOneDateEnergyBySn -> parse_energy_data)
+# is NOT affected - it always returns populated values - so Charge, Discharge,
+# Solar Production, Solar to Battery, etc. are intentionally left out here.
+SUMMARY_DATA_KEYS = {
+    AlphaESSNames.TotalLoad,
+    AlphaESSNames.Income,
+    AlphaESSNames.Total_Generation,
+    AlphaESSNames.treePlanted,
+    AlphaESSNames.carbonReduction,
+    AlphaESSNames.TodayGeneration,
+    AlphaESSNames.TodayIncome,
+    AlphaESSNames.SelfConsumption,
+    AlphaESSNames.SelfSufficiency,
+}
+
+
 
 def _add_ev_entities(coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
     """Create and register EV charger sensor entities."""
@@ -326,6 +357,14 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
             return serial_data.get(AlphaESSNames.ElectricVehiclePowerOne) is not None
 
         if self._key in EV_CONNECTOR_POWER_KEYS:
+            return serial_data.get(self._key) is not None
+
+        # Summary sensors from the getSumDataForCustomer endpoint affected by
+        # the AU server migration: a null value means the data is temporarily
+        # missing, so report unavailable rather than a misleading Unknown/0.
+        # Where the data still flows (other regions) a present value keeps it
+        # available.
+        if self._key in SUMMARY_DATA_KEYS:
             return serial_data.get(self._key) is not None
 
         return self._key in serial_data
