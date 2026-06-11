@@ -1,17 +1,24 @@
-import time as time_mod
-from typing import List
 import logging
-from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
+import time as time_mod
+
+from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, ALPHA_POST_REQUEST_RESTRICTION, INVERTER_SETTING_BLACKLIST, CONF_SERIAL_NUMBER, \
-    SUBENTRY_TYPE_INVERTER, SUBENTRY_TYPE_EV_CHARGER, CONF_PARENT_INVERTER, CONF_DISABLE_NOTIFICATIONS
+from .const import (
+    ALPHA_POST_REQUEST_RESTRICTION,
+    CONF_DISABLE_NOTIFICATIONS,
+    CONF_PARENT_INVERTER,
+    CONF_SERIAL_NUMBER,
+    INVERTER_SETTING_BLACKLIST,
+    SUBENTRY_TYPE_EV_CHARGER,
+    SUBENTRY_TYPE_INVERTER,
+)
 from .coordinator import AlphaESSDataUpdateCoordinator
-from .sensorlist import SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS, EV_DISCHARGE_AND_CHARGE_BUTTONS
+from .device import build_ev_charger_device_info, build_inverter_device_info
 from .enums import AlphaESSNames
-from .device import build_inverter_device_info, build_ev_charger_device_info
+from .sensorlist import EV_DISCHARGE_AND_CHARGE_BUTTONS, SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
 
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+_LOGGER = logging.getLogger(__name__)
 
 
 async def create_persistent_notification(hass, message, title="Error"):
@@ -28,7 +35,7 @@ async def create_persistent_notification(hass, message, title="Error"):
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: AlphaESSDataUpdateCoordinator = entry.runtime_data
 
     full_button_supported_states = {
         description.key: description for description in SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
@@ -48,7 +55,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             model = data.get("Model")
             inverter_device_info = build_inverter_device_info(serial, data)
 
-            inverter_buttons: List[ButtonEntity] = []
+            inverter_buttons: list[ButtonEntity] = []
 
             if model not in INVERTER_SETTING_BLACKLIST:
                 for description in full_button_supported_states:
@@ -62,7 +69,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
 
             # Auto-discovered EV charger buttons (no dedicated EV subentry)
-            ev_charger = data.get("EV Charger S/N")
+            ev_charger = data.get(AlphaESSNames.evchargersn)
             ev_subentry_serials = {
                 sub.data.get(CONF_SERIAL_NUMBER)
                 for sub in entry.subentries.values()
@@ -94,12 +101,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 continue
 
             data = coordinator.data[parent_serial]
-            ev_charger = data.get("EV Charger S/N")
+            ev_charger = data.get(AlphaESSNames.evchargersn)
             if not ev_charger:
                 continue
 
             ev_device_info = build_ev_charger_device_info(data)
-            ev_buttons: List[ButtonEntity] = []
+            ev_buttons: list[ButtonEntity] = []
             for description in ev_charging_supported_states:
                 ev_buttons.append(
                     AlphaESSBatteryButton(

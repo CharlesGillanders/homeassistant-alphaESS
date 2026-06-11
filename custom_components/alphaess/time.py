@@ -1,18 +1,17 @@
 """Time platform for AlphaESS integration."""
-from datetime import time
-from typing import List
 import logging
+from datetime import time
 
 from homeassistant.components.time import TimeEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, INVERTER_SETTING_BLACKLIST, CONF_SERIAL_NUMBER, SUBENTRY_TYPE_INVERTER
+from .const import CONF_SERIAL_NUMBER, INVERTER_SETTING_BLACKLIST, SUBENTRY_TYPE_INVERTER
 from .coordinator import AlphaESSDataUpdateCoordinator
+from .device import build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import CHARGE_DISCHARGE_TIMES
-from .device import build_inverter_device_info
 
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+_LOGGER = logging.getLogger(__name__)
 
 # Mapping from coordinator key to the API parameter position
 # Charge API: updateChargeConfigInfo(serial, batHighCap, gridCharge, timeChae1, timeChae2, timeChaf1, timeChaf2)
@@ -34,7 +33,7 @@ DISCHARGE_TIME_KEYS = {
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up AlphaESS time entities."""
-    coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: AlphaESSDataUpdateCoordinator = entry.runtime_data
 
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_TYPE_INVERTER:
@@ -48,7 +47,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         model = data.get("Model")
         inverter_device_info = build_inverter_device_info(serial, data)
 
-        time_entities: List[TimeEntity] = []
+        time_entities: list[TimeEntity] = []
 
         if model not in INVERTER_SETTING_BLACKLIST:
             for description in CHARGE_DISCHARGE_TIMES:

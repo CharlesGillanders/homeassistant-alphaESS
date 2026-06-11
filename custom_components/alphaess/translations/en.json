@@ -9,10 +9,18 @@
           "AppSecret": "AppSecret",
           "Verify SSL Certificate": "Verify SSL Certificate"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Alpha ESS",
+        "description": "The AlphaESS Open API rejected the credentials for {app_id}. Enter a new AppSecret to continue.",
+        "data": {
+          "AppSecret": "AppSecret"
+        }
       }
     },
     "abort": {
-      "already_configured": "Account is already configured"
+      "already_configured": "Account is already configured",
+      "reauth_successful": "Re-authentication was successful"
     },
     "error": {
       "cannot_connect": "Failed to connect",

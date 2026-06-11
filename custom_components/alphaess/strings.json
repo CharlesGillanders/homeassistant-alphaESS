@@ -1,6 +1,9 @@
 {
   "config": {
     "flow_title": "Alpha ESS: {AppID}",
+    "abort": {
+        "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+    },
     "error": {
         "already_configured": "[%key:common::config_flow::abort::already_configured_account%]",
         "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
@@ -14,6 +17,13 @@
                 "AppID": "[%key:common::config_flow::data::appid%]",
                 "AppSecret": "[%key:common::config_flow::data::appsecret%]",
                 "Verify SSL Certificate": "Verify SSL Certificate"
+            }
+        },
+        "reauth_confirm": {
+            "title": "Reauthenticate Alpha ESS",
+            "description": "The AlphaESS Open API rejected the credentials for {app_id}. Enter a new AppSecret to continue.",
+            "data": {
+                "AppSecret": "[%key:common::config_flow::data::appsecret%]"
             }
         }
     }

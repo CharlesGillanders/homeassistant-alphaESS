@@ -4,12 +4,11 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import aiohttp
-from alphaess import alphaess
 import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -20,13 +19,15 @@ from homeassistant.config_entries import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
+from alphaess import alphaess
+
 from .const import (
     CONF_ALT_POLLING_MODE,
-    CONF_FAST_SCAN_INTERVAL_SECONDS,
-    CONF_SCAN_INTERVAL_SECONDS,
     CONF_DISABLE_NOTIFICATIONS,
+    CONF_FAST_SCAN_INTERVAL_SECONDS,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
+    CONF_SCAN_INTERVAL_SECONDS,
     CONF_SERIAL_NUMBER,
     DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
     DEFAULT_SCAN_INTERVAL_SECONDS,
@@ -161,6 +162,46 @@ class AlphaESSConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]):
+        """Handle reauthentication when credentials are rejected."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Ask for a new AppSecret and validate it."""
+        errors = {}
+        reauth_entry = self._get_reauth_entry()
+
+        if user_input is not None:
+            candidate = {
+                "AppID": reauth_entry.data["AppID"],
+                "AppSecret": user_input["AppSecret"],
+                "Verify SSL Certificate": reauth_entry.data.get(
+                    "Verify SSL Certificate", True
+                ),
+            }
+            try:
+                await validate_input(self.hass, candidate)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            else:
+                return self.async_update_reload_and_abort(
+                    reauth_entry,
+                    data_updates={"AppSecret": user_input["AppSecret"]},
+                )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required("AppSecret"): str}),
+            errors=errors,
+            description_placeholders={
+                "app_id": reauth_entry.data["AppID"],
+            },
+        )
+
 
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
@@ -240,7 +281,7 @@ class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
     def _get_api(self):
         """Get the API client from the coordinator."""
         entry = self._get_entry()
-        coordinator = self.hass.data[DOMAIN][entry.entry_id]
+        coordinator = entry.runtime_data
         return coordinator.api
 
     async def async_step_user(

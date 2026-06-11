@@ -2,3 +2,7 @@
 /.idea
 custom_components/alphaess/__pycache__/
 .claude/settings.local.json
+__pycache__/
+.venv*/
+.pytest_cache/
+.ruff_cache/

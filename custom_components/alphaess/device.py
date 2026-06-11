@@ -4,6 +4,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN
+from .enums import AlphaESSNames
 
 
 def build_inverter_device_info(
@@ -22,11 +23,12 @@ def build_inverter_device_info(
         "name": f"Alpha ESS Energy Statistics : {serial_upper}",
     }
 
-    if "Local IP" in data and data.get("Local IP") != "0" and data.get("Device Status") is not None:
-        kwargs["serial_number"] = data.get("Device Serial Number")
-        kwargs["sw_version"] = data.get("Software Version")
-        kwargs["hw_version"] = data.get("Hardware Version")
-        kwargs["configuration_url"] = f"http://{data['Local IP']}"
+    local_ip = data.get(AlphaESSNames.localIP)
+    if local_ip and local_ip != "0" and data.get(AlphaESSNames.deviceStatus) is not None:
+        kwargs["serial_number"] = data.get(AlphaESSNames.deviceSerialNumber)
+        kwargs["sw_version"] = data.get(AlphaESSNames.softwareVersion)
+        kwargs["hw_version"] = data.get(AlphaESSNames.hardwareVersion)
+        kwargs["configuration_url"] = f"http://{local_ip}"
 
     return DeviceInfo(**kwargs)
 
@@ -35,13 +37,13 @@ def build_ev_charger_device_info(
     data: dict,
 ) -> DeviceInfo:
     """Build DeviceInfo for an EV charger."""
-    ev_sn = data.get("EV Charger S/N")
+    ev_sn = data.get(AlphaESSNames.evchargersn)
 
     kwargs = {
         "entry_type": DeviceEntryType.SERVICE,
         "identifiers": {(DOMAIN, ev_sn)},
         "manufacturer": "AlphaESS",
-        "model": data.get("EV Charger Model"),
+        "model": data.get(AlphaESSNames.evchargermodel),
         "model_id": ev_sn,
         "name": f"Alpha ESS Charger : {ev_sn}",
     }
