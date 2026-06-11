@@ -13,7 +13,7 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues",
   "requirements": [
-    "alphaessopenapi==0.0.18"
+    "alphaessopenapi==0.0.19"
   ],
   "version": "0.8.5"
 }
