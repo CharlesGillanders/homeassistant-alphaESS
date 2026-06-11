@@ -12,12 +12,14 @@ import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
+    ConfigFlowResult,
     ConfigSubentryFlow,
-    OptionsFlow,
+    OptionsFlowWithReload,
     SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from alphaess import alphaess
 
@@ -63,6 +65,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     client = alphaess.alphaess(
         data["AppID"], data["AppSecret"],
+        session=async_get_clientsession(hass),
         verify_ssl=data.get("Verify SSL Certificate", True)
     )
 
@@ -76,7 +79,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         if e.status == 401:
             raise InvalidAuth
         raise e
-    except aiohttp.client_exceptions.ClientConnectorError:
+    except (aiohttp.ClientError, TimeoutError):
         raise CannotConnect
 
     return {"title": data["AppID"], "ess_list": ess_list or []}
@@ -92,7 +95,7 @@ class AlphaESSConfigFlow(ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: ConfigEntry,
     ) -> AlphaESSOptionsFlowHandler:
-        return AlphaESSOptionsFlowHandler(config_entry)
+        return AlphaESSOptionsFlowHandler()
 
     @classmethod
     @callback
@@ -104,7 +107,7 @@ class AlphaESSConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
             self, user_input: dict[str, Any] | None = None
-    ):
+    ) -> ConfigFlowResult:
         """Handle the initial step."""
 
         errors = {}
@@ -162,13 +165,13 @@ class AlphaESSConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_reauth(self, entry_data: Mapping[str, Any]):
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         """Handle reauthentication when credentials are rejected."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
-    ):
+    ) -> ConfigFlowResult:
         """Ask for a new AppSecret and validate it."""
         errors = {}
         reauth_entry = self._get_reauth_entry()
@@ -211,20 +214,21 @@ class CannotConnect(HomeAssistantError):
     """Error to indicate there is a problem connecting."""
 
 
-class AlphaESSOptionsFlowHandler(OptionsFlow):
-    """AlphaESS options flow."""
+class AlphaESSOptionsFlowHandler(OptionsFlowWithReload):
+    """AlphaESS options flow.
 
-    def __init__(self, config_entry: ConfigEntry):
-        self._config_entry = config_entry
+    Inherits OptionsFlowWithReload so HA reloads the entry automatically when
+    options change; the integration must not also register an update listener.
+    """
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ):
+    ) -> ConfigFlowResult:
         if user_input is not None:
             # Preserve internal flags (keys starting with '_') across option saves
             merged = {
                 k: v
-                for k, v in self._config_entry.options.items()
+                for k, v in self.config_entry.options.items()
                 if k.startswith("_")
             }
             merged.update(user_input)
@@ -233,14 +237,14 @@ class AlphaESSOptionsFlowHandler(OptionsFlow):
         schema = {
             vol.Optional(
                 "Verify SSL Certificate",
-                default=self._config_entry.options.get(
+                default=self.config_entry.options.get(
                     "Verify SSL Certificate",
-                    self._config_entry.data.get("Verify SSL Certificate", True),
+                    self.config_entry.data.get("Verify SSL Certificate", True),
                 ),
             ): bool,
             vol.Optional(
                 CONF_SCAN_INTERVAL_SECONDS,
-                default=self._config_entry.options.get(
+                default=self.config_entry.options.get(
                     CONF_SCAN_INTERVAL_SECONDS,
                     DEFAULT_SCAN_INTERVAL_SECONDS,
                 ),
@@ -250,14 +254,14 @@ class AlphaESSOptionsFlowHandler(OptionsFlow):
             ),
             vol.Optional(
                 CONF_ALT_POLLING_MODE,
-                default=self._config_entry.options.get(
+                default=self.config_entry.options.get(
                     CONF_ALT_POLLING_MODE,
                     False,
                 ),
             ): bool,
             vol.Optional(
                 CONF_FAST_SCAN_INTERVAL_SECONDS,
-                default=self._config_entry.options.get(
+                default=self.config_entry.options.get(
                     CONF_FAST_SCAN_INTERVAL_SECONDS,
                     DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
                 ),
@@ -354,9 +358,7 @@ class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
 
                     # Schedule reload so the new system is discovered
                     entry = self._get_entry()
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_reload(entry.entry_id)
-                    )
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
 
                     return self.async_create_entry(
                         title=f"Inverter ({self._sysSn})",
@@ -411,14 +413,12 @@ class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
                         await _notify(self.hass, f"Inverter {serial} has been successfully unbound from your account. The integration will reload.", "AlphaESS Unbind Successful")
 
                         entry = self._get_entry()
-                        self.hass.async_create_task(
-                            self.hass.config_entries.async_reload(entry.entry_id)
+                        self.hass.config_entries.async_remove_subentry(
+                            entry, subentry.subentry_id
                         )
+                        self.hass.config_entries.async_schedule_reload(entry.entry_id)
 
-                        return self.async_remove_and_abort(
-                            self._get_entry(),
-                            subentry,
-                        )
+                        return self.async_abort(reason="unbind_successful")
             else:
                 # Save IP address and notification settings
                 ip = (user_input.get(CONF_IP_ADDRESS) or "").strip()

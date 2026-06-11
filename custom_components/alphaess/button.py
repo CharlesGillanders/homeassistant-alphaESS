@@ -1,7 +1,7 @@
 import logging
 import time as time_mod
 
-from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
+from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -19,6 +19,9 @@ from .enums import AlphaESSNames
 from .sensorlist import EV_DISCHARGE_AND_CHARGE_BUTTONS, SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
 
 _LOGGER = logging.getLogger(__name__)
+
+# Serialize button presses; the AlphaESS API rate-limits config writes.
+PARALLEL_UPDATES = 1
 
 
 async def create_persistent_notification(hass, message, title="Error"):
@@ -281,10 +284,6 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
     @property
     def unique_id(self):
         return f"{self._config.entry_id}_{self._serial} - {self._name}"
-
-    @property
-    def device_class(self):
-        return ButtonDeviceClass.IDENTIFY
 
     @property
     def entity_category(self):

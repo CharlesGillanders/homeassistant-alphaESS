@@ -17,6 +17,9 @@ from .sensorlist import EV_CHARGER_BINARY_SENSORS
 
 _LOGGER = logging.getLogger(__name__)
 
+# Read-only platform; the coordinator centralizes polling.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up EV charger readiness binary sensors."""

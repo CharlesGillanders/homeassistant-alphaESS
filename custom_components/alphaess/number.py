@@ -1,6 +1,6 @@
 import logging
 
-from homeassistant.components.number import NumberEntity, RestoreNumber
+from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -16,6 +16,9 @@ from .enums import AlphaESSNames
 from .sensorlist import DISCHARGE_AND_CHARGE_NUMBERS, EV_CHARGER_NUMBERS
 
 _LOGGER = logging.getLogger(__name__)
+
+# Serialize value writes; the AlphaESS API rate-limits config writes.
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -208,8 +211,8 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         return f"{self._serial} {self._name}"
 
     @property
-    def mode(self):
-        return "box"
+    def mode(self) -> NumberMode:
+        return NumberMode.BOX
 
     @property
     def native_unit_of_measurement(self):

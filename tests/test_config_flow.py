@@ -41,6 +41,14 @@ def _fast_sleep(monkeypatch):
     monkeypatch.setattr(config_flow.asyncio, "sleep", AsyncMock())
 
 
+@pytest.fixture(autouse=True)
+def _fake_clientsession(monkeypatch):
+    """Avoid creating real aiohttp sessions against the mocked hass."""
+    monkeypatch.setattr(
+        config_flow, "async_get_clientsession", MagicMock(return_value=MagicMock())
+    )
+
+
 @pytest.fixture
 def mock_client(monkeypatch):
     client = MagicMock()
@@ -185,7 +193,13 @@ class TestReauthFlow:
 class TestOptionsFlow:
     def _make(self, options=None):
         entry = FakeEntry(options=options or {})
-        handler = AlphaESSOptionsFlowHandler(entry)
+        handler = AlphaESSOptionsFlowHandler()
+        # Wire the bits the OptionsFlow.config_entry property needs:
+        # the flow handler id and a hass that resolves it to our entry.
+        handler.handler = entry.entry_id
+        hass = MagicMock()
+        hass.config_entries.async_get_known_entry.return_value = entry
+        handler.hass = hass
         return handler
 
     async def test_form_shown(self):
@@ -262,7 +276,9 @@ class TestSubentryVerifyStep:
         mock_api.bindSn.assert_awaited_once_with("AL999", "1234")
         assert result["type"] == "create_entry"
         assert result["data"][CONF_SERIAL_NUMBER] == "AL999"
-        mock_hass.async_create_task.assert_called_once()
+        mock_hass.config_entries.async_schedule_reload.assert_called_once_with(
+            entry.entry_id
+        )
 
     async def test_bind_returns_none(self, mock_hass, mock_api):
         mock_api.bindSn.return_value = None
@@ -292,9 +308,6 @@ def _make_reconfigure_flow(mock_hass, api, subentry_data=None):
     )
     flow._get_reconfigure_subentry = MagicMock(return_value=subentry)
     flow.async_update_and_abort = MagicMock(
-        return_value={"type": "abort", "reason": "reconfigure_successful"}
-    )
-    flow.async_remove_and_abort = MagicMock(
         return_value={"type": "abort", "reason": "reconfigure_successful"}
     )
     return flow, entry, subentry
@@ -329,11 +342,16 @@ class TestSubentryReconfigureStep:
 
     async def test_unbind_success(self, mock_hass, mock_api):
         mock_api.unBindSn.return_value = {"ok": True}
-        flow, _, _ = _make_reconfigure_flow(mock_hass, mock_api)
+        flow, entry, subentry = _make_reconfigure_flow(mock_hass, mock_api)
         result = await flow.async_step_reconfigure({"confirm_unbind": True})
-        assert result["reason"] == "reconfigure_successful"
-        flow.async_remove_and_abort.assert_called_once()
-        mock_hass.async_create_task.assert_called_once()
+        assert result["type"] == "abort"
+        assert result["reason"] == "unbind_successful"
+        mock_hass.config_entries.async_remove_subentry.assert_called_once_with(
+            entry, subentry.subentry_id
+        )
+        mock_hass.config_entries.async_schedule_reload.assert_called_once_with(
+            entry.entry_id
+        )
 
     async def test_unbind_returns_none(self, mock_hass, mock_api):
         mock_api.unBindSn.return_value = None

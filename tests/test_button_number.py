@@ -362,7 +362,7 @@ class TestButtonPress:
         assert button.available is True
 
         assert SERIAL in button.unique_id
-        assert button.device_class is not None
+        assert button.device_class is None
         assert button.entity_category is not None
         assert button.name == "60 Minute Discharge"
         assert button.suggested_object_id == f"{SERIAL} 60 Minute Discharge"

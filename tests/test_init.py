@@ -20,7 +20,6 @@ from custom_components.alphaess import (
     async_migrate_entry,
     async_setup_entry,
     async_unload_entry,
-    update_listener,
 )
 from custom_components.alphaess.const import (
     CONF_DISABLE_NOTIFICATIONS,
@@ -307,11 +306,6 @@ class TestUnloadAndListener:
         assert await async_unload_entry(mock_hass, entry) is False
         mock_hass.services.async_remove.assert_not_called()
 
-    async def test_update_listener_reloads(self, mock_hass):
-        entry = FakeEntry()
-        await update_listener(mock_hass, entry)
-        mock_hass.config_entries.async_reload.assert_awaited_once_with(entry.entry_id)
-
 
 class TestMigrateEntry:
     async def test_version_above_two_unsupported(self, mock_hass):
@@ -382,6 +376,9 @@ def setup_env(monkeypatch, mock_hass, mock_api):
 
     monkeypatch.setattr(
         init_mod.alphaess, "alphaess", MagicMock(return_value=mock_api)
+    )
+    monkeypatch.setattr(
+        init_mod, "async_get_clientsession", MagicMock(return_value=MagicMock())
     )
     monkeypatch.setattr(init_mod, "AlphaESSDataUpdateCoordinator", FakeCoordinator)
     monkeypatch.setattr(init_mod, "_cleanup_stale_ev_entities", MagicMock())

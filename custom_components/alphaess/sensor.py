@@ -30,6 +30,9 @@ from .sensorlist import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Read-only platform; the coordinator centralizes polling.
+PARALLEL_UPDATES = 0
+
 
 # Map common currency symbols to ISO 4217 codes.
 # SensorDeviceClass.MONETARY expects an ISO 4217 currency code; raw symbols

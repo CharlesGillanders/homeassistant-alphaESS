@@ -318,7 +318,7 @@ class InverterDataParser:
         return data
 
 
-class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator):
+class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Class to manage fetching data from the API."""
 
     def __init__(

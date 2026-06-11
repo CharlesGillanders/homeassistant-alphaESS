@@ -311,7 +311,6 @@ FULL_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         name="Self Consumption",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
@@ -319,14 +318,12 @@ FULL_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         name="Self Sufficiency",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.EmsStatus,
         name="EMS Status",
         icon="mdi:home-battery",
-        device_class=SensorDeviceClass.ENUM,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
@@ -335,23 +332,23 @@ FULL_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         name="Maximum Battery Capacity",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.TOTAL,
+        state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.cobat,
         name="Installed Capacity",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.surplusCobat,
         name="Current Capacity",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
@@ -405,18 +402,18 @@ FULL_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.poinv,
         name="Inverter nominal Power",
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        state_class=None,
+        device_class=SensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.popv,
         name="Pv nominal Power",
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        state_class=None,
+        device_class=SensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
     ),
@@ -630,7 +627,6 @@ LIMITED_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         name="Self Consumption",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
@@ -638,14 +634,12 @@ LIMITED_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         name="Self Sufficiency",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.EmsStatus,
         name="EMS Status",
         icon="mdi:home-battery",
-        device_class=SensorDeviceClass.ENUM,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
@@ -654,23 +648,23 @@ LIMITED_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         name="Maximum Battery Capacity",
         icon="mdi:battery-high",
         native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.TOTAL,
+        state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.cobat,
         name="Installed Capacity",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.surplusCobat,
         name="Current Capacity",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
@@ -724,18 +718,18 @@ LIMITED_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.poinv,
         name="Inverter nominal Power",
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
         state_class=None,
-        device_class=SensorDeviceClass.ENERGY,
+        device_class=SensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.popv,
         name="Pv nominal Power",
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
         state_class=None,
-        device_class=SensorDeviceClass.ENERGY,
+        device_class=SensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
     ),

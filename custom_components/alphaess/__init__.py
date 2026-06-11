@@ -17,6 +17,7 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import slugify
 
 from alphaess import alphaess
@@ -258,10 +259,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
     # Build per-inverter IP address mapping from subentries
     ip_address_map = _build_ip_address_map(entry)
 
-    # Don't set a single IP on the client - the coordinator handles per-inverter IPs
+    # Don't set a single IP on the client - the coordinator handles per-inverter IPs.
+    # Use HA's shared aiohttp session; the library applies verify_ssl per request.
     client = alphaess.alphaess(
         entry.data["AppID"],
         entry.data["AppSecret"],
+        session=async_get_clientsession(hass),
         verify_ssl=verify_ssl
     )
 
@@ -425,7 +428,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
         }
         hass.config_entries.async_update_entry(entry, options=new_options)
 
-    entry.async_on_unload(entry.add_update_listener(update_listener))
+    # No update listener: the options flow inherits OptionsFlowWithReload,
+    # so HA reloads the entry automatically when options change.
 
     # Register services (only once per domain); handlers resolve the
     # owning client at call time so reloads don't leave stale references.
@@ -458,11 +462,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) ->
             hass.services.async_remove(DOMAIN, 'setbatterydischarge')
 
     return unload_ok
-
-
-async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update."""
-    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:

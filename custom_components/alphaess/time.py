@@ -13,6 +13,9 @@ from .sensorlist import CHARGE_DISCHARGE_TIMES
 
 _LOGGER = logging.getLogger(__name__)
 
+# Serialize time writes; the AlphaESS API rate-limits config writes.
+PARALLEL_UPDATES = 1
+
 # Mapping from coordinator key to the API parameter position
 # Charge API: updateChargeConfigInfo(serial, batHighCap, gridCharge, timeChae1, timeChae2, timeChaf1, timeChaf2)
 # Discharge API: updateDisChargeConfigInfo(serial, batUseCap, ctrDis, timeDise1, timeDise2, timeDisf1, timeDisf2)

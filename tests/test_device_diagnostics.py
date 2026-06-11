@@ -29,7 +29,9 @@ class TestInverterDeviceInfo:
         }
         info = build_inverter_device_info(SERIAL, data)
         assert info["configuration_url"] == "http://192.168.1.5"
-        assert info["serial_number"] == "AL1234"
+        # DeviceInfo carries the system serial; the comms-dongle SN stays
+        # available as its own diagnostic sensor.
+        assert info["serial_number"] == SERIAL
         assert info["sw_version"] == "1.2.3"
         assert info["hw_version"] == "A1"
 

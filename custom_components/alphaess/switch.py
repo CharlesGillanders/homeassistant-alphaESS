@@ -17,6 +17,9 @@ from .sensorlist import CHARGE_DISCHARGE_SWITCHES
 
 _LOGGER = logging.getLogger(__name__)
 
+# Serialize switch writes; the AlphaESS API rate-limits config writes.
+PARALLEL_UPDATES = 1
+
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up AlphaESS switch entities."""

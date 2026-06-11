@@ -32,7 +32,8 @@
     "inverter": {
       "entry_type": "Inverter",
       "abort": {
-        "reconfigure_successful": "Inverter settings saved successfully."
+        "reconfigure_successful": "Inverter settings saved successfully.",
+        "unbind_successful": "Inverter was unbound from your account and removed."
       },
       "initiate_flow": {
         "user": "Bind Inverter"
