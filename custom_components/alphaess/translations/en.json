@@ -3,16 +3,24 @@
   "config": {
     "step": {
       "user": {
-        "description": "Enter your AppID and AppSecret from the AlphaESS OpenAPI developer portal.\n\nAfter setup, you can configure a local IP address for each inverter via its sub-entry options to enable local access when the cloud API is unavailable.\n\nIf you have any issues with the OpenAPI, read a list of potential fixes [here]({issues_url}).",
+        "description": "Enter your AppID and AppSecret from the AlphaESS OpenAPI developer portal.\n\nAfter setup, you can configure a local IP address for each inverter via its sub-entry options to enable access to local entities.\n\nIf you have any issues with the OpenAPI, read a list of potential fixes [here]({issues_url}).",
         "data": {
           "AppID": "AppID",
           "AppSecret": "AppSecret",
           "Verify SSL Certificate": "Verify SSL Certificate"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Alpha ESS",
+        "description": "The AlphaESS Open API rejected the credentials for {app_id}. Enter a new AppSecret to continue.",
+        "data": {
+          "AppSecret": "AppSecret"
+        }
       }
     },
     "abort": {
-      "already_configured": "Account is already configured"
+      "already_configured": "Account is already configured",
+      "reauth_successful": "Re-authentication was successful"
     },
     "error": {
       "cannot_connect": "Failed to connect",
@@ -24,7 +32,8 @@
     "inverter": {
       "entry_type": "Inverter",
       "abort": {
-        "reconfigure_successful": "Inverter settings saved successfully."
+        "reconfigure_successful": "Inverter settings saved successfully.",
+        "unbind_successful": "Inverter was unbound from your account and removed."
       },
       "initiate_flow": {
         "user": "Bind Inverter"
@@ -80,7 +89,14 @@
       "init": {
         "data": {
           "Verify SSL Certificate": "Verify SSL Certificate",
-          "scan_interval_seconds": "Scan interval (seconds)"
+          "scan_interval_seconds": "Full poll interval (seconds)",
+          "alt_polling_mode": "Alt polling mode (split fast/slow)",
+          "fast_scan_interval_seconds": "Fast poll interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval_seconds": "Interval for all data: summary, energy, config, and power. When alt polling mode is enabled this becomes the slow/full poll interval.",
+          "alt_polling_mode": "When enabled, live power data (SOC, PV, grid, battery, load) polls at the fast interval, while summary, energy, and config data polls at the full poll interval.",
+          "fast_scan_interval_seconds": "Interval for live power data when alt polling mode is enabled. Default 15 seconds."
         }
       }
     }

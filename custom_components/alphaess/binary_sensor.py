@@ -1,27 +1,29 @@
 """Binary sensor platform for AlphaESS integration."""
-from typing import List
 import logging
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN,
-    CONF_SERIAL_NUMBER,
-    SUBENTRY_TYPE_INVERTER,
-    SUBENTRY_TYPE_EV_CHARGER,
     CONF_PARENT_INVERTER,
+    CONF_SERIAL_NUMBER,
+    SUBENTRY_TYPE_EV_CHARGER,
+    SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
-from .sensorlist import EV_CHARGER_BINARY_SENSORS
 from .device import build_ev_charger_device_info
+from .enums import AlphaESSNames
+from .sensorlist import EV_CHARGER_BINARY_SENSORS
 
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+_LOGGER = logging.getLogger(__name__)
+
+# Read-only platform; the coordinator centralizes polling.
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up EV charger readiness binary sensors."""
-    coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: AlphaESSDataUpdateCoordinator = entry.runtime_data
 
     ev_binary_supported_states = {
         description.key: description for description in EV_CHARGER_BINARY_SENSORS
@@ -34,7 +36,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 continue
 
             data = coordinator.data[serial]
-            ev_charger = data.get("EV Charger S/N")
+            ev_charger = data.get(AlphaESSNames.evchargersn)
             if not ev_charger:
                 continue
 
@@ -47,7 +49,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 continue
 
             ev_device_info = build_ev_charger_device_info(data)
-            ev_entities: List[BinarySensorEntity] = []
+            ev_entities: list[BinarySensorEntity] = []
             for description in ev_binary_supported_states.values():
                 ev_entities.append(
                     AlphaEVReadinessBinarySensor(
@@ -69,12 +71,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 continue
 
             data = coordinator.data[parent_serial]
-            ev_charger = data.get("EV Charger S/N")
+            ev_charger = data.get(AlphaESSNames.evchargersn)
             if not ev_charger:
                 continue
 
             ev_device_info = build_ev_charger_device_info(data)
-            ev_entities: List[BinarySensorEntity] = []
+            ev_entities: list[BinarySensorEntity] = []
             for description in ev_binary_supported_states.values():
                 ev_entities.append(
                     AlphaEVReadinessBinarySensor(

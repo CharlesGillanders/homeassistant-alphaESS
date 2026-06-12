@@ -1,23 +1,28 @@
-from typing import List
-from homeassistant.components.number import NumberEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.components.number import RestoreNumber
 import logging
 
+from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
 from .const import (
-    DOMAIN, INVERTER_SETTING_BLACKLIST, CONF_SERIAL_NUMBER, SUBENTRY_TYPE_INVERTER,
-    SUBENTRY_TYPE_EV_CHARGER, CONF_PARENT_INVERTER,
+    CONF_PARENT_INVERTER,
+    CONF_SERIAL_NUMBER,
+    INVERTER_SETTING_BLACKLIST,
+    SUBENTRY_TYPE_EV_CHARGER,
+    SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
+from .device import build_ev_charger_device_info, build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import DISCHARGE_AND_CHARGE_NUMBERS, EV_CHARGER_NUMBERS
-from .device import build_inverter_device_info, build_ev_charger_device_info
 
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+_LOGGER = logging.getLogger(__name__)
+
+# Serialize value writes; the AlphaESS API rate-limits config writes.
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: AlphaESSDataUpdateCoordinator = entry.runtime_data
 
     full_number_supported_states = {
         description.key: description for description in DISCHARGE_AND_CHARGE_NUMBERS
@@ -37,7 +42,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             model = data.get("Model")
             inverter_device_info = build_inverter_device_info(serial, data)
 
-            number_entities: List[NumberEntity] = []
+            number_entities: list[NumberEntity] = []
 
             if model not in INVERTER_SETTING_BLACKLIST:
                 for description in full_number_supported_states:
@@ -50,7 +55,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     )
 
             # Auto-discovered EV charger numbers (no dedicated EV subentry)
-            ev_charger = data.get("EV Charger S/N")
+            ev_charger = data.get(AlphaESSNames.evchargersn)
             ev_subentry_serials = {
                 sub.data.get(CONF_SERIAL_NUMBER)
                 for sub in entry.subentries.values()
@@ -80,12 +85,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 continue
 
             data = coordinator.data[parent_serial]
-            ev_charger = data.get("EV Charger S/N")
+            ev_charger = data.get(AlphaESSNames.evchargersn)
             if not ev_charger:
                 continue
 
             ev_device_info = build_ev_charger_device_info(data)
-            ev_entities: List[NumberEntity] = []
+            ev_entities: list[NumberEntity] = []
             for description in ev_number_supported_states:
                 ev_entities.append(
                     AlphaEVNumber(
@@ -133,26 +138,26 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
             last_value = last_state.native_value
             if last_value is not None:
                 self._attr_native_value = last_value
-            await self.save_value(self._attr_native_value)
+            self.save_value(self._attr_native_value)
         except Exception:
             self._attr_native_value = self._def_initial_value
             _LOGGER.info(
-                f"No saved state found for {self._name}. Using initial value: {self._def_initial_value}")
-            await self.save_value(self._attr_native_value)
+                "No saved state found for %s. Using initial value: %s",
+                self._name, self._def_initial_value,
+            )
+            self.save_value(self._attr_native_value)
             self.async_write_ha_state()
 
-    async def save_value(self, value):
-        if DOMAIN not in self.hass.data:
-            self.hass.data[DOMAIN] = {}
-        if self._serial not in self.hass.data[DOMAIN]:
-            self.hass.data[DOMAIN][self._serial] = {}
-
-        self.hass.data[DOMAIN][self._serial][self._name] = value
-        _LOGGER.info(f"SAVED DATA TO HASS, VALUE {self.hass.data[DOMAIN][self._serial].get(self._name, None)}")
+    def save_value(self, value):
+        """Persist the value on the coordinator for charge/discharge commands."""
+        self._coordinator.set_number_setting(self._serial, self._name, value)
+        _LOGGER.debug(
+            "Saved %s=%s for %s on coordinator", self._name, value, self._serial,
+        )
 
     async def async_set_native_value(self, value: float) -> None:
         self._attr_native_value = value
-        await self.save_value(value)
+        self.save_value(value)
         self.async_write_ha_state()
 
         # Push to API
@@ -206,8 +211,8 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         return f"{self._serial} {self._name}"
 
     @property
-    def mode(self):
-        return "box"
+    def mode(self) -> NumberMode:
+        return NumberMode.BOX
 
     @property
     def native_unit_of_measurement(self):

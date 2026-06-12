@@ -1,25 +1,23 @@
-from typing import List
 
+from homeassistant.components.number import NumberMode
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, PERCENTAGE, UnitOfPower, CURRENCY_DOLLAR, EntityCategory, UnitOfMass
-
-from homeassistant.components.number import NumberMode
+from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfMass, UnitOfPower
 
 from .entity import (
-    AlphaESSSensorDescription,
-    AlphaESSButtonDescription,
     AlphaESSBinarySensorDescription,
+    AlphaESSButtonDescription,
     AlphaESSNumberDescription,
+    AlphaESSSensorDescription,
     AlphaESSSwitchDescription,
     AlphaESSTimeDescription,
 )
 from .enums import AlphaESSNames
 
 # Shared daily-energy and diagnostic sensors used in both FULL and LIMITED lists.
-_COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
+_COMMON_DAILY_SENSORS: list[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.DailyPvGeneration,
         name="Daily PV Generation",
@@ -92,9 +90,42 @@ _COMMON_DAILY_SENSORS: List[AlphaESSSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    # Poll diagnostics
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PollMode,
+        name="Poll Mode",
+        icon="mdi:swap-vertical",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.LastPollType,
+        name="Last Poll Type",
+        icon="mdi:clock-fast",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.LastFullPoll,
+        name="Last Full Poll",
+        icon="mdi:clock-check-outline",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    AlphaESSSensorDescription(
+        key=AlphaESSNames.PollTickCount,
+        name="Poll Tick Count",
+        icon="mdi:counter",
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 ]
 
-FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
+FULL_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.SolarProduction,
         name="Solar Production",
@@ -280,7 +311,6 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="Self Consumption",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
@@ -288,14 +318,12 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="Self Sufficiency",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.EmsStatus,
         name="EMS Status",
         icon="mdi:home-battery",
-        device_class=SensorDeviceClass.ENUM,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
@@ -304,23 +332,23 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="Maximum Battery Capacity",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.TOTAL,
+        state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.cobat,
         name="Installed Capacity",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.surplusCobat,
         name="Current Capacity",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
@@ -374,18 +402,18 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.poinv,
         name="Inverter nominal Power",
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        state_class=None,
+        device_class=SensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.popv,
         name="Pv nominal Power",
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        state_class=None,
+        device_class=SensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
     ),
@@ -494,7 +522,7 @@ FULL_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     ),
 ] + _COMMON_DAILY_SENSORS
 
-LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
+LIMITED_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.StateOfCharge,
         name="State of Charge",
@@ -599,7 +627,6 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="Self Consumption",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
@@ -607,14 +634,12 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="Self Sufficiency",
         icon="mdi:home-percent",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.EmsStatus,
         name="EMS Status",
         icon="mdi:home-battery",
-        device_class=SensorDeviceClass.ENUM,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
@@ -623,23 +648,23 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
         name="Maximum Battery Capacity",
         icon="mdi:battery-high",
         native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.TOTAL,
+        state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.cobat,
         name="Installed Capacity",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.surplusCobat,
         name="Current Capacity",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,
-        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
     AlphaESSSensorDescription(
@@ -693,18 +718,18 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.poinv,
         name="Inverter nominal Power",
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
         state_class=None,
-        device_class=SensorDeviceClass.ENERGY,
+        device_class=SensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.popv,
         name="Pv nominal Power",
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
         state_class=None,
-        device_class=SensorDeviceClass.ENERGY,
+        device_class=SensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:lightning-bolt",
     ),
@@ -813,7 +838,7 @@ LIMITED_SENSOR_DESCRIPTIONS: List[AlphaESSSensorDescription] = [
     ),
 ] + _COMMON_DAILY_SENSORS
 
-SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription] = [
+SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: list[AlphaESSButtonDescription] = [
     AlphaESSButtonDescription(
         key=AlphaESSNames.ButtonDischargeFifteen,
         name="15 Minute Discharge",
@@ -858,7 +883,7 @@ SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: List[AlphaESSButtonDescription
     )
 ]
 
-DISCHARGE_AND_CHARGE_NUMBERS: List[AlphaESSNumberDescription] = [
+DISCHARGE_AND_CHARGE_NUMBERS: list[AlphaESSNumberDescription] = [
     AlphaESSNumberDescription(
         key=AlphaESSNames.batHighCap,
         name="batHighCap",
@@ -876,7 +901,7 @@ DISCHARGE_AND_CHARGE_NUMBERS: List[AlphaESSNumberDescription] = [
     )
 ]
 
-CHARGE_DISCHARGE_TIMES: List[AlphaESSTimeDescription] = [
+CHARGE_DISCHARGE_TIMES: list[AlphaESSTimeDescription] = [
     AlphaESSTimeDescription(
         key=AlphaESSNames.ChargeStartTime1,
         name="Charge Start Time 1",
@@ -935,7 +960,7 @@ CHARGE_DISCHARGE_TIMES: List[AlphaESSTimeDescription] = [
     ),
 ]
 
-EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSButtonDescription] = [
+EV_DISCHARGE_AND_CHARGE_BUTTONS: list[AlphaESSButtonDescription] = [
 
     AlphaESSButtonDescription(
         key=AlphaESSNames.stopcharging,
@@ -952,7 +977,7 @@ EV_DISCHARGE_AND_CHARGE_BUTTONS: List[AlphaESSButtonDescription] = [
 
 ]
 
-EV_CHARGER_BINARY_SENSORS: List[AlphaESSBinarySensorDescription] = [
+EV_CHARGER_BINARY_SENSORS: list[AlphaESSBinarySensorDescription] = [
     AlphaESSBinarySensorDescription(
         key=AlphaESSNames.canstartcharging,
         name="Can Start Charging",
@@ -969,7 +994,7 @@ EV_CHARGER_BINARY_SENSORS: List[AlphaESSBinarySensorDescription] = [
     ),
 ]
 
-LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
+LOCAL_IP_SYSTEM_SENSORS: list[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.localIP,
         name="Local IP",
@@ -1056,7 +1081,7 @@ LOCAL_IP_SYSTEM_SENSORS: List[AlphaESSSensorDescription] = [
     ),
 ]
 
-EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
+EV_CHARGING_DETAILS: list[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.evchargersn,
         name="EV Charger S/N",
@@ -1088,7 +1113,7 @@ EV_CHARGING_DETAILS: List[AlphaESSSensorDescription] = [
     ),
 ]
 
-EV_CHARGER_NUMBERS: List[AlphaESSNumberDescription] = [
+EV_CHARGER_NUMBERS: list[AlphaESSNumberDescription] = [
     AlphaESSNumberDescription(
         key=AlphaESSNames.EVChargerCurrentSetting,
         name="EV Charger Current Setting",
@@ -1102,7 +1127,7 @@ EV_CHARGER_NUMBERS: List[AlphaESSNumberDescription] = [
     ),
 ]
 
-CHARGE_DISCHARGE_SWITCHES: List[AlphaESSSwitchDescription] = [
+CHARGE_DISCHARGE_SWITCHES: list[AlphaESSSwitchDescription] = [
     AlphaESSSwitchDescription(
         key=AlphaESSNames.GridChargeEnabled,
         name="Grid Charge Enabled",

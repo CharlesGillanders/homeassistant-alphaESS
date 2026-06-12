@@ -1,0 +1,41 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# -p no:homeassistant disables the pytest-homeassistant-custom-component
+# plugin (Linux-only fixtures; the unit tests here use explicit mocks so the
+# suite runs identically on Windows, macOS and Linux/CI).
+addopts = "-q -p no:homeassistant"
+
+[tool.coverage.run]
+source = ["custom_components/alphaess"]
+branch = false
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "UP",  # pyupgrade
+    "G",   # flake8-logging-format
+]
+ignore = [
+    "E501",  # long lines (legacy descriptions/sensorlist)
+    "UP042", # keep `str, Enum` base: StrEnum changes str()/format() semantics
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Enum member names intentionally mirror API field names
+"custom_components/alphaess/enums.py" = ["N815"]

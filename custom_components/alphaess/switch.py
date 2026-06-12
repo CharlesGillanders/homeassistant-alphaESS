@@ -1,24 +1,29 @@
 """Switch platform for AlphaESS integration."""
-from typing import Any, List
 import logging
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN, INVERTER_SETTING_BLACKLIST, CONF_SERIAL_NUMBER, SUBENTRY_TYPE_INVERTER,
+    CONF_SERIAL_NUMBER,
+    INVERTER_SETTING_BLACKLIST,
+    SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
+from .device import build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import CHARGE_DISCHARGE_SWITCHES
-from .device import build_inverter_device_info
 
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+_LOGGER = logging.getLogger(__name__)
+
+# Serialize switch writes; the AlphaESS API rate-limits config writes.
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up AlphaESS switch entities."""
-    coordinator: AlphaESSDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: AlphaESSDataUpdateCoordinator = entry.runtime_data
 
     switch_descriptions = {
         description.key: description for description in CHARGE_DISCHARGE_SWITCHES
@@ -36,7 +41,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         model = data.get("Model")
         inverter_device_info = build_inverter_device_info(serial, data)
 
-        switch_entities: List[SwitchEntity] = []
+        switch_entities: list[SwitchEntity] = []
 
         if model not in INVERTER_SETTING_BLACKLIST:
             for description in switch_descriptions:

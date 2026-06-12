@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: Ruff lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint custom component
+        run: ruff check custom_components/alphaess tests
+
+  test:
+    runs-on: ubuntu-latest
+    name: Pytest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install test dependencies
+        run: |
+          pip install -r requirements_test.txt
+          pip install $(python -c "import json; print(' '.join(json.load(open('custom_components/alphaess/manifest.json'))['requirements']))")
+
+      - name: Run tests with 100% coverage gate
+        run: pytest --cov --cov-report=term-missing

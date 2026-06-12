@@ -1,6 +1,9 @@
 {
   "config": {
     "flow_title": "Alpha ESS: {AppID}",
+    "abort": {
+        "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+    },
     "error": {
         "already_configured": "[%key:common::config_flow::abort::already_configured_account%]",
         "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
@@ -15,6 +18,13 @@
                 "AppSecret": "[%key:common::config_flow::data::appsecret%]",
                 "Verify SSL Certificate": "Verify SSL Certificate"
             }
+        },
+        "reauth_confirm": {
+            "title": "Reauthenticate Alpha ESS",
+            "description": "The AlphaESS Open API rejected the credentials for {app_id}. Enter a new AppSecret to continue.",
+            "data": {
+                "AppSecret": "[%key:common::config_flow::data::appsecret%]"
+            }
         }
     }
   },
@@ -22,7 +32,8 @@
     "inverter": {
       "entry_type": "Inverter",
       "abort": {
-        "reconfigure_successful": "Inverter settings saved successfully."
+        "reconfigure_successful": "Inverter settings saved successfully.",
+        "unbind_successful": "Inverter was unbound from your account and removed."
       },
       "initiate_flow": {
         "user": "Bind Inverter"
@@ -78,7 +89,14 @@
       "init": {
         "data": {
           "Verify SSL Certificate": "Verify SSL Certificate",
-          "scan_interval_seconds": "Scan interval (seconds)"
+          "scan_interval_seconds": "Full poll interval (seconds)",
+          "alt_polling_mode": "Alt polling mode (split fast/slow)",
+          "fast_scan_interval_seconds": "Fast poll interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval_seconds": "Interval for all data: summary, energy, config, and power. When alt polling mode is enabled this becomes the slow/full poll interval.",
+          "alt_polling_mode": "When enabled, live power data (SOC, PV, grid, battery, load) polls at the fast interval, while summary, energy, and config data polls at the full poll interval.",
+          "fast_scan_interval_seconds": "Interval for live power data when alt polling mode is enabled. Default 15 seconds."
         }
       }
     }

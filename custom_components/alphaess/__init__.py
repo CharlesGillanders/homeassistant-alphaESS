@@ -1,34 +1,44 @@
 """The AlphaEss integration."""
 from __future__ import annotations
 
-import asyncio
 import ipaddress
 import logging
 from datetime import timedelta
 
+import aiohttp
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState, ConfigSubentry
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import slugify
 
 from alphaess import alphaess
 
-from homeassistant.config_entries import ConfigEntry, ConfigSubentry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
-from homeassistant.util import slugify
-
-import homeassistant.helpers.config_validation as cv
-
 from .const import (
-    CONF_SCAN_INTERVAL_SECONDS,
+    CONF_ALT_POLLING_MODE,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_EV_CHARGER_MODEL,
+    CONF_FAST_SCAN_INTERVAL_SECONDS,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
-    DEFAULT_SCAN_INTERVAL_SECONDS,
-    MAX_SCAN_INTERVAL_SECONDS,
-    MIN_SCAN_INTERVAL_SECONDS,
     CONF_PARENT_INVERTER,
+    CONF_SCAN_INTERVAL_SECONDS,
     CONF_SERIAL_NUMBER,
+    DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
+    DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
+    MAX_FAST_SCAN_INTERVAL_SECONDS,
+    MAX_SCAN_INTERVAL_SECONDS,
+    MIN_FAST_SCAN_INTERVAL_SECONDS,
+    MIN_SCAN_INTERVAL_SECONDS,
     PLATFORMS,
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
@@ -37,6 +47,8 @@ from .coordinator import AlphaESSDataUpdateCoordinator
 from .enums import AlphaESSNames
 
 _LOGGER = logging.getLogger(__name__)
+
+type AlphaESSConfigEntry = ConfigEntry[AlphaESSDataUpdateCoordinator]
 
 SERVICE_BATTERY_CHARGE_SCHEMA = vol.Schema(
     {
@@ -193,7 +205,50 @@ def _cleanup_stale_ev_entities(
             ent_reg.async_remove(entity_entry.entity_id)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+def _resolve_client_for_serial(hass: HomeAssistant, serial: str) -> alphaess.alphaess:
+    """Find the API client managing the given inverter serial.
+
+    Resolved at call time so services keep working across entry reloads.
+    """
+    fallback = None
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        coordinator = getattr(entry, "runtime_data", None)
+        if not isinstance(coordinator, AlphaESSDataUpdateCoordinator):
+            continue
+        if serial in (coordinator.data or {}):
+            return coordinator.api
+        if fallback is None:
+            fallback = coordinator.api
+    if fallback is not None:
+        return fallback
+    raise HomeAssistantError(
+        f"No loaded AlphaESS config entry found for serial {serial}"
+    )
+
+
+async def _async_service_battery_charge(call: ServiceCall) -> None:
+    """Handle the setbatterycharge service."""
+    client = _resolve_client_for_serial(call.hass, call.data["serial"])
+    await client.updateChargeConfigInfo(
+        call.data["serial"], call.data["chargestopsoc"],
+        int(call.data["enabled"] is True), call.data["cp1end"],
+        call.data["cp2end"], call.data["cp1start"],
+        call.data["cp2start"],
+    )
+
+
+async def _async_service_battery_discharge(call: ServiceCall) -> None:
+    """Handle the setbatterydischarge service."""
+    client = _resolve_client_for_serial(call.hass, call.data["serial"])
+    await client.updateDisChargeConfigInfo(
+        call.data["serial"], call.data["dischargecutoffsoc"],
+        int(call.data["enabled"] is True), call.data["dp1end"],
+        call.data["dp2end"], call.data["dp1start"],
+        call.data["dp2start"],
+    )
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
 
     verify_ssl = entry.options.get(
@@ -204,16 +259,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Build per-inverter IP address mapping from subentries
     ip_address_map = _build_ip_address_map(entry)
 
-    # Don't set a single IP on the client - the coordinator handles per-inverter IPs
+    # Don't set a single IP on the client - the coordinator handles per-inverter IPs.
+    # Use HA's shared aiohttp session; the library applies verify_ssl per request.
     client = alphaess.alphaess(
         entry.data["AppID"],
         entry.data["AppSecret"],
+        session=async_get_clientsession(hass),
         verify_ssl=verify_ssl
     )
 
     # Call getESSList to initialise the API client and discover systems
     # This is required before getdata() will work
-    ess_list = await client.getESSList()
+    try:
+        ess_list = await client.getESSList()
+    except aiohttp.ClientResponseError as err:
+        if err.status == 401:
+            raise ConfigEntryAuthFailed("AlphaESS credentials rejected") from err
+        raise ConfigEntryNotReady(f"AlphaESS cloud API not reachable: {err}") from err
+    except aiohttp.ClientError as err:
+        raise ConfigEntryNotReady(f"AlphaESS cloud API not reachable: {err}") from err
 
     # If no subentries exist (e.g. after migration from v1), auto-create them
     if not _has_inverter_subentries(entry) and ess_list:
@@ -273,7 +337,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         min(MAX_SCAN_INTERVAL_SECONDS, scan_interval_seconds),
     )
 
-    await asyncio.sleep(1)
+    # Alt polling mode settings
+    alt_polling_mode = entry.options.get(CONF_ALT_POLLING_MODE, False)
+    fast_scan_interval_seconds = entry.options.get(
+        CONF_FAST_SCAN_INTERVAL_SECONDS,
+        DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
+    )
+    try:
+        fast_scan_interval_seconds = int(fast_scan_interval_seconds)
+    except (TypeError, ValueError):
+        fast_scan_interval_seconds = DEFAULT_FAST_SCAN_INTERVAL_SECONDS
+
+    fast_scan_interval_seconds = max(
+        MIN_FAST_SCAN_INTERVAL_SECONDS,
+        min(MAX_FAST_SCAN_INTERVAL_SECONDS, fast_scan_interval_seconds),
+    )
 
     _coordinator = AlphaESSDataUpdateCoordinator(
         hass,
@@ -282,10 +360,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         inverter_models=inverter_models,
         entry=entry,
         scan_interval=timedelta(seconds=scan_interval_seconds),
+        alt_polling_mode=alt_polling_mode,
+        fast_scan_interval=timedelta(seconds=fast_scan_interval_seconds),
     )
     await _coordinator.async_config_entry_first_refresh()
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = _coordinator
+    entry.runtime_data = _coordinator
 
     # Auto-create EV charger subentries for any discovered chargers
     existing_ev_serials = {
@@ -294,9 +374,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
     }
     for serial, data in _coordinator.data.items():
-        ev_sn = data.get("EV Charger S/N")
+        ev_sn = data.get(AlphaESSNames.evchargersn)
         if ev_sn and ev_sn not in existing_ev_serials:
-            ev_model = data.get("EV Charger Model", "Unknown")
+            ev_model = data.get(AlphaESSNames.evchargermodel, "Unknown")
             ev_subentry = ConfigSubentry(
                 data={
                     CONF_SERIAL_NUMBER: ev_sn,
@@ -348,46 +428,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
         hass.config_entries.async_update_entry(entry, options=new_options)
 
-    entry.async_on_unload(entry.add_update_listener(update_listener))
+    # No update listener: the options flow inherits OptionsFlowWithReload,
+    # so HA reloads the entry automatically when options change.
 
-    # Register services (only once per domain)
+    # Register services (only once per domain); handlers resolve the
+    # owning client at call time so reloads don't leave stale references.
     if not hass.services.has_service(DOMAIN, 'setbatterycharge'):
-        async def async_battery_charge_handler(call):
-            await client.updateChargeConfigInfo(
-                call.data.get('serial'), call.data.get('chargestopsoc'),
-                int(call.data.get('enabled') is True), call.data.get('cp1end'),
-                call.data.get('cp2end'), call.data.get('cp1start'),
-                call.data.get('cp2start')
-            )
-
-        async def async_battery_discharge_handler(call):
-            await client.updateDisChargeConfigInfo(
-                call.data.get('serial'), call.data.get('dischargecutoffsoc'),
-                int(call.data.get('enabled') is True), call.data.get('dp1end'),
-                call.data.get('dp2end'), call.data.get('dp1start'),
-                call.data.get('dp2start')
-            )
+        hass.services.async_register(
+            DOMAIN, 'setbatterycharge', _async_service_battery_charge,
+            SERVICE_BATTERY_CHARGE_SCHEMA)
 
         hass.services.async_register(
-            DOMAIN, 'setbatterycharge', async_battery_charge_handler, SERVICE_BATTERY_CHARGE_SCHEMA)
-
-        hass.services.async_register(
-            DOMAIN, 'setbatterydischarge', async_battery_discharge_handler, SERVICE_BATTERY_DISCHARGE_SCHEMA)
+            DOMAIN, 'setbatterydischarge', _async_service_battery_discharge,
+            SERVICE_BATTERY_DISCHARGE_SCHEMA)
 
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> bool:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    if unload_ok:
+        # Remove domain services when the last loaded entry is unloaded
+        remaining = [
+            other
+            for other in hass.config_entries.async_entries(DOMAIN)
+            if other.entry_id != entry.entry_id
+            and other.state is ConfigEntryState.LOADED
+        ]
+        if not remaining:
+            hass.services.async_remove(DOMAIN, 'setbatterycharge')
+            hass.services.async_remove(DOMAIN, 'setbatterydischarge')
 
     return unload_ok
-
-
-async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update."""
-    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
