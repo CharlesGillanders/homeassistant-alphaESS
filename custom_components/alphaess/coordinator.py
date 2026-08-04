@@ -27,6 +27,56 @@ from .enums import AlphaESSNames
 
 _LOGGER = logging.getLogger(__name__)
 
+# --- Periodic (setTimeChargeBySn) schedule -----------------------------------
+# executeCycleType 0 = daily, 1 = weekly. We always write daily so the periodic
+# schedule mirrors the two-slot legacy config the entities are modelled on;
+# per-weekday scheduling is intentionally out of scope (see issue #267).
+PERIODIC_DAILY = 0
+
+# chargeLimit is documented as [10, 100]; anything outside returns 6001.
+PERIODIC_MIN_CHARGE_LIMIT = 10
+PERIODIC_MAX_CHARGE_LIMIT = 100
+
+MINUTES_PER_DAY = 1440
+
+
+def _time_to_minutes(value: str) -> int:
+    """Convert an "HH:mm" string into minutes since midnight."""
+    hours, _, minutes = value.partition(":")
+    return int(hours) * 60 + int(minutes)
+
+
+def _period_intervals(period: dict[str, Any]) -> list[tuple[int, int]]:
+    """Return the half-open minute intervals a period covers.
+
+    A period whose end is not after its start wraps midnight, so it is split
+    into two intervals to keep overlap testing simple.
+    """
+    start = _time_to_minutes(period["beginTime"])
+    end = _time_to_minutes(period["endTime"])
+    if end > start:
+        return [(start, end)]
+    return [(start, MINUTES_PER_DAY), (0, end)]
+
+
+def find_overlapping_periods(
+    charge_periods: list[dict[str, Any]],
+    discharge_periods: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Return the first charge/discharge period pair that overlaps, if any.
+
+    The legacy endpoints happily accept overlapping charge and discharge
+    windows, but setTimeChargeBySn rejects them with 6008. Callers use this to
+    skip the periodic write instead of failing it.
+    """
+    for charge in charge_periods:
+        for discharge in discharge_periods:
+            for c_start, c_end in _period_intervals(charge):
+                for d_start, d_end in _period_intervals(discharge):
+                    if c_start < d_end and d_start < c_end:
+                        return charge, discharge
+    return None
+
 
 class DataProcessor:
     """Helper class for data processing utilities."""
@@ -402,6 +452,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # keyed by serial then setting key. Replaces the old hass.data[DOMAIN][serial] store.
         self.number_settings: dict[str, dict[str, float]] = {}
 
+        # Periodic schedule (setTimeChargeBySn) entitlement per serial.
+        # Missing/None = not yet determined, True/False = known answer.
+        self._periodic_support: dict[str, bool] = {}
+
+        # Last known chargePower per serial, keyed "charge"/"discharge", so a
+        # power setpoint configured in the AlphaESS app survives our writes.
+        self._periodic_power: dict[str, dict[str, int]] = {}
+
         # Guards temporary mutation of the shared API client's ipaddress
         self._local_ip_lock = asyncio.Lock()
 
@@ -492,41 +550,46 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         bat_use_cap = self.get_number_setting(serial, "batUseCap", 10)
         bat_high_cap = self.get_number_setting(serial, "batHighCap", 90)
 
-        results = await self._reset_charge_discharge_config(serial, bat_high_cap, bat_use_cap)
-        _LOGGER.info(
-            "Reset Charge and Discharge configuration - Charge: %s, Discharge: %s",
-            results["charge"], results["discharge"],
+        await self._async_apply_schedule(
+            serial,
+            charge={
+                "batHighCap": bat_high_cap,
+                "gridCharge": 1,
+                "timeChaf1": "00:00", "timeChae1": "00:00",
+                "timeChaf2": "00:00", "timeChae2": "00:00",
+            },
+            discharge={
+                "batUseCap": bat_use_cap,
+                "ctrDis": 1,
+                "timeDisf1": "00:00", "timeDise1": "00:00",
+                "timeDisf2": "00:00", "timeDise2": "00:00",
+            },
         )
+        _LOGGER.info("Reset charge and discharge configuration for %s", serial)
         # Optimistically update so switches reflect the change immediately
         if serial in self.data:
             self.data[serial]["gridCharge"] = 1
             self.data[serial]["ctrDis"] = 1
             self.async_set_updated_data(self.data)
 
-    async def _reset_charge_discharge_config(
-            self, serial: str, bat_high_cap: int, bat_use_cap: int
-    ) -> dict[str, Any]:
-        """Internal method to reset configurations."""
-        charge_result = await self.api.updateChargeConfigInfo(
-            serial, bat_high_cap, 1, "00:00", "00:00", "00:00", "00:00"
-        )
-        discharge_result = await self.api.updateDisChargeConfigInfo(
-            serial, bat_use_cap, 1, "00:00", "00:00", "00:00", "00:00"
-        )
-        return {"charge": charge_result, "discharge": discharge_result}
-
     async def update_discharge(self, name: str, serial: str, time_period: int) -> None:
         """Update discharge configuration for specified time period."""
         bat_use_cap = self.get_number_setting(serial, name, 10)
         start_time, end_time = self.time_helper.calculate_time_window(time_period)
 
-        result = await self.api.updateDisChargeConfigInfo(
-            serial, bat_use_cap, 1, end_time, "00:00", start_time, "00:00"
+        await self.async_write_discharge_config(
+            serial,
+            bat_use_cap=bat_use_cap,
+            ctr_dis=1,
+            times={
+                "timeDisf1": start_time, "timeDise1": end_time,
+                "timeDisf2": "00:00", "timeDise2": "00:00",
+            },
         )
 
         _LOGGER.info(
-            "Updated discharge config - Capacity: %s, Period: %s to %s, Result: %s",
-            bat_use_cap, start_time, end_time, result,
+            "Updated discharge config - Capacity: %s, Period: %s to %s",
+            bat_use_cap, start_time, end_time,
         )
         # Optimistically update so the discharge switch reflects enabled immediately
         if serial in self.data:
@@ -538,18 +601,311 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         bat_high_cap = self.get_number_setting(serial, name, 90)
         start_time, end_time = self.time_helper.calculate_time_window(time_period)
 
-        result = await self.api.updateChargeConfigInfo(
-            serial, bat_high_cap, 1, end_time, "00:00", start_time, "00:00"
+        await self.async_write_charge_config(
+            serial,
+            bat_high_cap=bat_high_cap,
+            grid_charge=1,
+            times={
+                "timeChaf1": start_time, "timeChae1": end_time,
+                "timeChaf2": "00:00", "timeChae2": "00:00",
+            },
         )
 
         _LOGGER.info(
-            "Updated charge config - Capacity: %s, Period: %s to %s, Result: %s",
-            bat_high_cap, start_time, end_time, result,
+            "Updated charge config - Capacity: %s, Period: %s to %s",
+            bat_high_cap, start_time, end_time,
         )
         # Optimistically update so the charge switch reflects enabled immediately
         if serial in self.data:
             self.data[serial]["gridCharge"] = 1
             self.async_set_updated_data(self.data)
+
+    # ------------------------------------------------------------------
+    # Charge / discharge schedule writes
+    #
+    # AlphaESS has migrated some regions (UK, AUS/NZ) to a backend that only
+    # acts on the periodic schedule API. There, updateChargeConfigInfo still
+    # answers 200 but the inverter never applies the change until someone
+    # presses Save in the app (issue #267), or the downstream SetConfig times
+    # out entirely (issue #269). Other regions only understand the legacy
+    # endpoints. So every write goes to both: periodic first, legacy after.
+    # ------------------------------------------------------------------
+
+    async def async_write_charge_config(
+        self,
+        serial: str,
+        *,
+        bat_high_cap: float | None = None,
+        grid_charge: int | None = None,
+        times: dict[str, str] | None = None,
+    ) -> None:
+        """Apply a charge configuration change.
+
+        `times` is keyed by the legacy API names (timeChaf1/timeChae1/
+        timeChaf2/timeChae2); anything omitted keeps its current value.
+        """
+        overrides: dict[str, Any] = dict(times or {})
+        if bat_high_cap is not None:
+            overrides["batHighCap"] = bat_high_cap
+        if grid_charge is not None:
+            overrides["gridCharge"] = grid_charge
+        await self._async_apply_schedule(serial, charge=overrides)
+
+    async def async_write_discharge_config(
+        self,
+        serial: str,
+        *,
+        bat_use_cap: float | None = None,
+        ctr_dis: int | None = None,
+        times: dict[str, str] | None = None,
+    ) -> None:
+        """Apply a discharge configuration change.
+
+        `times` is keyed by the legacy API names (timeDisf1/timeDise1/
+        timeDisf2/timeDise2); anything omitted keeps its current value.
+        """
+        overrides: dict[str, Any] = dict(times or {})
+        if bat_use_cap is not None:
+            overrides["batUseCap"] = bat_use_cap
+        if ctr_dis is not None:
+            overrides["ctrDis"] = ctr_dis
+        await self._async_apply_schedule(serial, discharge=overrides)
+
+    def _current_schedule_state(self, serial: str) -> dict[str, dict[str, Any]]:
+        """Read the full charge and discharge config out of coordinator data."""
+        data = self.data.get(serial) or {}
+
+        def value_or(key: Any, default: Any) -> Any:
+            # The parsers store None when the API omitted a field, so a plain
+            # dict.get(key, default) would hand None straight to the API. Note
+            # 0 is a valid value for gridCharge/ctrDis, so `or` won't do.
+            value = data.get(key)
+            return default if value is None else value
+
+        return {
+            "charge": {
+                "batHighCap": value_or(AlphaESSNames.batHighCap, 90),
+                "gridCharge": value_or("gridCharge", 1),
+                "timeChaf1": data.get("charge_timeChaf1") or "00:00",
+                "timeChae1": data.get("charge_timeChae1") or "00:00",
+                "timeChaf2": data.get("charge_timeChaf2") or "00:00",
+                "timeChae2": data.get("charge_timeChae2") or "00:00",
+            },
+            "discharge": {
+                "batUseCap": value_or(AlphaESSNames.batUseCap, 10),
+                "ctrDis": value_or("ctrDis", 1),
+                "timeDisf1": data.get("discharge_timeDisf1") or "00:00",
+                "timeDise1": data.get("discharge_timeDise1") or "00:00",
+                "timeDisf2": data.get("discharge_timeDisf2") or "00:00",
+                "timeDise2": data.get("discharge_timeDise2") or "00:00",
+            },
+        }
+
+    async def _async_apply_schedule(
+        self,
+        serial: str,
+        *,
+        charge: dict[str, Any] | None = None,
+        discharge: dict[str, Any] | None = None,
+    ) -> None:
+        """Write a charge and/or discharge change to both scheduling APIs.
+
+        The periodic write goes first and its errors propagate, so an entity
+        that optimistically updated itself can revert. The legacy write always
+        follows; once the periodic write has been accepted a legacy failure is
+        only logged, because the inverter already has the schedule it acts on.
+        """
+        state = self._current_schedule_state(serial)
+        if charge:
+            state["charge"].update(charge)
+        if discharge:
+            state["discharge"].update(discharge)
+
+        periodic_written = await self._async_write_periodic_schedule(serial, state)
+
+        try:
+            if charge is not None:
+                await self._async_write_legacy_charge(serial, state["charge"])
+            if discharge is not None:
+                await self._async_write_legacy_discharge(serial, state["discharge"])
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            if not periodic_written:
+                raise
+            _LOGGER.warning(
+                "Legacy charge/discharge write failed for %s (%s), but the periodic "
+                "schedule was accepted so the change should still take effect",
+                serial, err,
+            )
+
+    async def async_probe_periodic_support(self, serial: str) -> bool | None:
+        """Determine whether a system can use the periodic schedule API.
+
+        Returns True/False once known and caches it. Returns None when the
+        answer could not be established (transport error), leaving the cache
+        untouched so the next write retries.
+        """
+        try:
+            payload = await self.api.getTimeChargeBySn(serial)
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Periodic schedule probe failed for %s: %s", serial, err)
+            return None
+
+        if not payload:
+            # The library returns None for API-level rejections, which for this
+            # endpoint means 6017 "no operation permissions" — the system isn't
+            # entitled to the feature. Not a transient error, so cache it.
+            _LOGGER.debug(
+                "Periodic schedule API unavailable for %s, using the legacy endpoints",
+                serial,
+            )
+            self._periodic_support[serial] = False
+            return False
+
+        self._periodic_support[serial] = True
+        self._cache_periodic_power(serial, payload)
+        _LOGGER.debug("Periodic schedule API available for %s", serial)
+        return True
+
+    def _cache_periodic_power(self, serial: str, payload: dict[str, Any]) -> None:
+        """Remember the chargePower setpoints already configured on a system."""
+        powers: dict[str, int] = {}
+        for name, key in (("charge", "chargeTimeList"), ("discharge", "dischargeTimeList")):
+            for period in payload.get(key) or []:
+                power = period.get("chargePower")
+                if power is not None:
+                    powers[name] = power
+                    break
+        if powers:
+            self._periodic_power.setdefault(serial, {}).update(powers)
+
+    @staticmethod
+    def _build_period_list(
+        slots: list[tuple[str | None, str | None]],
+        charge_limit: Any,
+        charge_power: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Build a setTimeChargeBySn period list from legacy two-slot times.
+
+        Slots whose start equals their end are the legacy way of saying
+        "disabled"; the periodic API has no zero-length period, so they are
+        dropped and an all-disabled config becomes an empty list.
+        """
+        try:
+            limit: float = float(charge_limit)
+        except (TypeError, ValueError):
+            limit = PERIODIC_MIN_CHARGE_LIMIT
+        clamped = max(PERIODIC_MIN_CHARGE_LIMIT, min(PERIODIC_MAX_CHARGE_LIMIT, limit))
+        if clamped != limit:
+            _LOGGER.debug(
+                "Clamped periodic chargeLimit from %s to %s (allowed range is %s-%s)",
+                charge_limit, clamped, PERIODIC_MIN_CHARGE_LIMIT, PERIODIC_MAX_CHARGE_LIMIT,
+            )
+
+        periods: list[dict[str, Any]] = []
+        for begin, end in slots:
+            if not begin or not end or begin == end:
+                continue
+            period: dict[str, Any] = {
+                "beginTime": begin,
+                "endTime": end,
+                "chargeLimit": clamped,
+            }
+            if charge_power is not None:
+                period["chargePower"] = charge_power
+            periods.append(period)
+        return periods
+
+    async def _async_write_periodic_schedule(
+        self, serial: str, state: dict[str, dict[str, Any]]
+    ) -> bool:
+        """Push the whole schedule via setTimeChargeBySn.
+
+        Returns True when the periodic API accepted the schedule, False when it
+        was skipped (system not entitled, or the config would be rejected).
+        Errors from the call itself propagate to the caller.
+        """
+        supported = self._periodic_support.get(serial)
+        if supported is None:
+            supported = await self.async_probe_periodic_support(serial)
+        if not supported:
+            return False
+
+        charge = state["charge"]
+        discharge = state["discharge"]
+        powers = self._periodic_power.get(serial, {})
+
+        charge_periods = self._build_period_list(
+            [
+                (charge["timeChaf1"], charge["timeChae1"]),
+                (charge["timeChaf2"], charge["timeChae2"]),
+            ],
+            charge["batHighCap"],
+            powers.get("charge"),
+        )
+        discharge_periods = self._build_period_list(
+            [
+                (discharge["timeDisf1"], discharge["timeDise1"]),
+                (discharge["timeDisf2"], discharge["timeDise2"]),
+            ],
+            discharge["batUseCap"],
+            powers.get("discharge"),
+        )
+
+        overlap = find_overlapping_periods(charge_periods, discharge_periods)
+        if overlap:
+            _LOGGER.warning(
+                "Skipping the periodic schedule write for %s: charge period %s-%s "
+                "overlaps discharge period %s-%s, which setTimeChargeBySn rejects. "
+                "Adjust the periods so they do not overlap",
+                serial,
+                overlap[0]["beginTime"], overlap[0]["endTime"],
+                overlap[1]["beginTime"], overlap[1]["endTime"],
+            )
+            return False
+
+        result = await self.api.setTimeChargeBySn(
+            serial,
+            PERIODIC_DAILY,
+            charge_periods,
+            discharge_periods,
+            gridChargeCycle=int(charge["gridCharge"]),
+            ctrDisCycle=int(discharge["ctrDis"]),
+        )
+        _LOGGER.info(
+            "Wrote periodic schedule for %s - charge: %s, discharge: %s, Result: %s",
+            serial, charge_periods, discharge_periods, result,
+        )
+        return True
+
+    async def _async_write_legacy_charge(self, serial: str, charge: dict[str, Any]) -> None:
+        """Write the two-slot charge config via updateChargeConfigInfo."""
+        result = await self.api.updateChargeConfigInfo(
+            serial,
+            charge["batHighCap"],
+            charge["gridCharge"],
+            charge["timeChae1"],
+            charge["timeChae2"],
+            charge["timeChaf1"],
+            charge["timeChaf2"],
+        )
+        _LOGGER.info("Updated charge config for %s: %s - Result: %s", serial, charge, result)
+
+    async def _async_write_legacy_discharge(self, serial: str, discharge: dict[str, Any]) -> None:
+        """Write the two-slot discharge config via updateDisChargeConfigInfo."""
+        result = await self.api.updateDisChargeConfigInfo(
+            serial,
+            discharge["batUseCap"],
+            discharge["ctrDis"],
+            discharge["timeDise1"],
+            discharge["timeDise2"],
+            discharge["timeDisf1"],
+            discharge["timeDisf2"],
+        )
+        _LOGGER.info("Updated discharge config for %s: %s - Result: %s", serial, discharge, result)
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]] | None:
         """Update data via library."""

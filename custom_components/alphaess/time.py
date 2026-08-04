@@ -8,7 +8,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import CONF_SERIAL_NUMBER, INVERTER_SETTING_BLACKLIST, SUBENTRY_TYPE_INVERTER
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .device import build_inverter_device_info
-from .enums import AlphaESSNames
 from .sensorlist import CHARGE_DISCHARGE_TIMES
 
 _LOGGER = logging.getLogger(__name__)
@@ -16,21 +15,19 @@ _LOGGER = logging.getLogger(__name__)
 # Serialize time writes; the AlphaESS API rate-limits config writes.
 PARALLEL_UPDATES = 1
 
-# Mapping from coordinator key to the API parameter position
-# Charge API: updateChargeConfigInfo(serial, batHighCap, gridCharge, timeChae1, timeChae2, timeChaf1, timeChaf2)
-# Discharge API: updateDisChargeConfigInfo(serial, batUseCap, ctrDis, timeDise1, timeDise2, timeDisf1, timeDisf2)
+# Coordinator key -> the legacy API field the coordinator writers expect.
 CHARGE_TIME_KEYS = {
-    "charge_timeChaf1",
-    "charge_timeChae1",
-    "charge_timeChaf2",
-    "charge_timeChae2",
+    "charge_timeChaf1": "timeChaf1",
+    "charge_timeChae1": "timeChae1",
+    "charge_timeChaf2": "timeChaf2",
+    "charge_timeChae2": "timeChae2",
 }
 
 DISCHARGE_TIME_KEYS = {
-    "discharge_timeDisf1",
-    "discharge_timeDise1",
-    "discharge_timeDisf2",
-    "discharge_timeDise2",
+    "discharge_timeDisf1": "timeDisf1",
+    "discharge_timeDise1": "timeDise1",
+    "discharge_timeDisf2": "timeDisf2",
+    "discharge_timeDise2": "timeDise2",
 }
 
 
@@ -127,9 +124,15 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
 
         try:
             if self._coordinator_key in CHARGE_TIME_KEYS:
-                await self._update_charge_config(time_str)
+                await self._coordinator.async_write_charge_config(
+                    self._serial,
+                    times={CHARGE_TIME_KEYS[self._coordinator_key]: time_str},
+                )
             elif self._coordinator_key in DISCHARGE_TIME_KEYS:
-                await self._update_discharge_config(time_str)
+                await self._coordinator.async_write_discharge_config(
+                    self._serial,
+                    times={DISCHARGE_TIME_KEYS[self._coordinator_key]: time_str},
+                )
         except Exception:
             _LOGGER.exception("Failed to update time for %s, reverting", self._coordinator_key)
             self._attr_native_value = previous_value
@@ -137,88 +140,6 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
             return
 
         await self._coordinator.async_request_refresh()
-
-    async def _update_charge_config(self, new_time_str: str) -> None:
-        """Send updated charge config to the API."""
-        data = self._coordinator.data.get(self._serial, {})
-
-        # Read current values
-        current = {
-            "timeChaf1": data.get("charge_timeChaf1") or "00:00",
-            "timeChae1": data.get("charge_timeChae1") or "00:00",
-            "timeChaf2": data.get("charge_timeChaf2") or "00:00",
-            "timeChae2": data.get("charge_timeChae2") or "00:00",
-        }
-
-        # Map coordinator key to API parameter
-        key_map = {
-            "charge_timeChaf1": "timeChaf1",
-            "charge_timeChae1": "timeChae1",
-            "charge_timeChaf2": "timeChaf2",
-            "charge_timeChae2": "timeChae2",
-        }
-
-        api_key = key_map[self._coordinator_key]
-        current[api_key] = new_time_str
-
-        bat_high_cap = data.get(AlphaESSNames.batHighCap, 90)
-        grid_charge = data.get("gridCharge", 1)
-
-        result = await self._coordinator.api.updateChargeConfigInfo(
-            self._serial,
-            bat_high_cap,
-            grid_charge,
-            current["timeChae1"],
-            current["timeChae2"],
-            current["timeChaf1"],
-            current["timeChaf2"],
-        )
-
-        _LOGGER.info(
-            "Updated charge config for %s: %s=%s, Result: %s",
-            self._serial, self._coordinator_key, new_time_str, result,
-        )
-
-    async def _update_discharge_config(self, new_time_str: str) -> None:
-        """Send updated discharge config to the API."""
-        data = self._coordinator.data.get(self._serial, {})
-
-        # Read current values
-        current = {
-            "timeDisf1": data.get("discharge_timeDisf1") or "00:00",
-            "timeDise1": data.get("discharge_timeDise1") or "00:00",
-            "timeDisf2": data.get("discharge_timeDisf2") or "00:00",
-            "timeDise2": data.get("discharge_timeDise2") or "00:00",
-        }
-
-        # Map coordinator key to API parameter
-        key_map = {
-            "discharge_timeDisf1": "timeDisf1",
-            "discharge_timeDise1": "timeDise1",
-            "discharge_timeDisf2": "timeDisf2",
-            "discharge_timeDise2": "timeDise2",
-        }
-
-        api_key = key_map[self._coordinator_key]
-        current[api_key] = new_time_str
-
-        bat_use_cap = data.get(AlphaESSNames.batUseCap, 10)
-        ctr_dis = data.get("ctrDis", 1)
-
-        result = await self._coordinator.api.updateDisChargeConfigInfo(
-            self._serial,
-            bat_use_cap,
-            ctr_dis,
-            current["timeDise1"],
-            current["timeDise2"],
-            current["timeDisf1"],
-            current["timeDisf2"],
-        )
-
-        _LOGGER.info(
-            "Updated discharge config for %s: %s=%s, Result: %s",
-            self._serial, self._coordinator_key, new_time_str, result,
-        )
 
     @property
     def available(self) -> bool:

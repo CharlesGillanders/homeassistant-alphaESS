@@ -72,6 +72,8 @@ def mock_api():
         "getIPData",
         "updateChargeConfigInfo",
         "updateDisChargeConfigInfo",
+        "getTimeChargeBySn",
+        "setTimeChargeBySn",
         "setEvChargerCurrentsBySn",
         "remoteControlEvCharger",
         "getVerificationCode",

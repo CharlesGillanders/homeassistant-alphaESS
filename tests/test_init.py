@@ -16,7 +16,7 @@ from custom_components.alphaess import (
     _cleanup_stale_ev_entities,
     _has_inverter_subentries,
     _migrate_entity_ids,
-    _resolve_client_for_serial,
+    _resolve_coordinator_for_serial,
     async_migrate_entry,
     async_setup_entry,
     async_unload_entry,
@@ -197,7 +197,7 @@ class TestCleanupStaleEvEntities:
         ent_reg.async_remove.assert_not_called()
 
 
-class TestResolveClient:
+class TestResolveCoordinator:
     def test_resolves_by_serial(self, mock_hass, make_coordinator):
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {}}
@@ -205,7 +205,7 @@ class TestResolveClient:
         entry.runtime_data = coordinator
         mock_hass.config_entries.async_entries.return_value = [entry]
 
-        assert _resolve_client_for_serial(mock_hass, SERIAL) is coordinator.api
+        assert _resolve_coordinator_for_serial(mock_hass, SERIAL) is coordinator
 
     def test_falls_back_to_first_coordinator(self, mock_hass, make_coordinator):
         coordinator = make_coordinator()
@@ -214,7 +214,7 @@ class TestResolveClient:
         entry.runtime_data = coordinator
         mock_hass.config_entries.async_entries.return_value = [entry]
 
-        assert _resolve_client_for_serial(mock_hass, SERIAL) is coordinator.api
+        assert _resolve_coordinator_for_serial(mock_hass, SERIAL) is coordinator
 
     def test_ignores_non_coordinator_runtime_data(self, mock_hass):
         entry = FakeEntry()
@@ -222,12 +222,12 @@ class TestResolveClient:
         mock_hass.config_entries.async_entries.return_value = [entry]
 
         with pytest.raises(HomeAssistantError):
-            _resolve_client_for_serial(mock_hass, SERIAL)
+            _resolve_coordinator_for_serial(mock_hass, SERIAL)
 
     def test_raises_without_entries(self, mock_hass):
         mock_hass.config_entries.async_entries.return_value = []
         with pytest.raises(HomeAssistantError):
-            _resolve_client_for_serial(mock_hass, SERIAL)
+            _resolve_coordinator_for_serial(mock_hass, SERIAL)
 
 
 class TestServices:
@@ -361,6 +361,7 @@ class FakeCoordinator:
         self.data = dict(type(self).next_data)
         self.cloud_available = type(self).next_cloud_available
         self.async_config_entry_first_refresh = AsyncMock()
+        self.async_probe_periodic_support = AsyncMock(return_value=False)
         type(self).instances.append(self)
 
     next_data = {}

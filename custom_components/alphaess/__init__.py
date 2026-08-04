@@ -205,8 +205,10 @@ def _cleanup_stale_ev_entities(
             ent_reg.async_remove(entity_entry.entity_id)
 
 
-def _resolve_client_for_serial(hass: HomeAssistant, serial: str) -> alphaess.alphaess:
-    """Find the API client managing the given inverter serial.
+def _resolve_coordinator_for_serial(
+    hass: HomeAssistant, serial: str
+) -> AlphaESSDataUpdateCoordinator:
+    """Find the coordinator managing the given inverter serial.
 
     Resolved at call time so services keep working across entry reloads.
     """
@@ -216,9 +218,9 @@ def _resolve_client_for_serial(hass: HomeAssistant, serial: str) -> alphaess.alp
         if not isinstance(coordinator, AlphaESSDataUpdateCoordinator):
             continue
         if serial in (coordinator.data or {}):
-            return coordinator.api
+            return coordinator
         if fallback is None:
-            fallback = coordinator.api
+            fallback = coordinator
     if fallback is not None:
         return fallback
     raise HomeAssistantError(
@@ -228,23 +230,31 @@ def _resolve_client_for_serial(hass: HomeAssistant, serial: str) -> alphaess.alp
 
 async def _async_service_battery_charge(call: ServiceCall) -> None:
     """Handle the setbatterycharge service."""
-    client = _resolve_client_for_serial(call.hass, call.data["serial"])
-    await client.updateChargeConfigInfo(
-        call.data["serial"], call.data["chargestopsoc"],
-        int(call.data["enabled"] is True), call.data["cp1end"],
-        call.data["cp2end"], call.data["cp1start"],
-        call.data["cp2start"],
+    serial = call.data["serial"]
+    coordinator = _resolve_coordinator_for_serial(call.hass, serial)
+    await coordinator.async_write_charge_config(
+        serial,
+        bat_high_cap=call.data["chargestopsoc"],
+        grid_charge=int(call.data["enabled"] is True),
+        times={
+            "timeChaf1": call.data["cp1start"], "timeChae1": call.data["cp1end"],
+            "timeChaf2": call.data["cp2start"], "timeChae2": call.data["cp2end"],
+        },
     )
 
 
 async def _async_service_battery_discharge(call: ServiceCall) -> None:
     """Handle the setbatterydischarge service."""
-    client = _resolve_client_for_serial(call.hass, call.data["serial"])
-    await client.updateDisChargeConfigInfo(
-        call.data["serial"], call.data["dischargecutoffsoc"],
-        int(call.data["enabled"] is True), call.data["dp1end"],
-        call.data["dp2end"], call.data["dp1start"],
-        call.data["dp2start"],
+    serial = call.data["serial"]
+    coordinator = _resolve_coordinator_for_serial(call.hass, serial)
+    await coordinator.async_write_discharge_config(
+        serial,
+        bat_use_cap=call.data["dischargecutoffsoc"],
+        ctr_dis=int(call.data["enabled"] is True),
+        times={
+            "timeDisf1": call.data["dp1start"], "timeDise1": call.data["dp1end"],
+            "timeDisf2": call.data["dp2start"], "timeDise2": call.data["dp2end"],
+        },
     )
 
 
@@ -366,6 +376,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
     await _coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = _coordinator
+
+    # Determine once per inverter whether the periodic schedule API is usable.
+    # Systems that aren't entitled return 6017 and keep using only the legacy
+    # endpoints. Never fatal — a failure here just leaves it to be retried on
+    # the first write.
+    for serial in list(_coordinator.data):
+        await _coordinator.async_probe_periodic_support(serial)
 
     # Auto-create EV charger subentries for any discovered chargers
     existing_ev_serials = {

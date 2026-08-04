@@ -12,7 +12,6 @@ from .const import (
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .device import build_inverter_device_info
-from .enums import AlphaESSNames
 from .sensorlist import CHARGE_DISCHARGE_SWITCHES
 
 _LOGGER = logging.getLogger(__name__)
@@ -108,37 +107,13 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
 
     async def _set_value(self, value: int) -> None:
         """Send the updated config to the API."""
-        data = self._coordinator.data.get(self._serial, {})
-
         if self._coordinator_key == "gridCharge":
-            bat_high_cap = data.get(AlphaESSNames.batHighCap, 90)
-            result = await self._coordinator.api.updateChargeConfigInfo(
-                self._serial,
-                bat_high_cap,
-                value,
-                data.get("charge_timeChae1") or "00:00",
-                data.get("charge_timeChae2") or "00:00",
-                data.get("charge_timeChaf1") or "00:00",
-                data.get("charge_timeChaf2") or "00:00",
-            )
-            _LOGGER.info(
-                "Updated gridCharge for %s to %s - Result: %s",
-                self._serial, value, result,
+            await self._coordinator.async_write_charge_config(
+                self._serial, grid_charge=value,
             )
         elif self._coordinator_key == "ctrDis":
-            bat_use_cap = data.get(AlphaESSNames.batUseCap, 10)
-            result = await self._coordinator.api.updateDisChargeConfigInfo(
-                self._serial,
-                bat_use_cap,
-                value,
-                data.get("discharge_timeDise1") or "00:00",
-                data.get("discharge_timeDise2") or "00:00",
-                data.get("discharge_timeDisf1") or "00:00",
-                data.get("discharge_timeDisf2") or "00:00",
-            )
-            _LOGGER.info(
-                "Updated ctrDis for %s to %s - Result: %s",
-                self._serial, value, result,
+            await self._coordinator.async_write_discharge_config(
+                self._serial, ctr_dis=value,
             )
 
         # No immediate refresh — optimistic state is shown until the next

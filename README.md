@@ -68,6 +68,33 @@ An error will be placed in the logs
 
 The current charge config, discharge config and charging range will only update once the API is re-called (can be up to 1 min)
 
+### Which scheduling API gets written
+
+AlphaESS has migrated some regions (UK, AUS/NZ) to a backend that only acts on its newer
+*periodic* schedule API. On those servers the older `updateChargeConfigInfo` /
+`updateDisChargeConfigInfo` endpoints still answer OK, but the inverter never applies the change
+until someone opens the AlphaESS app and presses Save
+([#267](https://github.com/CharlesGillanders/homeassistant-alphaESS/issues/267)), or the command
+times out downstream entirely
+([#269](https://github.com/CharlesGillanders/homeassistant-alphaESS/issues/269)). Other regions
+still only understand the older endpoints.
+
+So every charge/discharge change is written to **both**: the periodic API
+(`setTimeChargeBySn`) first, then the legacy endpoints. No configuration is needed — on startup
+the integration checks once per inverter whether the periodic API is available for your system,
+and quietly skips it if your account is not entitled to it (return code `6017`).
+
+Two things to be aware of:
+
+- **A weekly schedule set in the AlphaESS app will be flattened to a daily one.** The integration
+  writes daily schedules (`executeCycleType: 0`) so that the behaviour matches the two time slots
+  shown here. Per-weekday scheduling is not exposed by this integration; use Home Assistant
+  automations if you need different times on different days.
+- **Charge and discharge periods must not overlap.** The legacy endpoints allowed this, the
+  periodic one rejects it. If your slots overlap the periodic write is skipped, a warning is
+  logged, and only the legacy endpoint is written — which on a migrated server means the change
+  will not take effect. Adjust the periods so they do not overlap.
+
 ### EV charger controls
 
 The integration exposes EV charger controls (start/stop and current setting) when an EV charger is detected.
