@@ -1,5 +1,4 @@
 """Switch platform for AlphaESS integration."""
-import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
@@ -13,8 +12,6 @@ from .const import (
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .device import build_inverter_device_info
 from .sensorlist import CHARGE_DISCHARGE_SWITCHES
-
-_LOGGER = logging.getLogger(__name__)
 
 # Serialize switch writes; the AlphaESS API rate-limits config writes.
 PARALLEL_UPDATES = 1
