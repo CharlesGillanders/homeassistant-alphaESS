@@ -37,6 +37,11 @@ PERIODIC_DAILY = 0
 PERIODIC_MIN_CHARGE_LIMIT = 10
 PERIODIC_MAX_CHARGE_LIMIT = 100
 
+# Values for the "Scheduling API" diagnostic sensor.
+SCHEDULING_API_PERIODIC = "periodic"
+SCHEDULING_API_LEGACY = "legacy"
+SCHEDULING_API_UNKNOWN = "unknown"
+
 MINUTES_PER_DAY = 1440
 
 
@@ -739,6 +744,18 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 serial, err,
             )
 
+    async def _async_resolve_unknown_scheduling_api(self) -> None:
+        """Retry the periodic probe for any inverter still undecided.
+
+        The setup probe can come back inconclusive if the cloud hiccups, which
+        would otherwise leave the Scheduling API sensor reading "unknown" until
+        someone happens to write a setting. Once an inverter has an answer it is
+        never probed again, so this costs at most one extra call per inverter.
+        """
+        for serial in list(self.data):
+            if serial not in self._periodic_support:
+                await self.async_probe_periodic_support(serial)
+
     async def async_probe_periodic_support(self, serial: str) -> bool | None:
         """Determine whether a system can use the periodic schedule API.
 
@@ -969,6 +986,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             self.cloud_available = any_success
             if any_success:
                 self._last_full_poll_utc = dt_util.utcnow().isoformat(timespec="seconds")
+                await self._async_resolve_unknown_scheduling_api()
             else:
                 _LOGGER.warning("All per-inverter fetches failed")
             return self._finalize_data()
@@ -1036,6 +1054,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 if any_success:
                     self._last_full_poll = now
                     self._last_full_poll_utc = dt_util.utcnow().isoformat(timespec="seconds")
+                    await self._async_resolve_unknown_scheduling_api()
                 else:
                     _LOGGER.warning("Alt mode: all per-inverter fetches failed during full poll")
             else:
@@ -1124,6 +1143,19 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             self.data[serial][AlphaESSNames.LastPollType] = self._last_poll_type
             self.data[serial][AlphaESSNames.LastFullPoll] = self._last_full_poll_utc or "never"
             self.data[serial][AlphaESSNames.PollTickCount] = self._poll_tick_count
+            self.data[serial][AlphaESSNames.SchedulingApi] = self.get_scheduling_api(serial)
+
+    def get_scheduling_api(self, serial: str) -> str:
+        """Return which scheduling API this system accepts.
+
+        "periodic" - the newer setTimeChargeBySn backend, written alongside the
+        legacy endpoints. "legacy" - only the old two-slot endpoints work here.
+        "unknown" - the probe hasn't produced an answer yet.
+        """
+        supported = self._periodic_support.get(serial)
+        if supported is None:
+            return SCHEDULING_API_UNKNOWN
+        return SCHEDULING_API_PERIODIC if supported else SCHEDULING_API_LEGACY
 
     def _finalize_data(self) -> dict[str, dict[str, Any]]:
         """Write diagnostics and return a shallow per-serial copy of the data.

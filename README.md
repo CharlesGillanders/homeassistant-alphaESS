@@ -84,6 +84,17 @@ So every charge/discharge change is written to **both**: the periodic API
 the integration checks once per inverter whether the periodic API is available for your system,
 and quietly skips it if your account is not entitled to it (return code `6017`).
 
+Each inverter gets a **Scheduling API** diagnostic sensor showing which one applies to you:
+
+| Value | Meaning |
+| --- | --- |
+| `periodic` | Your system is on the newer backend. Both APIs are written. |
+| `legacy` | Your system only accepts the old endpoints, and only those are written. |
+| `unknown` | The check hasn't returned an answer yet; it retries on each full poll. |
+
+It's also included in the integration's downloadable diagnostics, so it's worth attaching that
+to any bug report about charge/discharge times not applying.
+
 Two things to be aware of:
 
 - **A weekly schedule set in the AlphaESS app will be flattened to a daily one.** The integration

@@ -39,6 +39,12 @@ async def async_get_config_entry_diagnostics(
         for idx, values in enumerate((coordinator.data or {}).values())
     }
 
+    # Keyed the same way so it lines up with the anonymised data above
+    scheduling_api = {
+        f"inverter_{idx + 1}": coordinator.get_scheduling_api(serial)
+        for idx, serial in enumerate(coordinator.data or {})
+    }
+
     return {
         "entry": {
             "data": async_redact_data(dict(entry.data), TO_REDACT_CONFIG),
@@ -55,6 +61,7 @@ async def async_get_config_entry_diagnostics(
             "inverter_count": coordinator.inverter_count,
             "model_list": coordinator.model_list,
             "has_throttle": coordinator.has_throttle,
+            "scheduling_api": scheduling_api,
         },
         "data": inverters,
     }

@@ -11,6 +11,9 @@ import pytest
 
 from custom_components.alphaess.coordinator import (
     PERIODIC_DAILY,
+    SCHEDULING_API_LEGACY,
+    SCHEDULING_API_PERIODIC,
+    SCHEDULING_API_UNKNOWN,
     find_overlapping_periods,
 )
 from custom_components.alphaess.enums import AlphaESSNames
@@ -336,6 +339,36 @@ class TestFailureHandling:
 
         with pytest.raises(OSError):
             await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
+
+
+class TestSchedulingApiDiagnostic:
+    def test_reports_periodic_when_supported(self, supported):
+        assert supported.get_scheduling_api(SERIAL) == SCHEDULING_API_PERIODIC
+
+    def test_reports_legacy_when_not_entitled(self, unsupported):
+        assert unsupported.get_scheduling_api(SERIAL) == SCHEDULING_API_LEGACY
+
+    def test_reports_unknown_before_the_probe_answers(self, make_coordinator):
+        assert make_coordinator().get_scheduling_api(SERIAL) == SCHEDULING_API_UNKNOWN
+
+    def test_published_into_coordinator_data(self, supported):
+        supported._update_diagnostics()
+        assert supported.data[SERIAL][AlphaESSNames.SchedulingApi] == SCHEDULING_API_PERIODIC
+
+    async def test_unknown_support_is_retried(self, make_coordinator, mock_api):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        mock_api.getTimeChargeBySn.return_value = {"chargeTimeList": [], "dischargeTimeList": []}
+
+        await coordinator._async_resolve_unknown_scheduling_api()
+
+        mock_api.getTimeChargeBySn.assert_awaited_once_with(SERIAL)
+        assert coordinator.get_scheduling_api(SERIAL) == SCHEDULING_API_PERIODIC
+
+    async def test_known_support_is_not_reprobed(self, supported, mock_api):
+        await supported._async_resolve_unknown_scheduling_api()
+
+        mock_api.getTimeChargeBySn.assert_not_awaited()
 
 
 class TestButtonAndResetPaths:
