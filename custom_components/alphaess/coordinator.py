@@ -882,6 +882,22 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             powers.get("discharge"),
         )
 
+        # Both lists are required and neither may be empty: the live API answers
+        # an empty list with 6001 "time list is null", and omitting one with
+        # 10001. There is no verified way to express "no periods on this side" —
+        # a 00:00-00:00 element passes validation but its meaning is unconfirmed,
+        # and if the server reads end <= start as wrapping midnight it would be a
+        # 24-hour window. Skip rather than risk it; the legacy write still runs.
+        if not charge_periods or not discharge_periods:
+            _LOGGER.warning(
+                "Skipping the periodic schedule write for %s: setTimeChargeBySn "
+                "requires at least one charge period and one discharge period, "
+                "and %s is empty. Only the legacy endpoints were written",
+                serial,
+                "the charge list" if not charge_periods else "the discharge list",
+            )
+            return False
+
         overlap = find_overlapping_periods(charge_periods, discharge_periods)
         if overlap:
             _LOGGER.warning(

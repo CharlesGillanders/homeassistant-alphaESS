@@ -110,6 +110,11 @@ Two things to be aware of:
   periodic one rejects it. If your slots overlap the periodic write is skipped, a warning is
   logged, and only the legacy endpoint is written — which on a migrated server means the change
   will not take effect. Adjust the periods so they do not overlap.
+- **You need at least one charge period *and* one discharge period.** `setTimeChargeBySn`
+  rejects an empty list (`6001 "time list is null"`) and a missing one (`10001`), and has no
+  representation for "no periods on this side", so when either list would be empty the periodic
+  write is skipped and only the legacy endpoints are written. For the same reason the
+  *Reset Charge/Discharge* button cannot clear a periodic schedule — do that in the AlphaESS app.
 
 ### EV charger controls
 

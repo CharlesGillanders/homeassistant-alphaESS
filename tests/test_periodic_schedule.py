@@ -187,19 +187,35 @@ class TestDualWrite:
         _, _, charge_list, discharge_list = mock_api.setTimeChargeBySn.await_args.args
         assert charge_list and discharge_list
 
-    async def test_empty_lists_sent_not_null(self, make_coordinator, mock_api):
+    async def test_skipped_when_a_list_would_be_empty(
+        self, make_coordinator, mock_api, caplog
+    ):
+        """The live API rejects an empty list with 6001 "time list is null"."""
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: _schedule_data(
-            charge_timeChaf1="00:00", charge_timeChae1="00:00",
             discharge_timeDisf1="00:00", discharge_timeDise1="00:00",
         )}
         coordinator._periodic_readable[SERIAL] = True
 
         await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
 
-        _, _, charge_list, discharge_list = mock_api.setTimeChargeBySn.await_args.args
-        assert charge_list == []
-        assert discharge_list == []
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_awaited_once()
+        assert "the discharge list is empty" in caplog.text
+
+    async def test_skipped_when_charge_list_would_be_empty(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data(
+            charge_timeChaf1="00:00", charge_timeChae1="00:00",
+        )}
+        coordinator._periodic_readable[SERIAL] = True
+
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        assert "the charge list is empty" in caplog.text
 
     async def test_legacy_argument_order_unchanged(self, readable, mock_api):
         """The legacy call must keep passing end times before start times."""
@@ -396,14 +412,16 @@ class TestPeriodicScheduleReadDiagnostic:
 
 
 class TestButtonAndResetPaths:
-    async def test_reset_clears_periodic_schedule(self, readable, mock_api):
+    async def test_reset_cannot_clear_the_periodic_schedule(self, readable, mock_api):
+        """Reset zeroes every slot, which leaves no periods to send.
+
+        setTimeChargeBySn has no representation for "no periods", so a reset
+        only reaches the legacy endpoints. Clearing a periodic schedule has to
+        be done from the AlphaESS app.
+        """
         await readable.reset_config(SERIAL)
 
-        _, cycle_type, charge_list, discharge_list = mock_api.setTimeChargeBySn.await_args.args
-        assert cycle_type == PERIODIC_DAILY
-        # Everything reset to 00:00 means no periods at all.
-        assert charge_list == []
-        assert discharge_list == []
+        mock_api.setTimeChargeBySn.assert_not_awaited()
         mock_api.updateChargeConfigInfo.assert_awaited_once()
         mock_api.updateDisChargeConfigInfo.assert_awaited_once()
 

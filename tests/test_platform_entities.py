@@ -456,14 +456,20 @@ class TestTimeEntity:
     ):
         """The periodic request went through, so the change may have landed."""
         coordinator = make_coordinator()
-        coordinator.data = {SERIAL: {"charge_timeChaf1": "03:00"}}
+        # Both sides need a period, otherwise the periodic write is skipped.
+        coordinator.data = {SERIAL: {
+            "charge_timeChaf1": "03:00", "charge_timeChae1": "05:00",
+            "discharge_timeDisf1": "17:00", "discharge_timeDise1": "21:00",
+        }}
         entity = self._make(coordinator, "charge_timeChaf1")
         entity.async_write_ha_state = MagicMock()
         entity._attr_native_value = dt_time(3, 0)
         mock_api.updateChargeConfigInfo.side_effect = OSError("api down")
 
-        await entity.async_set_value(dt_time(8, 0))
-        assert entity._attr_native_value == dt_time(8, 0)
+        # 04:00 keeps the charge window inside 03:00-05:00, clear of the
+        # discharge window, so the periodic write actually goes out.
+        await entity.async_set_value(dt_time(4, 0))
+        assert entity._attr_native_value == dt_time(4, 0)
         coordinator.async_request_refresh.assert_awaited_once()
 
     def test_available_and_properties(self, make_coordinator):
