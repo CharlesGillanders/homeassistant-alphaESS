@@ -40,8 +40,8 @@ async def async_get_config_entry_diagnostics(
     }
 
     # Keyed the same way so it lines up with the anonymised data above
-    scheduling_api = {
-        f"inverter_{idx + 1}": coordinator.get_scheduling_api(serial)
+    periodic_schedule_read = {
+        f"inverter_{idx + 1}": coordinator.get_periodic_read_state(serial)
         for idx, serial in enumerate(coordinator.data or {})
     }
 
@@ -61,7 +61,7 @@ async def async_get_config_entry_diagnostics(
             "inverter_count": coordinator.inverter_count,
             "model_list": coordinator.model_list,
             "has_throttle": coordinator.has_throttle,
-            "scheduling_api": scheduling_api,
+            "periodic_schedule_read": periodic_schedule_read,
         },
         "data": inverters,
     }

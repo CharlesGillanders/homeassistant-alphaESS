@@ -37,10 +37,13 @@ PERIODIC_DAILY = 0
 PERIODIC_MIN_CHARGE_LIMIT = 10
 PERIODIC_MAX_CHARGE_LIMIT = 100
 
-# Values for the "Scheduling API" diagnostic sensor.
-SCHEDULING_API_PERIODIC = "periodic"
-SCHEDULING_API_LEGACY = "legacy"
-SCHEDULING_API_UNKNOWN = "unknown"
+# Values for the "Periodic Schedule Read" diagnostic sensor. This reports
+# whether getTimeChargeBySn can be read on this account, which is NOT the same
+# as whether the system is on the periodic backend — the read and write
+# endpoints are separately permissioned. Both APIs are written either way.
+PERIODIC_READ_OK = "readable"
+PERIODIC_READ_UNAVAILABLE = "unreadable"
+PERIODIC_READ_UNKNOWN = "unknown"
 
 MINUTES_PER_DAY = 1440
 
@@ -459,7 +462,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
 
         # Periodic schedule (setTimeChargeBySn) entitlement per serial.
         # Missing/None = not yet determined, True/False = known answer.
-        self._periodic_support: dict[str, bool] = {}
+        self._periodic_readable: dict[str, bool] = {}
 
         # Last known chargePower per serial, keyed "charge"/"discharge", so a
         # power setpoint configured in the AlphaESS app survives our writes.
@@ -715,10 +718,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
     ) -> None:
         """Write a charge and/or discharge change to both scheduling APIs.
 
-        The periodic write goes first and its errors propagate, so an entity
-        that optimistically updated itself can revert. The legacy write always
-        follows; once the periodic write has been accepted a legacy failure is
-        only logged, because the inverter already has the schedule it acts on.
+        Both are always written. Whether a system is on the periodic backend
+        cannot be detected up front — the read endpoint is separately
+        permissioned and returns 6017 on exactly the accounts that need the
+        periodic write most — so gating on it would skip the write for the
+        users this is meant to fix.
+
+        The change is only reported as failed when the legacy write fails and
+        the periodic one didn't go through either, so an entity that updated
+        itself optimistically reverts only when nothing was written at all.
         """
         state = self._current_schedule_state(serial)
         if charge:
@@ -740,28 +748,32 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 raise
             _LOGGER.warning(
                 "Legacy charge/discharge write failed for %s (%s), but the periodic "
-                "schedule was accepted so the change should still take effect",
+                "schedule request went through so the change may still take effect",
                 serial, err,
             )
 
-    async def _async_resolve_unknown_scheduling_api(self) -> None:
-        """Retry the periodic probe for any inverter still undecided.
+    async def _async_resolve_unknown_periodic_read(self) -> None:
+        """Retry the periodic read for any inverter still undecided.
 
-        The setup probe can come back inconclusive if the cloud hiccups, which
-        would otherwise leave the Scheduling API sensor reading "unknown" until
-        someone happens to write a setting. Once an inverter has an answer it is
-        never probed again, so this costs at most one extra call per inverter.
+        The setup read can come back inconclusive if the cloud hiccups, which
+        would otherwise leave the diagnostic sensor reading "unknown" forever.
+        Once an inverter has an answer it is never read again, so this costs at
+        most one extra call per inverter.
         """
         for serial in list(self.data):
-            if serial not in self._periodic_support:
-                await self.async_probe_periodic_support(serial)
+            if serial not in self._periodic_readable:
+                await self.async_probe_periodic_readable(serial)
 
-    async def async_probe_periodic_support(self, serial: str) -> bool | None:
-        """Determine whether a system can use the periodic schedule API.
+    async def async_probe_periodic_readable(self, serial: str) -> bool | None:
+        """Read the periodic schedule, to cache chargePower and for diagnostics.
+
+        This says whether the schedule is *readable* on this account, which is
+        not the same as whether the system is on the periodic backend — the two
+        are separately permissioned. It deliberately does not gate the write.
 
         Returns True/False once known and caches it. Returns None when the
         answer could not be established (transport error), leaving the cache
-        untouched so the next write retries.
+        untouched so it is retried later.
         """
         try:
             payload = await self.api.getTimeChargeBySn(serial)
@@ -779,10 +791,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 "Periodic schedule API unavailable for %s, using the legacy endpoints",
                 serial,
             )
-            self._periodic_support[serial] = False
+            self._periodic_readable[serial] = False
             return False
 
-        self._periodic_support[serial] = True
+        self._periodic_readable[serial] = True
         self._cache_periodic_power(serial, payload)
         _LOGGER.debug("Periodic schedule API available for %s", serial)
         return True
@@ -841,16 +853,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
     ) -> bool:
         """Push the whole schedule via setTimeChargeBySn.
 
-        Returns True when the periodic API accepted the schedule, False when it
-        was skipped (system not entitled, or the config would be rejected).
-        Errors from the call itself propagate to the caller.
-        """
-        supported = self._periodic_support.get(serial)
-        if supported is None:
-            supported = await self.async_probe_periodic_support(serial)
-        if not supported:
-            return False
+        Always attempted — see _async_apply_schedule for why this is not gated
+        on the read endpoint.
 
+        Returns True when the request completed without raising. That is not
+        proof the schedule was accepted: the API answers with null data whether
+        it succeeded or not, so the library cannot tell the two apart. A
+        rejection still shows up as an error in the log from the library.
+        """
         charge = state["charge"]
         discharge = state["discharge"]
         powers = self._periodic_power.get(serial, {})
@@ -884,17 +894,26 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             )
             return False
 
-        result = await self.api.setTimeChargeBySn(
-            serial,
-            PERIODIC_DAILY,
-            charge_periods,
-            discharge_periods,
-            gridChargeCycle=int(charge["gridCharge"]),
-            ctrDisCycle=int(discharge["ctrDis"]),
-        )
+        try:
+            await self.api.setTimeChargeBySn(
+                serial,
+                PERIODIC_DAILY,
+                charge_periods,
+                discharge_periods,
+                gridChargeCycle=int(charge["gridCharge"]),
+                ctrDisCycle=int(discharge["ctrDis"]),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            # Don't give up on the change — the legacy write still follows and
+            # is what the unmigrated backends act on.
+            _LOGGER.warning("Periodic schedule write failed for %s: %s", serial, err)
+            return False
+
         _LOGGER.info(
-            "Wrote periodic schedule for %s - charge: %s, discharge: %s, Result: %s",
-            serial, charge_periods, discharge_periods, result,
+            "Wrote periodic schedule for %s - charge: %s, discharge: %s",
+            serial, charge_periods, discharge_periods,
         )
         return True
 
@@ -986,7 +1005,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             self.cloud_available = any_success
             if any_success:
                 self._last_full_poll_utc = dt_util.utcnow().isoformat(timespec="seconds")
-                await self._async_resolve_unknown_scheduling_api()
+                await self._async_resolve_unknown_periodic_read()
             else:
                 _LOGGER.warning("All per-inverter fetches failed")
             return self._finalize_data()
@@ -1054,7 +1073,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 if any_success:
                     self._last_full_poll = now
                     self._last_full_poll_utc = dt_util.utcnow().isoformat(timespec="seconds")
-                    await self._async_resolve_unknown_scheduling_api()
+                    await self._async_resolve_unknown_periodic_read()
                 else:
                     _LOGGER.warning("Alt mode: all per-inverter fetches failed during full poll")
             else:
@@ -1143,19 +1162,23 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             self.data[serial][AlphaESSNames.LastPollType] = self._last_poll_type
             self.data[serial][AlphaESSNames.LastFullPoll] = self._last_full_poll_utc or "never"
             self.data[serial][AlphaESSNames.PollTickCount] = self._poll_tick_count
-            self.data[serial][AlphaESSNames.SchedulingApi] = self.get_scheduling_api(serial)
+            self.data[serial][AlphaESSNames.PeriodicScheduleRead] = (
+                self.get_periodic_read_state(serial)
+            )
 
-    def get_scheduling_api(self, serial: str) -> str:
-        """Return which scheduling API this system accepts.
+    def get_periodic_read_state(self, serial: str) -> str:
+        """Return whether the periodic schedule can be read on this account.
 
-        "periodic" - the newer setTimeChargeBySn backend, written alongside the
-        legacy endpoints. "legacy" - only the old two-slot endpoints work here.
-        "unknown" - the probe hasn't produced an answer yet.
+        "readable" - getTimeChargeBySn returns a schedule. "unreadable" - it is
+        rejected, usually 6017. "unknown" - no answer yet.
+
+        This is a diagnostic only. An unreadable schedule does not mean the
+        system is on the old backend, and does not stop the periodic write.
         """
-        supported = self._periodic_support.get(serial)
-        if supported is None:
-            return SCHEDULING_API_UNKNOWN
-        return SCHEDULING_API_PERIODIC if supported else SCHEDULING_API_LEGACY
+        readable = self._periodic_readable.get(serial)
+        if readable is None:
+            return PERIODIC_READ_UNKNOWN
+        return PERIODIC_READ_OK if readable else PERIODIC_READ_UNAVAILABLE
 
     def _finalize_data(self) -> dict[str, dict[str, Any]]:
         """Write diagnostics and return a shallow per-serial copy of the data.

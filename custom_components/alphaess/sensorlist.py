@@ -123,13 +123,12 @@ _COMMON_DAILY_SENSORS: list[AlphaESSSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-    # Which charge/discharge scheduling API this system accepts. "periodic"
-    # means the newer setTimeChargeBySn backend is in use (and written to
-    # alongside the legacy endpoints); "legacy" means only the old endpoints
-    # work here. See issues #267 and #269.
+    # Whether getTimeChargeBySn can be read on this account. Diagnostic only:
+    # "unreadable" does not mean the system is on the old backend, and both
+    # scheduling APIs are written regardless. See issues #267 and #269.
     AlphaESSSensorDescription(
-        key=AlphaESSNames.SchedulingApi,
-        name="Scheduling API",
+        key=AlphaESSNames.PeriodicScheduleRead,
+        name="Periodic Schedule Read",
         icon="mdi:calendar-clock",
         native_unit_of_measurement=None,
         state_class=None,

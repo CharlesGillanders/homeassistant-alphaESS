@@ -382,7 +382,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
     # endpoints. Never fatal — a failure here just leaves it to be retried on
     # the first write.
     for serial in list(_coordinator.data):
-        await _coordinator.async_probe_periodic_support(serial)
+        await _coordinator.async_probe_periodic_readable(serial)
 
     # Auto-create EV charger subentries for any discovered chargers
     existing_ev_serials = {

@@ -122,4 +122,4 @@ class AlphaESSNames(str, Enum):
     LastPollType = "Last Poll Type"
     LastFullPoll = "Last Full Poll"
     PollTickCount = "Poll Tick Count"
-    SchedulingApi = "Scheduling API"
+    PeriodicScheduleRead = "Periodic Schedule Read"

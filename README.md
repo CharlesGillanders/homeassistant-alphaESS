@@ -70,30 +70,35 @@ The current charge config, discharge config and charging range will only update 
 
 ### Which scheduling API gets written
 
-AlphaESS has migrated some regions (UK, AUS/NZ) to a backend that only acts on its newer
-*periodic* schedule API. On those servers the older `updateChargeConfigInfo` /
-`updateDisChargeConfigInfo` endpoints still answer OK, but the inverter never applies the change
-until someone opens the AlphaESS app and presses Save
-([#267](https://github.com/CharlesGillanders/homeassistant-alphaESS/issues/267)), or the command
-times out downstream entirely
-([#269](https://github.com/CharlesGillanders/homeassistant-alphaESS/issues/269)). Other regions
+AlphaESS has migrated some systems to a backend that only acts on its newer *periodic* schedule
+API. On those, the older `updateChargeConfigInfo` / `updateDisChargeConfigInfo` endpoints still
+answer OK, but the inverter never applies the change until someone opens the AlphaESS app and
+presses Save ([#267](https://github.com/CharlesGillanders/homeassistant-alphaESS/issues/267)), or
+the command times out downstream entirely
+([#269](https://github.com/CharlesGillanders/homeassistant-alphaESS/issues/269)). Other systems
 still only understand the older endpoints.
 
-So every charge/discharge change is written to **both**: the periodic API
-(`setTimeChargeBySn`) first, then the legacy endpoints. No configuration is needed — on startup
-the integration checks once per inverter whether the periodic API is available for your system,
-and quietly skips it if your account is not entitled to it (return code `6017`).
+So every charge/discharge change is written to **both**, always: the periodic API
+(`setTimeChargeBySn`) first, then the legacy endpoints. Nothing to configure.
 
-Each inverter gets a **Scheduling API** diagnostic sensor showing which one applies to you:
+Deliberately, this is *not* conditional on detecting which backend you are on. The obvious check —
+reading the periodic schedule with `getTimeChargeBySn` — doesn't answer that question: it is
+separately permissioned and returns `6017` on plenty of accounts whose systems are on the new
+backend. Gating the write on it would skip the write for exactly the people this is meant to fix.
+The cost of always writing both is one extra API call per change.
+
+Each inverter has a **Periodic Schedule Read** diagnostic sensor, which reports only whether that
+read works on your account:
 
 | Value | Meaning |
 | --- | --- |
-| `periodic` | Your system is on the newer backend. Both APIs are written. |
-| `legacy` | Your system only accepts the old endpoints, and only those are written. |
-| `unknown` | The check hasn't returned an answer yet; it retries on each full poll. |
+| `readable` | `getTimeChargeBySn` returns your schedule. |
+| `unreadable` | The read is rejected, usually `6017`. |
+| `unknown` | No answer yet; retried on each full poll. |
 
-It's also included in the integration's downloadable diagnostics, so it's worth attaching that
-to any bug report about charge/discharge times not applying.
+`unreadable` does **not** mean your system is on the old backend, and it does not stop the
+periodic write. It is a diagnostic only. The value is also in the integration's downloadable
+diagnostics, which is worth attaching to any report about charge/discharge times not applying.
 
 Two things to be aware of:
 

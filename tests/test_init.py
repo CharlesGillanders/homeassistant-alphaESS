@@ -361,7 +361,7 @@ class FakeCoordinator:
         self.data = dict(type(self).next_data)
         self.cloud_available = type(self).next_cloud_available
         self.async_config_entry_first_refresh = AsyncMock()
-        self.async_probe_periodic_support = AsyncMock(return_value=False)
+        self.async_probe_periodic_readable = AsyncMock(return_value=False)
         type(self).instances.append(self)
 
     next_data = {}
