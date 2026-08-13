@@ -234,30 +234,38 @@ async def _async_service_battery_charge(call: ServiceCall) -> None:
     """Handle the setbatterycharge service."""
     serial = call.data["serial"]
     coordinator = _resolve_coordinator_for_serial(call.hass, serial)
-    await coordinator.async_write_charge_config(
-        serial,
-        bat_high_cap=call.data["chargestopsoc"],
-        grid_charge=int(call.data["enabled"] is True),
-        times={
-            "timeChaf1": call.data["cp1start"], "timeChae1": call.data["cp1end"],
-            "timeChaf2": call.data["cp2start"], "timeChae2": call.data["cp2end"],
-        },
-    )
+    try:
+        await coordinator.async_write_charge_config(
+            serial,
+            bat_high_cap=call.data["chargestopsoc"],
+            grid_charge=int(call.data["enabled"] is True),
+            times={
+                "timeChaf1": call.data["cp1start"], "timeChae1": call.data["cp1end"],
+                "timeChaf2": call.data["cp2start"], "timeChae2": call.data["cp2end"],
+            },
+        )
+    except AlphaESSApiError as err:
+        raise HomeAssistantError(
+            f"AlphaESS rejected the charge settings for {serial}: {err}") from err
 
 
 async def _async_service_battery_discharge(call: ServiceCall) -> None:
     """Handle the setbatterydischarge service."""
     serial = call.data["serial"]
     coordinator = _resolve_coordinator_for_serial(call.hass, serial)
-    await coordinator.async_write_discharge_config(
-        serial,
-        bat_use_cap=call.data["dischargecutoffsoc"],
-        ctr_dis=int(call.data["enabled"] is True),
-        times={
-            "timeDisf1": call.data["dp1start"], "timeDise1": call.data["dp1end"],
-            "timeDisf2": call.data["dp2start"], "timeDise2": call.data["dp2end"],
-        },
-    )
+    try:
+        await coordinator.async_write_discharge_config(
+            serial,
+            bat_use_cap=call.data["dischargecutoffsoc"],
+            ctr_dis=int(call.data["enabled"] is True),
+            times={
+                "timeDisf1": call.data["dp1start"], "timeDise1": call.data["dp1end"],
+                "timeDisf2": call.data["dp2start"], "timeDise2": call.data["dp2end"],
+            },
+        )
+    except AlphaESSApiError as err:
+        raise HomeAssistantError(
+            f"AlphaESS rejected the discharge settings for {serial}: {err}") from err
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> bool:

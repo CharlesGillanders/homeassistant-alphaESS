@@ -6,11 +6,16 @@ exceptions everywhere, including on reads that used to just return None — thes
 tests pin down which paths absorb them and which don't.
 """
 import logging
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from alphaess.alphaess import AlphaESSApiError
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 
 import custom_components.alphaess as init_mod
 from custom_components.alphaess import async_setup_entry
@@ -113,6 +118,206 @@ class TestWriteDetectsRejection:
         """No exception means the API took it -- previously unknowable."""
         assert await coordinator._async_write_periodic_schedule(
             SERIAL, coordinator._current_schedule_state(SERIAL)) is True
+
+
+class TestEntitiesRevertOnRejection:
+    """A refused write must not leave the UI showing a value that never landed."""
+
+    async def test_switch_reverts(self, make_coordinator, mock_api):
+        from custom_components.alphaess.switch import AlphaSwitch
+
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        # MagicMock(name=...) names the mock rather than setting .name
+        description = MagicMock(icon=None, entity_category=None,
+                                coordinator_key="gridCharge")
+        description.name = "Grid Charge Enabled"
+        switch = AlphaSwitch(coordinator, SERIAL, FakeEntry(), description)
+        switch.async_write_ha_state = MagicMock()
+        switch._optimistic_state = False
+        mock_api.updateChargeConfigInfo.side_effect = _api_error(6042)
+        mock_api.setTimeChargeBySn.side_effect = _api_error(6042)
+
+        await switch.async_turn_on()
+
+        assert switch._optimistic_state is False
+
+    async def test_number_reverts_stored_value_too(self, make_coordinator, mock_api):
+        """The stored value is what the charge/discharge buttons send next."""
+        from custom_components.alphaess.enums import AlphaESSNames
+        from custom_components.alphaess.number import AlphaNumber
+
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        description = MagicMock(key=AlphaESSNames.batHighCap, entity_category=None,
+                                native_unit_of_measurement="%", icon=None)
+        description.name = "batHighCap"
+        number = AlphaNumber(coordinator, SERIAL, FakeEntry(), description)
+        number.async_write_ha_state = MagicMock()
+        number._attr_native_value = 90.0
+        mock_api.updateChargeConfigInfo.side_effect = _api_error(6042)
+        mock_api.setTimeChargeBySn.side_effect = _api_error(6042)
+
+        await number.async_set_native_value(55.0)
+
+        assert number._attr_native_value == 90.0
+        assert coordinator.get_number_setting(SERIAL, "batHighCap") == 90.0
+
+
+class TestServicesReportCleanly:
+    """A rejection should read as an HA error, not a raw library traceback."""
+
+    def _call(self, mock_hass, coordinator, data):
+        entry = FakeEntry()
+        entry.runtime_data = coordinator
+        mock_hass.config_entries.async_entries.return_value = [entry]
+        return SimpleNamespace(hass=mock_hass, data=data)
+
+    async def test_charge_service(self, mock_hass, make_coordinator, mock_api):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        mock_api.setTimeChargeBySn.side_effect = _api_error(6042)
+        mock_api.updateChargeConfigInfo.side_effect = _api_error(6042)
+        call = self._call(mock_hass, coordinator, {
+            "serial": SERIAL, "chargestopsoc": 90, "enabled": True,
+            "cp1start": "01:00", "cp1end": "05:00",
+            "cp2start": "00:00", "cp2end": "00:00",
+        })
+
+        with pytest.raises(HomeAssistantError, match="rejected the charge settings"):
+            await init_mod._async_service_battery_charge(call)
+
+    async def test_discharge_service(self, mock_hass, make_coordinator, mock_api):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        mock_api.setTimeChargeBySn.side_effect = _api_error(6042)
+        mock_api.updateDisChargeConfigInfo.side_effect = _api_error(6042)
+        call = self._call(mock_hass, coordinator, {
+            "serial": SERIAL, "dischargecutoffsoc": 10, "enabled": True,
+            "dp1start": "18:00", "dp1end": "22:00",
+            "dp2start": "00:00", "dp2end": "00:00",
+        })
+
+        with pytest.raises(HomeAssistantError, match="rejected the discharge settings"):
+            await init_mod._async_service_battery_discharge(call)
+
+
+class TestButtonsDoNotBurnTheRateLimit:
+    """A refused command shouldn't cost the user a 30 second cooldown."""
+
+    def _button(self, coordinator, key, name, notify=False):
+        from custom_components.alphaess.button import AlphaESSBatteryButton
+        from custom_components.alphaess.const import CONF_DISABLE_NOTIFICATIONS
+
+        description = MagicMock(key=key, icon=None, entity_category=None)
+        description.name = name
+
+        subentry = None
+        if notify:
+            subentry = MagicMock(subentry_id="sub-1")
+            subentry.data = {CONF_DISABLE_NOTIFICATIONS: False}
+
+        button = AlphaESSBatteryButton(
+            coordinator, FakeEntry(), SERIAL, description, subentry=subentry)
+        button.hass = MagicMock()
+        button.hass.services.async_call = AsyncMock()
+        if notify:
+            entry = MagicMock()
+            entry.subentries = {"sub-1": subentry}
+            button.hass.config_entries.async_get_entry = MagicMock(return_value=entry)
+        return button
+
+    def _notifications(self, button):
+        return [c for c in button.hass.services.async_call.await_args_list
+                if c.args[:2] == ("persistent_notification", "create")]
+
+    async def test_timed_command_rejection_restores_the_timestamp(
+        self, make_coordinator, mock_api
+    ):
+        from custom_components.alphaess.enums import AlphaESSNames
+
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        mock_api.setTimeChargeBySn.side_effect = _api_error(6042)
+        mock_api.updateChargeConfigInfo.side_effect = _api_error(6042)
+        button = self._button(coordinator, AlphaESSNames.ButtonChargeThirty, "30 Minute Charge")
+
+        await button.async_press()
+
+        assert coordinator.last_charge_update.get(SERIAL) is None
+
+    async def test_reset_rejection_restores_both_timestamps(self, make_coordinator, mock_api):
+        from custom_components.alphaess.enums import AlphaESSNames
+
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        mock_api.updateChargeConfigInfo.side_effect = _api_error(6042)
+        button = self._button(coordinator, AlphaESSNames.ButtonRechargeConfig, "Reset Config")
+
+        await button.async_press()
+
+        assert coordinator.last_charge_update.get(SERIAL) is None
+        assert coordinator.last_discharge_update.get(SERIAL) is None
+
+    async def test_failures_are_notified_when_notifications_are_on(
+        self, make_coordinator, mock_api
+    ):
+        from custom_components.alphaess.enums import AlphaESSNames
+
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        mock_api.setTimeChargeBySn.side_effect = _api_error(6042)
+        mock_api.updateChargeConfigInfo.side_effect = _api_error(6042)
+        button = self._button(coordinator, AlphaESSNames.ButtonChargeThirty,
+                              "30 Minute Charge", notify=True)
+
+        await button.async_press()
+
+        notifications = self._notifications(button)
+        assert notifications, "expected a failure notification"
+        assert "rejected" in notifications[-1].args[2]["message"]
+
+    async def test_reset_failure_is_notified(self, make_coordinator, mock_api):
+        from custom_components.alphaess.enums import AlphaESSNames
+
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        mock_api.updateChargeConfigInfo.side_effect = _api_error(6042)
+        button = self._button(coordinator, AlphaESSNames.ButtonRechargeConfig,
+                              "Reset Config", notify=True)
+
+        await button.async_press()
+
+        notifications = self._notifications(button)
+        assert notifications
+        assert "Reset failed" in notifications[-1].args[2]["title"]
+
+
+class TestConfigFlowRejectsBadCredentials:
+    """Previously a wrong AppSecret still created an entry."""
+
+    async def _validate(self, mock_hass, monkeypatch, err):
+        from custom_components.alphaess import config_flow as cf
+
+        client = MagicMock()
+        client.authenticate = AsyncMock(side_effect=err)
+        client.getESSList = AsyncMock()
+        monkeypatch.setattr(cf.alphaess, "alphaess", MagicMock(return_value=client))
+        monkeypatch.setattr(cf, "async_get_clientsession", MagicMock())
+        return await cf.validate_input(
+            mock_hass, {"AppID": "id", "AppSecret": "secret"})
+
+    async def test_sign_failure_is_invalid_auth(self, mock_hass, monkeypatch):
+        from custom_components.alphaess.config_flow import InvalidAuth
+
+        with pytest.raises(InvalidAuth):
+            await self._validate(mock_hass, monkeypatch, _api_error(6007))
+
+    async def test_other_codes_are_cannot_connect(self, mock_hass, monkeypatch):
+        from custom_components.alphaess.config_flow import CannotConnect
+
+        with pytest.raises(CannotConnect):
+            await self._validate(mock_hass, monkeypatch, _api_error(6042))
 
 
 class TestSetupHandlesRejection:

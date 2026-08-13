@@ -1,4 +1,5 @@
 """Switch platform for AlphaESS integration."""
+import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
@@ -12,6 +13,8 @@ from .const import (
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .device import build_inverter_device_info
 from .sensorlist import CHARGE_DISCHARGE_SWITCHES
+
+_LOGGER = logging.getLogger(__name__)
 
 # Serialize switch writes; the AlphaESS API rate-limits config writes.
 PARALLEL_UPDATES = 1
@@ -92,26 +95,34 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on (enable) the setting."""
-        self._optimistic_state = True
-        self.async_write_ha_state()
         await self._set_value(1)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off (disable) the setting."""
-        self._optimistic_state = False
-        self.async_write_ha_state()
         await self._set_value(0)
 
     async def _set_value(self, value: int) -> None:
         """Send the updated config to the API."""
-        if self._coordinator_key == "gridCharge":
-            await self._coordinator.async_write_charge_config(
-                self._serial, grid_charge=value,
-            )
-        elif self._coordinator_key == "ctrDis":
-            await self._coordinator.async_write_discharge_config(
-                self._serial, ctr_dis=value,
-            )
+        previous_state = self._optimistic_state
+        self._optimistic_state = bool(value)
+        self.async_write_ha_state()
+
+        try:
+            if self._coordinator_key == "gridCharge":
+                await self._coordinator.async_write_charge_config(
+                    self._serial, grid_charge=value,
+                )
+            elif self._coordinator_key == "ctrDis":
+                await self._coordinator.async_write_discharge_config(
+                    self._serial, ctr_dis=value,
+                )
+        except Exception:
+            # Nothing was written, so don't leave the UI claiming otherwise.
+            _LOGGER.exception("Failed to update %s for %s, reverting",
+                              self._coordinator_key, self._serial)
+            self._optimistic_state = previous_state
+            self.async_write_ha_state()
+            return
 
         # No immediate refresh — optimistic state is shown until the next
         # scheduled coordinator update confirms the value from the API.

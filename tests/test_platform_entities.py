@@ -290,6 +290,7 @@ class TestSwitchEntity:
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {}}
         switch = self._make(coordinator)
+        switch.async_write_ha_state = MagicMock()
         switch._coordinator_key = "unknown"
         await switch._set_value(1)
         mock_api.updateChargeConfigInfo.assert_not_awaited()

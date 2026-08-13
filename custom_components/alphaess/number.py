@@ -156,19 +156,29 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         )
 
     async def async_set_native_value(self, value: float) -> None:
+        previous_value = self._attr_native_value
         self._attr_native_value = value
         self.save_value(value)
         self.async_write_ha_state()
 
         # Push to API
-        if self.key is AlphaESSNames.batHighCap:
-            await self._coordinator.async_write_charge_config(
-                self._serial, bat_high_cap=value,
-            )
-        elif self.key is AlphaESSNames.batUseCap:
-            await self._coordinator.async_write_discharge_config(
-                self._serial, bat_use_cap=value,
-            )
+        try:
+            if self.key is AlphaESSNames.batHighCap:
+                await self._coordinator.async_write_charge_config(
+                    self._serial, bat_high_cap=value,
+                )
+            elif self.key is AlphaESSNames.batUseCap:
+                await self._coordinator.async_write_discharge_config(
+                    self._serial, bat_use_cap=value,
+                )
+        except Exception:
+            # Nothing was written, so put the stored value back too -- it is
+            # what the charge/discharge buttons will send next time.
+            _LOGGER.exception("Failed to set %s for %s, reverting", self._name, self._serial)
+            self._attr_native_value = previous_value
+            self.save_value(previous_value)
+            self.async_write_ha_state()
+            return
 
         await self._coordinator.async_request_refresh()
 

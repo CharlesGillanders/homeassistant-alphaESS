@@ -4,6 +4,8 @@ import time as time_mod
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from alphaess.alphaess import AlphaESSApiError
+
 from .const import (
     ALPHA_POST_REQUEST_RESTRICTION,
     CONF_DISABLE_NOTIFICATIONS,
@@ -227,7 +229,21 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             last_update = last_update_dict.get(self._serial)
             if last_update is None or now - last_update >= rate_limit:
                 last_update_dict[self._serial] = now
-                await update_fn(update_key, self._serial, self._time)
+                try:
+                    await update_fn(update_key, self._serial, self._time)
+                except AlphaESSApiError as err:
+                    # Nothing was applied, so don't make the user sit out the
+                    # rate limit before they can try again.
+                    last_update_dict[self._serial] = last_update
+                    _LOGGER.error("%s command rejected for %s: %s",
+                                  movement_direction, self._serial, err)
+                    if not self._notifications_disabled:
+                        await create_persistent_notification(
+                            self.hass,
+                            message=f"AlphaESS rejected the {movement_direction.lower()} command "
+                                    f"for {self._serial}: {err}",
+                            title=f"{self._serial} {movement_direction} failed")
+                    return
                 _LOGGER.info("Notifications disabled = %s for %s", self._notifications_disabled, self._serial)
                 if not self._notifications_disabled:
                     _LOGGER.info("Sending notification for %s %s", self._serial, movement_direction)
@@ -250,8 +266,21 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 self._serial] >= rate_limit) and \
                     (last_discharge_update.get(self._serial) is None or now - last_discharge_update[
                         self._serial] >= rate_limit):
+                previous_charge = last_charge_update.get(self._serial)
+                previous_discharge = last_discharge_update.get(self._serial)
                 last_discharge_update[self._serial] = last_charge_update[self._serial] = now
-                await self._coordinator.reset_config(self._serial)
+                try:
+                    await self._coordinator.reset_config(self._serial)
+                except AlphaESSApiError as err:
+                    last_charge_update[self._serial] = previous_charge
+                    last_discharge_update[self._serial] = previous_discharge
+                    _LOGGER.error("Reset rejected for %s: %s", self._serial, err)
+                    if not self._notifications_disabled:
+                        await create_persistent_notification(
+                            self.hass,
+                            message=f"AlphaESS rejected the reset for {self._serial}: {err}",
+                            title=f"{self._serial} Reset failed")
+                    return
                 if not self._notifications_disabled:
                     await create_persistent_notification(self.hass,
                                                          message=f"Charge and discharge configuration reset for {self._serial}.",
