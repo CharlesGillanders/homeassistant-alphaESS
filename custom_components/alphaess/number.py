@@ -173,10 +173,15 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
                 )
         except Exception:
             # Nothing was written, so put the stored value back too -- it is
-            # what the charge/discharge buttons will send next time.
+            # what the charge/discharge buttons will send next time. With no
+            # previous value, drop the key entirely rather than storing None,
+            # which would shadow the default those callers fall back to.
             _LOGGER.exception("Failed to set %s for %s, reverting", self._name, self._serial)
             self._attr_native_value = previous_value
-            self.save_value(previous_value)
+            if previous_value is None:
+                self._coordinator.clear_number_setting(self._serial, self._name)
+            else:
+                self.save_value(previous_value)
             self.async_write_ha_state()
             return
 

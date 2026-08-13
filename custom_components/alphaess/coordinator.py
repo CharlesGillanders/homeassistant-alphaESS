@@ -539,6 +539,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         """Read a per-inverter number setting."""
         return self.number_settings.get(serial, {}).get(key, default)
 
+    def clear_number_setting(self, serial: str, key: str) -> None:
+        """Forget a stored setting so callers fall back to their default.
+
+        Storing None instead would shadow that default, since get_number_setting
+        only substitutes when the key is absent.
+        """
+        self.number_settings.get(serial, {}).pop(key, None)
+
     def get_ev_charger_subentry_id(self, ev_serial: str) -> str | None:
         """Get the subentry ID for an EV charger by its serial number."""
         return self._ev_charger_subentry_map.get(ev_serial)

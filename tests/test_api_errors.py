@@ -189,6 +189,32 @@ class TestEntitiesRevertOnRejection:
         assert number._attr_native_value == 90.0
         assert coordinator.get_number_setting(SERIAL, "batHighCap") == 90.0
 
+    async def test_number_revert_does_not_shadow_the_default(
+        self, make_coordinator, mock_api
+    ):
+        """Reverting to "no value yet" must not store None.
+
+        get_number_setting falls back only when the key is absent, so a stored
+        None would be handed to the API in place of the 90/10 default.
+        """
+        from custom_components.alphaess.enums import AlphaESSNames
+        from custom_components.alphaess.number import AlphaNumber
+
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        description = MagicMock(key=AlphaESSNames.batHighCap, entity_category=None,
+                                native_unit_of_measurement="%", icon=None)
+        description.name = "batHighCap"
+        number = AlphaNumber(coordinator, SERIAL, FakeEntry(), description)
+        number.async_write_ha_state = MagicMock()
+        number._attr_native_value = None
+        mock_api.updateChargeConfigInfo.side_effect = _api_error(6042)
+        mock_api.setTimeChargeBySn.side_effect = _api_error(6042)
+
+        await number.async_set_native_value(55.0)
+
+        assert coordinator.get_number_setting(SERIAL, "batHighCap", 90) == 90
+
 
 class TestServicesReportCleanly:
     """A rejection should read as an HA error, not a raw library traceback."""
