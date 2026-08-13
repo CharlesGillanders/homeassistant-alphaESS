@@ -87,6 +87,10 @@ separately permissioned and returns `6017` on plenty of accounts whose systems a
 backend. Gating the write on it would skip the write for exactly the people this is meant to fix.
 The cost of always writing both is one extra API call per change.
 
+If the periodic write comes back `6017` ("no operation permissions"), that's the API saying this
+system can't use the feature at all. It's permanent, so the integration stops attempting it for
+that inverter and writes only the legacy endpoints from then on.
+
 Each inverter has a **Periodic Schedule Read** diagnostic sensor, which reports only whether that
 read works on your account:
 

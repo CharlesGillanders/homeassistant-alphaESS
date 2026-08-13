@@ -21,8 +21,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import slugify
 
 from alphaess import alphaess
+from alphaess.alphaess import AlphaESSApiError
 
 from .const import (
+    AUTH_FAILURE_CODES,
     CONF_ALT_POLLING_MODE,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_EV_CHARGER_MODEL,
@@ -271,17 +273,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
 
     # Don't set a single IP on the client - the coordinator handles per-inverter IPs.
     # Use HA's shared aiohttp session; the library applies verify_ssl per request.
+    # raise_on_error surfaces the API's own return code instead of collapsing
+    # every failure to None. That is the only way to tell an accepted schedule
+    # write from a rejected one, since those endpoints answer with data: null
+    # either way. Reads stay tolerant of it — see AlphaESSDataUpdateCoordinator._read.
     client = alphaess.alphaess(
         entry.data["AppID"],
         entry.data["AppSecret"],
         session=async_get_clientsession(hass),
-        verify_ssl=verify_ssl
+        verify_ssl=verify_ssl,
+        raise_on_error=True,
     )
 
     # Call getESSList to initialise the API client and discover systems
     # This is required before getdata() will work
     try:
         ess_list = await client.getESSList()
+    except AlphaESSApiError as err:
+        # The API answered and refused. Bad credentials show up here as a
+        # return code rather than an HTTP 401.
+        if err.code in AUTH_FAILURE_CODES:
+            raise ConfigEntryAuthFailed(
+                f"AlphaESS credentials rejected: {err}") from err
+        raise ConfigEntryNotReady(f"AlphaESS cloud API refused the request: {err}") from err
     except aiohttp.ClientResponseError as err:
         if err.status == 401:
             raise ConfigEntryAuthFailed("AlphaESS credentials rejected") from err

@@ -5,6 +5,11 @@ from datetime import timedelta
 from homeassistant.const import Platform
 
 DOMAIN = "alphaess"
+
+# Return codes that mean the credentials or the binding are wrong, rather than
+# something transient. 6007 sign verification, 6009 whitelist, 6010 sign empty,
+# 6012 appId empty, 6005 appId not bound to the SN.
+AUTH_FAILURE_CODES = {6005, 6007, 6009, 6010, 6012}
 PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,

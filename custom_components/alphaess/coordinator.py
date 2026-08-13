@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from alphaess import alphaess
+from alphaess.alphaess import AlphaESSApiError
 
 from .const import (
     CONF_SERIAL_NUMBER,
@@ -44,6 +45,11 @@ PERIODIC_MAX_CHARGE_LIMIT = 100
 PERIODIC_READ_OK = "readable"
 PERIODIC_READ_UNAVAILABLE = "unreadable"
 PERIODIC_READ_UNKNOWN = "unknown"
+
+# "No operation permissions" — this system is not entitled to the periodic
+# endpoints. Documented as permanent, so it is worth caching rather than
+# retrying. See docs/RETURN_CODES.md in alphaess-openAPI.
+PERIODIC_NOT_ENTITLED = 6017
 
 MINUTES_PER_DAY = 1440
 
@@ -468,6 +474,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # power setpoint configured in the AlphaESS app survives our writes.
         self._periodic_power: dict[str, dict[str, int]] = {}
 
+        # Serials whose periodic *write* came back 6017. Unlike the read, this
+        # is the endpoint we actually care about answering for itself, so once
+        # it refuses there is no point asking again.
+        self._periodic_write_denied: set[str] = set()
+
         # Guards temporary mutation of the shared API client's ipaddress
         self._local_ip_lock = asyncio.Lock()
 
@@ -481,6 +492,26 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                     self._inverter_subentry_map[serial] = subentry_id
                 elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
                     self._ev_charger_subentry_map[serial] = subentry_id
+
+    async def _read(self, method, *args) -> Any:
+        """Run a polling read, tolerating an API-level rejection.
+
+        The client runs with raise_on_error so writes can tell success from
+        failure. Reads want the older, softer behaviour: an endpoint this
+        account cannot use (6017) or a momentarily unhappy one should leave that
+        one value missing, not abort the whole inverter fetch and trip the
+        error backoff. Transport errors still propagate — those really do mean
+        the inverter is unreachable.
+        """
+        try:
+            return await method(*args)
+        except AlphaESSApiError as err:
+            _LOGGER.debug(
+                "%s returned %s%s; continuing without it",
+                getattr(method, "__name__", method), err.code,
+                f" ({err.description})" if err.description else "",
+            )
+            return None
 
     def get_inverter_subentry_id(self, serial: str) -> str | None:
         """Get the subentry ID for an inverter by its serial number."""
@@ -779,18 +810,24 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             payload = await self.api.getTimeChargeBySn(serial)
         except asyncio.CancelledError:
             raise
+        except AlphaESSApiError as err:
+            # The API answered and refused. 6017 means this system is not
+            # entitled to the feature, which will not change on a retry, so
+            # cache it. Anything else might, so leave the answer open.
+            if err.code == PERIODIC_NOT_ENTITLED:
+                _LOGGER.debug(
+                    "Periodic schedule not readable for %s (%s)", serial, err.code)
+                self._periodic_readable[serial] = False
+                return False
+            _LOGGER.debug("Periodic schedule read for %s failed with %s", serial, err.code)
+            return None
         except Exception as err:
             _LOGGER.debug("Periodic schedule probe failed for %s: %s", serial, err)
             return None
 
         if not payload:
-            # The library returns None for API-level rejections, which for this
-            # endpoint means 6017 "no operation permissions" — the system isn't
-            # entitled to the feature. Not a transient error, so cache it.
-            _LOGGER.debug(
-                "Periodic schedule API unavailable for %s, using the legacy endpoints",
-                serial,
-            )
+            # Answered successfully but with nothing in it.
+            _LOGGER.debug("Periodic schedule for %s read back empty", serial)
             self._periodic_readable[serial] = False
             return False
 
@@ -854,13 +891,16 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         """Push the whole schedule via setTimeChargeBySn.
 
         Always attempted — see _async_apply_schedule for why this is not gated
-        on the read endpoint.
+        on the read endpoint — except on systems the API has already told us
+        outright are not entitled to it.
 
-        Returns True when the request completed without raising. That is not
-        proof the schedule was accepted: the API answers with null data whether
-        it succeeded or not, so the library cannot tell the two apart. A
-        rejection still shows up as an error in the log from the library.
+        Returns True only when the API accepted the schedule. The client runs
+        with raise_on_error, so a rejection arrives as AlphaESSApiError rather
+        than being flattened into the same None a success returns.
         """
+        if serial in self._periodic_write_denied:
+            return False
+
         charge = state["charge"]
         discharge = state["discharge"]
         powers = self._periodic_power.get(serial, {})
@@ -921,6 +961,22 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             )
         except asyncio.CancelledError:
             raise
+        except AlphaESSApiError as err:
+            if err.code == PERIODIC_NOT_ENTITLED:
+                # Definitive, and from the write itself rather than inferred
+                # from the read. Stop attempting it for this system.
+                self._periodic_write_denied.add(serial)
+                _LOGGER.info(
+                    "%s is not entitled to the periodic schedule API (%s); "
+                    "using the legacy endpoints only from now on",
+                    serial, err.code,
+                )
+            else:
+                _LOGGER.warning(
+                    "Periodic schedule write for %s rejected with %s%s",
+                    serial, err.code, f" - {err.expMsg}" if err.expMsg else "",
+                )
+            return False
         except Exception as err:
             # Don't give up on the change — the legacy write still follows and
             # is what the unmigrated backends act on.
@@ -974,7 +1030,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             throttle_delay = self.throttle_multiplier
 
             # Get list of registered inverters
-            units = await self.api.getESSList()
+            units = await self._read(self.api.getESSList)
             if not units:
                 return self.data
 
@@ -1055,7 +1111,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 # Full poll — per-inverter API calls
                 self._last_poll_type = "full"
                 _LOGGER.debug("Alt mode: performing full poll")
-                units = await self.api.getESSList()
+                units = await self._read(self.api.getESSList)
                 if not units:
                     return self.data
 
@@ -1116,14 +1172,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         # getLastPowerData — real-time watts/SOC (skip for unsupported models)
                         model = self.data[serial].get("Model")
                         if model not in LOWER_INVERTER_API_CALL_LIST:
-                            power_data = await self.api.getLastPowerData(serial)
+                            power_data = await self._read(self.api.getLastPowerData, serial)
                             if power_data:
                                 parsed = self.parser.parse_power_data(power_data, None)
                                 self.data[serial].update(parsed)
                             await asyncio.sleep(throttle_delay)
 
                         # getOneDateEnergyBySn — daily energy counters
-                        energy_data = await self.api.getOneDateEnergyBySn(
+                        energy_data = await self._read(
+                            self.api.getOneDateEnergyBySn,
                             serial, dt_util.now().strftime("%Y-%m-%d")
                         )
                         if energy_data:
@@ -1134,7 +1191,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         # EV charger status if one is known
                         ev_sn = self.data[serial].get(AlphaESSNames.evchargersn)
                         if ev_sn:
-                            ev_status = await self.api.getEvChargerStatusBySn(serial, ev_sn)
+                            ev_status = await self._read(
+                                self.api.getEvChargerStatusBySn, serial, ev_sn)
                             if ev_status:
                                 self.data[serial][AlphaESSNames.evchargerstatus] = ev_status.get("evchargerStatus")
                                 self.data[serial][AlphaESSNames.evchargerstatusraw] = ev_status.get("evchargerStatus")
@@ -1217,39 +1275,41 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         """Fetch all API data for a single inverter by its serial number."""
         today = dt_util.now().strftime("%Y-%m-%d")
 
-        unit["SumData"] = await self.api.getSumDataForCustomer(serial)
+        unit["SumData"] = await self._read(self.api.getSumDataForCustomer, serial)
         await asyncio.sleep(throttle_delay)
 
-        unit["OneDateEnergy"] = await self.api.getOneDateEnergyBySn(serial, today)
+        unit["OneDateEnergy"] = await self._read(self.api.getOneDateEnergyBySn, serial, today)
         await asyncio.sleep(throttle_delay)
 
         # Skip getLastPowerData for inverters that don't support it
         if unit.get("minv") not in LOWER_INVERTER_API_CALL_LIST:
-            unit["LastPower"] = await self.api.getLastPowerData(serial)
+            unit["LastPower"] = await self._read(self.api.getLastPowerData, serial)
             await asyncio.sleep(throttle_delay)
 
-        unit["ChargeConfig"] = await self.api.getChargeConfigInfo(serial)
+        unit["ChargeConfig"] = await self._read(self.api.getChargeConfigInfo, serial)
         await asyncio.sleep(throttle_delay)
 
-        unit["DisChargeConfig"] = await self.api.getDisChargeConfigInfo(serial)
+        unit["DisChargeConfig"] = await self._read(self.api.getDisChargeConfigInfo, serial)
         await asyncio.sleep(throttle_delay)
 
         if get_power:
-            unit["OneDayPower"] = await self.api.getOneDayPowerBySn(serial, today)
+            unit["OneDayPower"] = await self._read(self.api.getOneDayPowerBySn, serial, today)
             await asyncio.sleep(throttle_delay)
 
         if get_ev:
             try:
-                unit["EVData"] = await self.api.getEvChargerConfigList(serial)
+                unit["EVData"] = await self._read(self.api.getEvChargerConfigList, serial)
                 await asyncio.sleep(throttle_delay)
                 if unit["EVData"]:
                     ev_list = unit["EVData"]
                     ev_item = ev_list[0] if isinstance(ev_list, list) else ev_list
                     ev_serial = ev_item.get("evchargerSn")
                     if ev_serial:
-                        unit["EVStatus"] = await self.api.getEvChargerStatusBySn(serial, ev_serial)
+                        unit["EVStatus"] = await self._read(
+                            self.api.getEvChargerStatusBySn, serial, ev_serial)
                         await asyncio.sleep(throttle_delay)
-                        unit["EVCurrent"] = await self.api.getEvChargerCurrentsBySn(serial)
+                        unit["EVCurrent"] = await self._read(
+                            self.api.getEvChargerCurrentsBySn, serial)
                         await asyncio.sleep(throttle_delay)
             except asyncio.CancelledError:
                 raise
