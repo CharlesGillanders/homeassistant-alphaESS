@@ -54,6 +54,21 @@ PERIODIC_NOT_ENTITLED = 6017
 MINUTES_PER_DAY = 1440
 
 
+def describe_api_error(err: AlphaESSApiError) -> str:
+    """Render a return code with the meaning the library has on file.
+
+    The English text comes from RETURN_CODES / UNDOCUMENTED_RETURN_CODES in
+    alphaess-openAPI, via the exception, so the wording stays in one place. A
+    code the library doesn't recognise still shows its number.
+    """
+    described = str(err.code)
+    if err.description:
+        described += f" ({err.description})"
+    if err.expMsg:
+        described += f" - {err.expMsg}"
+    return described
+
+
 def _time_to_minutes(value: str) -> int:
     """Convert an "HH:mm" string into minutes since midnight."""
     hours, _, minutes = value.partition(":")
@@ -507,9 +522,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             return await method(*args)
         except AlphaESSApiError as err:
             _LOGGER.debug(
-                "%s returned %s%s; continuing without it",
-                getattr(method, "__name__", method), err.code,
-                f" ({err.description})" if err.description else "",
+                "%s returned %s; continuing without it",
+                getattr(method, "__name__", method), describe_api_error(err),
             )
             return None
 
@@ -815,11 +829,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             # entitled to the feature, which will not change on a retry, so
             # cache it. Anything else might, so leave the answer open.
             if err.code == PERIODIC_NOT_ENTITLED:
-                _LOGGER.debug(
-                    "Periodic schedule not readable for %s (%s)", serial, err.code)
+                _LOGGER.debug("Periodic schedule not readable for %s: %s",
+                              serial, describe_api_error(err))
                 self._periodic_readable[serial] = False
                 return False
-            _LOGGER.debug("Periodic schedule read for %s failed with %s", serial, err.code)
+            _LOGGER.debug("Periodic schedule read for %s failed with %s",
+                          serial, describe_api_error(err))
             return None
         except Exception as err:
             _LOGGER.debug("Periodic schedule probe failed for %s: %s", serial, err)
@@ -967,14 +982,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 # from the read. Stop attempting it for this system.
                 self._periodic_write_denied.add(serial)
                 _LOGGER.info(
-                    "%s is not entitled to the periodic schedule API (%s); "
+                    "%s is not entitled to the periodic schedule API: %s; "
                     "using the legacy endpoints only from now on",
-                    serial, err.code,
+                    serial, describe_api_error(err),
                 )
             else:
                 _LOGGER.warning(
-                    "Periodic schedule write for %s rejected with %s%s",
-                    serial, err.code, f" - {err.expMsg}" if err.expMsg else "",
+                    "Periodic schedule write for %s rejected with %s",
+                    serial, describe_api_error(err),
                 )
             return False
         except Exception as err:

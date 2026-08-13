@@ -31,6 +31,32 @@ def _api_error(code, expMsg=None):
                             description="desc")
 
 
+class TestErrorDescriptions:
+    """Codes are rendered with the library's own wording, not a local copy."""
+
+    def test_known_code_shows_its_meaning(self):
+        from alphaess.alphaess import UNDOCUMENTED_RETURN_CODES
+
+        from custom_components.alphaess.coordinator import describe_api_error
+
+        err = AlphaESSApiError(
+            code=6017, msg="No operation permissions",
+            description=UNDOCUMENTED_RETURN_CODES[6017])
+        assert describe_api_error(err) == "6017 (No operation permissions)"
+
+    def test_expmsg_is_appended_when_present(self):
+        err = AlphaESSApiError(code=6001, description="Parameter error",
+                               expMsg="time list is null")
+        from custom_components.alphaess.coordinator import describe_api_error
+
+        assert describe_api_error(err) == "6001 (Parameter error) - time list is null"
+
+    def test_unknown_code_still_shows_the_number(self):
+        from custom_components.alphaess.coordinator import describe_api_error
+
+        assert describe_api_error(AlphaESSApiError(code=9999)) == "9999"
+
+
 class TestReadsStayTolerant:
     """A refused read must not take the whole inverter down with it.
 
