@@ -290,6 +290,7 @@ class TestSwitchEntity:
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {}}
         switch = self._make(coordinator)
+        switch.async_write_ha_state = MagicMock()
         switch._coordinator_key = "unknown"
         await switch._set_value(1)
         mock_api.updateChargeConfigInfo.assert_not_awaited()
@@ -438,16 +439,39 @@ class TestTimeEntity:
         assert args == (SERIAL, 12, 0, "00:00", "22:00", "00:00", "20:00")
 
     async def test_set_value_failure_reverts(self, make_coordinator, mock_api):
+        """Only revert when nothing was written — both APIs have to fail."""
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {"charge_timeChaf1": "03:00"}}
         entity = self._make(coordinator, "charge_timeChaf1")
         entity.async_write_ha_state = MagicMock()
         entity._attr_native_value = dt_time(3, 0)
+        mock_api.setTimeChargeBySn.side_effect = OSError("api down")
         mock_api.updateChargeConfigInfo.side_effect = OSError("api down")
 
         await entity.async_set_value(dt_time(8, 0))
         assert entity._attr_native_value == dt_time(3, 0)
         coordinator.async_request_refresh.assert_not_awaited()
+
+    async def test_set_value_keeps_value_when_only_legacy_fails(
+        self, make_coordinator, mock_api
+    ):
+        """The periodic request went through, so the change may have landed."""
+        coordinator = make_coordinator()
+        # Both sides need a period, otherwise the periodic write is skipped.
+        coordinator.data = {SERIAL: {
+            "charge_timeChaf1": "03:00", "charge_timeChae1": "05:00",
+            "discharge_timeDisf1": "17:00", "discharge_timeDise1": "21:00",
+        }}
+        entity = self._make(coordinator, "charge_timeChaf1")
+        entity.async_write_ha_state = MagicMock()
+        entity._attr_native_value = dt_time(3, 0)
+        mock_api.updateChargeConfigInfo.side_effect = OSError("api down")
+
+        # 04:00 keeps the charge window inside 03:00-05:00, clear of the
+        # discharge window, so the periodic write actually goes out.
+        await entity.async_set_value(dt_time(4, 0))
+        assert entity._attr_native_value == dt_time(4, 0)
+        coordinator.async_request_refresh.assert_awaited_once()
 
     def test_available_and_properties(self, make_coordinator):
         coordinator = make_coordinator()

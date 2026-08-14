@@ -22,8 +22,10 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from alphaess import alphaess
+from alphaess.alphaess import AlphaESSApiError
 
 from .const import (
+    AUTH_FAILURE_CODES,
     CONF_ALT_POLLING_MODE,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_FAST_SCAN_INTERVAL_SECONDS,
@@ -63,10 +65,14 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input and return discovered systems."""
 
+    # raise_on_error so a rejected sign check is reported as such. Without it
+    # the API answers 6007 with an empty body, the call returns None, and an
+    # entry gets created around credentials that will never work.
     client = alphaess.alphaess(
         data["AppID"], data["AppSecret"],
         session=async_get_clientsession(hass),
-        verify_ssl=data.get("Verify SSL Certificate", True)
+        verify_ssl=data.get("Verify SSL Certificate", True),
+        raise_on_error=True,
     )
 
     try:
@@ -75,6 +81,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         ess_list = await client.getESSList()
         await asyncio.sleep(1)
 
+    except AlphaESSApiError as e:
+        if e.code in AUTH_FAILURE_CODES:
+            raise InvalidAuth from e
+        raise CannotConnect from e
     except aiohttp.ClientResponseError as e:
         if e.status == 401:
             raise InvalidAuth

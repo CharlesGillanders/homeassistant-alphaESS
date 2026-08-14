@@ -68,6 +68,58 @@ An error will be placed in the logs
 
 The current charge config, discharge config and charging range will only update once the API is re-called (can be up to 1 min)
 
+### Which scheduling API gets written
+
+AlphaESS has migrated some systems to a backend that only acts on its newer *periodic* schedule
+API. On those, the older `updateChargeConfigInfo` / `updateDisChargeConfigInfo` endpoints still
+answer OK, but the inverter never applies the change until someone opens the AlphaESS app and
+presses Save ([#267](https://github.com/CharlesGillanders/homeassistant-alphaESS/issues/267)), or
+the command times out downstream entirely
+([#269](https://github.com/CharlesGillanders/homeassistant-alphaESS/issues/269)). Other systems
+still only understand the older endpoints.
+
+So every charge/discharge change is written to **both**, always: the periodic API
+(`setTimeChargeBySn`) first, then the legacy endpoints. Nothing to configure.
+
+Deliberately, this is *not* conditional on detecting which backend you are on. The obvious check —
+reading the periodic schedule with `getTimeChargeBySn` — doesn't answer that question: it is
+separately permissioned and returns `6017` on plenty of accounts whose systems are on the new
+backend. Gating the write on it would skip the write for exactly the people this is meant to fix.
+The cost of always writing both is one extra API call per change.
+
+If the periodic write comes back `6017` ("no operation permissions"), that's the API saying this
+system can't use the feature at all. It's permanent, so the integration stops attempting it for
+that inverter and writes only the legacy endpoints from then on.
+
+Each inverter has a **Periodic Schedule Read** diagnostic sensor, which reports only whether that
+read works on your account:
+
+| Value | Meaning |
+| --- | --- |
+| `readable` | `getTimeChargeBySn` returns your schedule. |
+| `unreadable` | The read is rejected, usually `6017`. |
+| `unknown` | No answer yet; retried on each full poll. |
+
+`unreadable` does **not** mean your system is on the old backend, and it does not stop the
+periodic write. It is a diagnostic only. The value is also in the integration's downloadable
+diagnostics, which is worth attaching to any report about charge/discharge times not applying.
+
+Two things to be aware of:
+
+- **A weekly schedule set in the AlphaESS app will be flattened to a daily one.** The integration
+  writes daily schedules (`executeCycleType: 0`) so that the behaviour matches the two time slots
+  shown here. Per-weekday scheduling is not exposed by this integration; use Home Assistant
+  automations if you need different times on different days.
+- **Charge and discharge periods must not overlap.** The legacy endpoints allowed this, the
+  periodic one rejects it. If your slots overlap the periodic write is skipped, a warning is
+  logged, and only the legacy endpoint is written — which on a migrated server means the change
+  will not take effect. Adjust the periods so they do not overlap.
+- **You need at least one charge period *and* one discharge period.** `setTimeChargeBySn`
+  rejects an empty list (`6001 "time list is null"`) and a missing one (`10001`), and has no
+  representation for "no periods on this side", so when either list would be empty the periodic
+  write is skipped and only the legacy endpoints are written. For the same reason the
+  *Reset Charge/Discharge* button cannot clear a periodic schedule — do that in the AlphaESS app.
+
 ### EV charger controls
 
 The integration exposes EV charger controls (start/stop and current setting) when an EV charger is detected.

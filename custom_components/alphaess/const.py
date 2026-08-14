@@ -5,6 +5,15 @@ from datetime import timedelta
 from homeassistant.const import Platform
 
 DOMAIN = "alphaess"
+
+# Return codes that mean the AppID/AppSecret pair itself is wrong, so asking the
+# user to re-enter them can actually fix it: 6007 sign verification failed,
+# 6010 sign is empty, 6012 appId is empty.
+#
+# Deliberately excludes codes that reauth cannot fix -- 6005 (appId not bound to
+# that SN) and 6009 (IP whitelist) are configuration problems on the portal
+# side, and prompting for credentials would send the user round in circles.
+AUTH_FAILURE_CODES = {6007, 6010, 6012}
 PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,

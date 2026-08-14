@@ -156,37 +156,34 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         )
 
     async def async_set_native_value(self, value: float) -> None:
+        previous_value = self._attr_native_value
         self._attr_native_value = value
         self.save_value(value)
         self.async_write_ha_state()
 
         # Push to API
-        data = self._coordinator.data.get(self._serial, {})
-
-        if self.key is AlphaESSNames.batHighCap:
-            grid_charge = data.get("gridCharge", 1)
-            result = await self._coordinator.api.updateChargeConfigInfo(
-                self._serial,
-                value,
-                grid_charge,
-                data.get("charge_timeChae1") or "00:00",
-                data.get("charge_timeChae2") or "00:00",
-                data.get("charge_timeChaf1") or "00:00",
-                data.get("charge_timeChaf2") or "00:00",
-            )
-            _LOGGER.info("Updated batHighCap for %s to %s - Result: %s", self._serial, value, result)
-        elif self.key is AlphaESSNames.batUseCap:
-            ctr_dis = data.get("ctrDis", 1)
-            result = await self._coordinator.api.updateDisChargeConfigInfo(
-                self._serial,
-                value,
-                ctr_dis,
-                data.get("discharge_timeDise1") or "00:00",
-                data.get("discharge_timeDise2") or "00:00",
-                data.get("discharge_timeDisf1") or "00:00",
-                data.get("discharge_timeDisf2") or "00:00",
-            )
-            _LOGGER.info("Updated batUseCap for %s to %s - Result: %s", self._serial, value, result)
+        try:
+            if self.key is AlphaESSNames.batHighCap:
+                await self._coordinator.async_write_charge_config(
+                    self._serial, bat_high_cap=value,
+                )
+            elif self.key is AlphaESSNames.batUseCap:
+                await self._coordinator.async_write_discharge_config(
+                    self._serial, bat_use_cap=value,
+                )
+        except Exception:
+            # Nothing was written, so put the stored value back too -- it is
+            # what the charge/discharge buttons will send next time. With no
+            # previous value, drop the key entirely rather than storing None,
+            # which would shadow the default those callers fall back to.
+            _LOGGER.exception("Failed to set %s for %s, reverting", self._name, self._serial)
+            self._attr_native_value = previous_value
+            if previous_value is None:
+                self._coordinator.clear_number_setting(self._serial, self._name)
+            else:
+                self.save_value(previous_value)
+            self.async_write_ha_state()
+            return
 
         await self._coordinator.async_request_refresh()
 

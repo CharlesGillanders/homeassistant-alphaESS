@@ -12,7 +12,7 @@
   "issue_tracker": "https://github.com/CharlesGillanders/homeassistant-alphaESS/issues",
   "loggers": ["alphaess"],
   "requirements": [
-    "alphaessopenapi==0.0.19"
+    "alphaessopenapi==0.0.21"
   ],
-  "version": "0.8.5"
+  "version": "0.9.0"
 }
