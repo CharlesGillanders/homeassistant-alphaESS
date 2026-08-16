@@ -547,9 +547,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             return None
 
     def can_control_ev(self, serial: str, direction: int) -> bool:
-        """Validate if EV remote command is compatible with current charger state.
+        """Whether an EV command looks compatible with the last known state.
 
         Direction: 0 = stop, 1 = start.
+
+        Advisory only, and used for the Can Start/Stop Charging binary sensors.
+        It deliberately does not gate control_ev: the status behind it is as
+        old as the last poll, and our mapping of states to allowed commands is
+        our reading of the API rather than the API's own rule.
         """
         status = self.get_ev_charger_status_raw(serial)
         if status is None:
@@ -562,17 +567,20 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         return False
 
     async def control_ev(self, serial: str, ev_serial: str, direction: str) -> None:
-        """Control EV charger."""
-        parsed_direction = int(direction)
-        if not self.can_control_ev(serial, parsed_direction):
-            _LOGGER.warning(
-                "Skipping EV control command for %s (%s), direction=%s due to incompatible state=%s",
-                serial,
-                ev_serial,
-                direction,
-                self.get_ev_charger_status_raw(serial),
+        """Control EV charger.
+
+        Sent regardless of the last known charger state. Refusing locally meant
+        a status that was merely stale, or missing because the status endpoint
+        had failed, silently swallowed the command; and with no status at all it
+        blocked every command indefinitely. The charger is the authority on what
+        it will accept, so ask it and report what it says.
+        """
+        if not self.can_control_ev(serial, int(direction)):
+            _LOGGER.debug(
+                "EV command for %s (%s) direction=%s does not match the last known "
+                "state=%s; sending anyway",
+                serial, ev_serial, direction, self.get_ev_charger_status_raw(serial),
             )
-            return
 
         result = await self.api.remoteControlEvCharger(serial, ev_serial, direction)
         _LOGGER.info(

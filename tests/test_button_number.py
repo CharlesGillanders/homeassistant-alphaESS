@@ -220,7 +220,10 @@ class TestButtonPress:
         mock_hass.config_entries.async_get_entry.return_value = entry
         return button
 
-    async def test_stop_charging_blocked(self, make_coordinator, mock_hass, mock_api):
+    async def test_stop_charging_sent_even_when_state_disagrees(
+        self, make_coordinator, mock_hass, mock_api
+    ):
+        """Status 2 says "not charging", but it may just be stale. Ask anyway."""
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {AlphaESSNames.evchargerstatusraw: 2}}
         button = self._make_ev_button(
@@ -228,8 +231,8 @@ class TestButtonPress:
         )
 
         await button.async_press()
-        mock_api.remoteControlEvCharger.assert_not_awaited()
-        mock_hass.services.async_call.assert_awaited()  # invalid-command notification
+        mock_api.remoteControlEvCharger.assert_awaited_once_with(SERIAL, "EV123", 0)
+        mock_hass.services.async_call.assert_awaited()
 
     async def test_stop_charging_success(self, make_coordinator, mock_hass, mock_api):
         coordinator = make_coordinator()
@@ -242,14 +245,34 @@ class TestButtonPress:
         mock_api.remoteControlEvCharger.assert_awaited_once_with(SERIAL, "EV123", 0)
         mock_hass.services.async_call.assert_awaited()
 
-    async def test_start_charging_blocked_silent(self, make_coordinator, mock_hass, mock_api):
+    async def test_start_charging_sent_with_notifications_off(
+        self, make_coordinator, mock_hass, mock_api
+    ):
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {AlphaESSNames.evchargerstatusraw: 3}}
         button = self._make_ev_button(coordinator, mock_hass, AlphaESSNames.startcharging)
 
         await button.async_press()
-        mock_api.remoteControlEvCharger.assert_not_awaited()
+        mock_api.remoteControlEvCharger.assert_awaited_once_with(SERIAL, "EV123", 1)
         mock_hass.services.async_call.assert_not_awaited()
+
+    async def test_rejected_ev_command_is_reported(
+        self, make_coordinator, mock_hass, mock_api
+    ):
+        from alphaess.alphaess import AlphaESSApiError
+
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: {AlphaESSNames.evchargerstatusraw: 2}}
+        mock_api.remoteControlEvCharger.side_effect = AlphaESSApiError(
+            code=6008, description="Set failed")
+        button = self._make_ev_button(
+            coordinator, mock_hass, AlphaESSNames.startcharging, notifications_off=False
+        )
+
+        await button.async_press()
+
+        message = mock_hass.services.async_call.await_args.args[2]["message"]
+        assert "rejected" in message
 
     async def test_start_charging_success(self, make_coordinator, mock_hass, mock_api):
         coordinator = make_coordinator()

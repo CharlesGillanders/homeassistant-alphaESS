@@ -57,6 +57,33 @@ class TestErrorDescriptions:
         assert describe_api_error(AlphaESSApiError(code=9999)) == "9999"
 
 
+class TestServiceTimeNormalisation:
+    """The API wants zero-padded HH:mm on the quarter hour.
+
+    "9:00" comes back 6001 and an off-grid minute is silently unusable, and the
+    services used to pass whatever was typed straight through.
+    """
+
+    def test_pads_a_single_digit_hour(self):
+        assert init_mod._api_time("9:00") == "09:00"
+
+    def test_rounds_to_the_quarter_hour(self):
+        assert init_mod._api_time("02:07") == "02:00"
+        assert init_mod._api_time("02:08") == "02:15"
+
+    def test_leaves_a_valid_time_alone(self):
+        assert init_mod._api_time("13:45") == "13:45"
+
+    def test_midnight_wrap(self):
+        assert init_mod._api_time("23:53") == "00:00"
+
+    def test_rejects_nonsense(self):
+        import voluptuous as vol
+
+        with pytest.raises(vol.Invalid):
+            init_mod._api_time("not a time")
+
+
 class TestReadsStayTolerant:
     """A refused read must not take the whole inverter down with it.
 

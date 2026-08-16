@@ -199,7 +199,7 @@ This project allows you to use the following services in Home Assistant:<br>
 ### Alpha ESS: Set Battery Charge<br>
  
   This service call allows you to set the grid charge settings for your system. <br>
-  Times are not validated and must be compatible with the Alpha values. <br>
+  Times are rounded to the nearest quarter hour and zero-padded before being sent, since the API rejects anything else. <br>
   Data needed:<br>
     - serial = The serial of your system. <br>
     - enabled = True or False <br>
@@ -224,7 +224,7 @@ data:
 ### Alpha ESS: Set Battery Discharge<br>
  
   This service call allows you to set the battery discharge settings for your system. <br>
-  Times are not validated and must be compatible with the Alpha values. <br>
+  Times are rounded to the nearest quarter hour and zero-padded before being sent, since the API rejects anything else. <br>
   Data needed:<br>
     - serial = The serial of your system. <br>
     - enabled = True or False <br>

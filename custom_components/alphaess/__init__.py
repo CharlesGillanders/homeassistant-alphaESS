@@ -4,6 +4,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 from datetime import timedelta
+from typing import Any
 
 import aiohttp
 import homeassistant.helpers.config_validation as cv
@@ -52,14 +53,29 @@ _LOGGER = logging.getLogger(__name__)
 
 type AlphaESSConfigEntry = ConfigEntry[AlphaESSDataUpdateCoordinator]
 
+def _api_time(value: Any) -> str:
+    """Normalise a service time to what the API accepts.
+
+    It wants zero-padded HH:mm on the quarter hour: "9:00" comes back as 6001,
+    and an off-grid minute is silently unusable. The time entities already round
+    the same way, so this only makes the services behave consistently.
+    """
+    parsed = cv.time(value)
+    minutes = round((parsed.hour * 60 + parsed.minute) / 15) * 15 % (24 * 60)
+    normalised = f"{minutes // 60:02d}:{minutes % 60:02d}"
+    if normalised != f"{parsed.hour:02d}:{parsed.minute:02d}":
+        _LOGGER.debug("Rounded service time %s to %s", value, normalised)
+    return normalised
+
+
 SERVICE_BATTERY_CHARGE_SCHEMA = vol.Schema(
     {
         vol.Required('serial'): cv.string,
         vol.Required('enabled'): cv.boolean,
-        vol.Required('cp1start'): cv.string,
-        vol.Required('cp1end'): cv.string,
-        vol.Required('cp2start'): cv.string,
-        vol.Required('cp2end'): cv.string,
+        vol.Required('cp1start'): _api_time,
+        vol.Required('cp1end'): _api_time,
+        vol.Required('cp2start'): _api_time,
+        vol.Required('cp2end'): _api_time,
         vol.Required('chargestopsoc'): vol.All(cv.positive_int, vol.Range(min=0, max=100)),
     }
 )
@@ -68,10 +84,10 @@ SERVICE_BATTERY_DISCHARGE_SCHEMA = vol.Schema(
     {
         vol.Required('serial'): cv.string,
         vol.Required('enabled'): cv.boolean,
-        vol.Required('dp1start'): cv.string,
-        vol.Required('dp1end'): cv.string,
-        vol.Required('dp2start'): cv.string,
-        vol.Required('dp2end'): cv.string,
+        vol.Required('dp1start'): _api_time,
+        vol.Required('dp1end'): _api_time,
+        vol.Required('dp2start'): _api_time,
+        vol.Required('dp2end'): _api_time,
         vol.Required('dischargecutoffsoc'): vol.All(cv.positive_int, vol.Range(min=0, max=100)),
     }
 )

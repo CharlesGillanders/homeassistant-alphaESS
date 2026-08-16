@@ -179,45 +179,42 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
 
     async def async_press(self) -> None:
 
-        async def _notify_invalid_ev_command(action: str) -> None:
+        async def _send_ev_command(action: str, direction: int) -> None:
+            """Send the command and report what the charger said.
+
+            No local state pre-check: the status it would test is only as fresh
+            as the last poll, and when the status endpoint had failed there was
+            no status at all, which used to block every command indefinitely.
+            """
+            self._movement_state = None
+            try:
+                await self._coordinator.control_ev(self._serial, self._ev_serial, direction)
+            except AlphaESSApiError as err:
+                _LOGGER.error("EV %s command rejected for %s: %s",
+                              action.lower(), self._serial, err)
+                if not self._notifications_disabled:
+                    await create_persistent_notification(
+                        self.hass,
+                        message=(
+                            f"AlphaESS rejected the EV charger {action.lower()} command for "
+                            f"{self._serial}: {err}. Check EV Charger Status and try again."
+                        ),
+                        title=f"{self._serial} EV Charger {action} failed")
+                return
+
+            _LOGGER.info("EV charger %s command sent for %s", action.lower(), self._serial)
             if not self._notifications_disabled:
                 await create_persistent_notification(
                     self.hass,
-                    message=(
-                        f"EV charger cannot {action.lower()} right now for {self._serial}. "
-                        "Refresh and check EV Charger Status before retrying."
-                    ),
-                    title=f"{self._serial} EV Charger",
-                )
+                    message=f"EV charger {action.lower()} command sent for {self._serial}.",
+                    title=f"{self._serial} EV Charger")
 
         if self._key == AlphaESSNames.stopcharging:
-            if not self._coordinator.can_control_ev(self._serial, 0):
-                _LOGGER.info("Stop charging ignored for %s due to EV state mismatch", self._serial)
-                await _notify_invalid_ev_command("Stop")
-                return
-
-            _LOGGER.info("Stopped charging")
-            self._movement_state = None
-            await self._coordinator.control_ev(self._serial, self._ev_serial, 0)
-            if not self._notifications_disabled:
-                await create_persistent_notification(self.hass,
-                                                     message=f"EV charger stop command sent for {self._serial}.",
-                                                     title=f"{self._serial} EV Charger")
+            await _send_ev_command("Stop", 0)
             return
 
         if self._key == AlphaESSNames.startcharging:
-            if not self._coordinator.can_control_ev(self._serial, 1):
-                _LOGGER.info("Start charging ignored for %s due to EV state mismatch", self._serial)
-                await _notify_invalid_ev_command("Start")
-                return
-
-            _LOGGER.info("started charging")
-            self._movement_state = None
-            await self._coordinator.control_ev(self._serial, self._ev_serial, 1)
-            if not self._notifications_disabled:
-                await create_persistent_notification(self.hass,
-                                                     message=f"EV charger start command sent for {self._serial}.",
-                                                     title=f"{self._serial} EV Charger")
+            await _send_ev_command("Start", 1)
             return
 
         last_discharge_update = self._coordinator.last_discharge_update

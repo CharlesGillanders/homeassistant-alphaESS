@@ -115,11 +115,23 @@ class TestEvControl:
         coordinator = make_coordinator()
         assert coordinator.can_control_ev(SERIAL, 1) is False
 
-    async def test_control_ev_blocked(self, make_coordinator, mock_api):
+    async def test_control_ev_sends_even_when_state_disagrees(
+        self, make_coordinator, mock_api
+    ):
+        """The status is only as fresh as the last poll, so don't refuse on it."""
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {AlphaESSNames.evchargerstatusraw: 3}}
         await coordinator.control_ev(SERIAL, "EV123", "1")
-        mock_api.remoteControlEvCharger.assert_not_awaited()
+        mock_api.remoteControlEvCharger.assert_awaited_once_with(SERIAL, "EV123", "1")
+
+    async def test_control_ev_sends_when_status_is_unknown(
+        self, make_coordinator, mock_api
+    ):
+        """No status used to block every command indefinitely."""
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: {}}
+        await coordinator.control_ev(SERIAL, "EV123", "1")
+        mock_api.remoteControlEvCharger.assert_awaited_once()
 
     async def test_control_ev_allowed(self, make_coordinator, mock_api):
         coordinator = make_coordinator()
