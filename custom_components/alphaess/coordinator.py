@@ -51,7 +51,10 @@ PERIODIC_READ_UNKNOWN = "unknown"
 # retrying. See docs/RETURN_CODES.md in alphaess-openAPI.
 PERIODIC_NOT_ENTITLED = 6017
 
-MINUTES_PER_DAY = 1440
+# "Set failed" — for this endpoint it usually means the charge and discharge
+# periods overlap, which the legacy endpoints allow and this one does not.
+PERIODIC_OVERLAP = 6008
+
 
 
 def describe_api_error(err: AlphaESSApiError) -> str:
@@ -69,42 +72,13 @@ def describe_api_error(err: AlphaESSApiError) -> str:
     return described
 
 
-def _time_to_minutes(value: str) -> int:
-    """Convert an "HH:mm" string into minutes since midnight."""
-    hours, _, minutes = value.partition(":")
-    return int(hours) * 60 + int(minutes)
 
 
-def _period_intervals(period: dict[str, Any]) -> list[tuple[int, int]]:
-    """Return the half-open minute intervals a period covers.
-
-    A period whose end is not after its start wraps midnight, so it is split
-    into two intervals to keep overlap testing simple.
-    """
-    start = _time_to_minutes(period["beginTime"])
-    end = _time_to_minutes(period["endTime"])
-    if end > start:
-        return [(start, end)]
-    return [(start, MINUTES_PER_DAY), (0, end)]
-
-
-def find_overlapping_periods(
-    charge_periods: list[dict[str, Any]],
-    discharge_periods: list[dict[str, Any]],
-) -> tuple[dict[str, Any], dict[str, Any]] | None:
-    """Return the first charge/discharge period pair that overlaps, if any.
-
-    The legacy endpoints happily accept overlapping charge and discharge
-    windows, but setTimeChargeBySn rejects them with 6008. Callers use this to
-    skip the periodic write instead of failing it.
-    """
-    for charge in charge_periods:
-        for discharge in discharge_periods:
-            for c_start, c_end in _period_intervals(charge):
-                for d_start, d_end in _period_intervals(discharge):
-                    if c_start < d_end and d_start < c_end:
-                        return charge, discharge
-    return None
+def _format_periods(periods: list[dict[str, Any]]) -> str:
+    """Render a period list for a log line."""
+    if not periods:
+        return "none"
+    return ", ".join(f"{p['beginTime']}-{p['endTime']}" for p in periods)
 
 
 class DataProcessor:
@@ -871,6 +845,22 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         if powers:
             self._periodic_power.setdefault(serial, {}).update(powers)
 
+    def _default_charge_power(self, serial: str) -> int | None:
+        """Fall back to the inverter's rated power, in watts.
+
+        A period without chargePower is accepted and then ignored by the
+        device: the schedule shows up in the app but nothing happens, because
+        it has no rate to run at. The legacy endpoints have no equivalent
+        field, so when there is no setpoint to carry over from an existing
+        periodic schedule, the inverter's own rating is the sane default.
+        """
+        raw = (self.data.get(serial) or {}).get(AlphaESSNames.poinv)
+        try:
+            watts = int(float(raw) * 1000)
+        except (TypeError, ValueError):
+            return None
+        return watts if watts > 0 else None
+
     @staticmethod
     def _build_period_list(
         slots: list[tuple[str | None, str | None]],
@@ -927,6 +917,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         charge = state["charge"]
         discharge = state["discharge"]
         powers = self._periodic_power.get(serial, {})
+        default_power = self._default_charge_power(serial)
 
         charge_periods = self._build_period_list(
             [
@@ -934,7 +925,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 (charge["timeChaf2"], charge["timeChae2"]),
             ],
             charge["batHighCap"],
-            powers.get("charge"),
+            powers.get("charge", default_power),
         )
         discharge_periods = self._build_period_list(
             [
@@ -942,7 +933,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 (discharge["timeDisf2"], discharge["timeDise2"]),
             ],
             discharge["batUseCap"],
-            powers.get("discharge"),
+            powers.get("discharge", default_power),
         )
 
         # Both lists are required and neither may be empty: the live API answers
@@ -958,18 +949,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 "and %s is empty. Only the legacy endpoints were written",
                 serial,
                 "the charge list" if not charge_periods else "the discharge list",
-            )
-            return False
-
-        overlap = find_overlapping_periods(charge_periods, discharge_periods)
-        if overlap:
-            _LOGGER.warning(
-                "Skipping the periodic schedule write for %s: charge period %s-%s "
-                "overlaps discharge period %s-%s, which setTimeChargeBySn rejects. "
-                "Adjust the periods so they do not overlap",
-                serial,
-                overlap[0]["beginTime"], overlap[0]["endTime"],
-                overlap[1]["beginTime"], overlap[1]["endTime"],
             )
             return False
 
@@ -994,10 +973,20 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                     "using the legacy endpoints only from now on",
                     serial, describe_api_error(err),
                 )
+            elif err.code == PERIODIC_OVERLAP:
+                _LOGGER.warning(
+                    "AlphaESS rejected the periodic schedule for %s (%s): the charge "
+                    "and discharge periods overlap. Charge %s, discharge %s. Adjust "
+                    "them so they do not, or clear the unused ones",
+                    serial, describe_api_error(err),
+                    _format_periods(charge_periods), _format_periods(discharge_periods),
+                )
             else:
                 _LOGGER.warning(
-                    "Periodic schedule write for %s rejected with %s",
+                    "Periodic schedule write for %s rejected with %s. Sent charge %s, "
+                    "discharge %s",
                     serial, describe_api_error(err),
+                    _format_periods(charge_periods), _format_periods(discharge_periods),
                 )
             return False
         except Exception as err:

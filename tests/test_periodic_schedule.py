@@ -15,7 +15,6 @@ from custom_components.alphaess.coordinator import (
     PERIODIC_READ_OK,
     PERIODIC_READ_UNAVAILABLE,
     PERIODIC_READ_UNKNOWN,
-    find_overlapping_periods,
 )
 from custom_components.alphaess.enums import AlphaESSNames
 
@@ -64,32 +63,6 @@ def unreadable(make_coordinator, mock_api):
     return coordinator
 
 
-class TestOverlapDetection:
-    def test_no_overlap(self):
-        assert find_overlapping_periods([_period("01:00", "05:00")],
-                                        [_period("17:00", "21:00")]) is None
-
-    def test_touching_edges_do_not_overlap(self):
-        assert find_overlapping_periods([_period("01:00", "05:00")],
-                                        [_period("05:00", "07:00")]) is None
-
-    def test_plain_overlap(self):
-        assert find_overlapping_periods([_period("01:00", "06:00")],
-                                        [_period("05:00", "07:00")]) is not None
-
-    def test_overnight_charge_overlaps_early_discharge(self):
-        # 23:00-02:00 wraps midnight and must still be caught.
-        assert find_overlapping_periods([_period("23:00", "02:00")],
-                                        [_period("01:00", "03:00")]) is not None
-
-    def test_overnight_without_overlap(self):
-        assert find_overlapping_periods([_period("23:00", "02:00")],
-                                        [_period("10:00", "12:00")]) is None
-
-    def test_empty_lists(self):
-        assert find_overlapping_periods([], []) is None
-
-
 class TestBuildPeriodList:
     def test_drops_disabled_slots(self, readable):
         periods = readable._build_period_list(
@@ -126,6 +99,72 @@ class TestBuildPeriodList:
     def test_charge_power_omitted_when_unknown(self, readable):
         periods = readable._build_period_list([("01:00", "05:00")], 90)
         assert "chargePower" not in periods[0]
+
+
+class TestChargePower:
+    """A period with no chargePower is accepted and then ignored.
+
+    Reported on #269: the schedule appeared in the AlphaESS portal but the
+    battery did nothing, because the entry carried no rate to run at.
+    """
+
+    async def test_rated_power_is_sent_when_nothing_is_cached(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data(**{AlphaESSNames.poinv: 5.0})}
+        coordinator._periodic_readable[SERIAL] = True
+
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
+
+        _, _, charge_list, discharge_list = mock_api.setTimeChargeBySn.await_args.args
+        assert charge_list[0]["chargePower"] == 5000
+        assert discharge_list[0]["chargePower"] == 5000
+
+    async def test_a_cached_setpoint_wins_over_the_rating(
+        self, make_coordinator, mock_api
+    ):
+        """Don't trample a power the owner set in the AlphaESS app."""
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data(**{AlphaESSNames.poinv: 5.0})}
+        coordinator._periodic_readable[SERIAL] = True
+        coordinator._periodic_power[SERIAL] = {"charge": 3000}
+
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
+
+        _, _, charge_list, discharge_list = mock_api.setTimeChargeBySn.await_args.args
+        assert charge_list[0]["chargePower"] == 3000
+        assert discharge_list[0]["chargePower"] == 5000
+
+    async def test_omitted_when_the_rating_is_unknown(self, make_coordinator, mock_api):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data()}
+        coordinator._periodic_readable[SERIAL] = True
+
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
+
+        _, _, charge_list, _ = mock_api.setTimeChargeBySn.await_args.args
+        assert "chargePower" not in charge_list[0]
+
+    def test_empty_period_list_renders_as_none(self):
+        from custom_components.alphaess.coordinator import _format_periods
+
+        assert _format_periods([]) == "none"
+        assert _format_periods([_period("01:00", "05:00")]) == "01:00-05:00"
+
+    def test_rating_conversion(self, make_coordinator):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: {AlphaESSNames.poinv: 5.0}}
+        assert coordinator._default_charge_power(SERIAL) == 5000
+
+        coordinator.data = {SERIAL: {AlphaESSNames.poinv: "10"}}
+        assert coordinator._default_charge_power(SERIAL) == 10000
+
+        coordinator.data = {SERIAL: {AlphaESSNames.poinv: None}}
+        assert coordinator._default_charge_power(SERIAL) is None
+
+        coordinator.data = {SERIAL: {AlphaESSNames.poinv: 0}}
+        assert coordinator._default_charge_power(SERIAL) is None
 
 
 class TestProbe:
@@ -324,20 +363,56 @@ class TestFailureHandling:
         mock_api.setTimeChargeBySn.assert_awaited_once()
         assert "periodic schedule request went through" in caplog.text
 
-    async def test_overlap_skips_periodic_and_falls_back_to_legacy(
-        self, make_coordinator, mock_api, caplog
+    async def test_overlapping_periods_are_sent_and_let_the_api_decide(
+        self, make_coordinator, mock_api
     ):
+        """Don't pre-judge overlap.
+
+        Guessing which combinations the API dislikes blocked writes that would
+        have been accepted -- a wrap-around window such as 13:30-02:45 spans
+        most of the day and collides with everything, so nothing could ever be
+        written. The API knows its own rules; ask it (issue #269).
+        """
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: _schedule_data(
-            charge_timeChaf1="01:00", charge_timeChae1="18:00",  # overlaps discharge
+            charge_timeChaf1="01:00", charge_timeChae1="18:00",
         )}
         coordinator._periodic_readable[SERIAL] = True
 
         await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
 
-        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.setTimeChargeBySn.assert_awaited_once()
+
+    async def test_wraparound_window_is_still_sent(self, make_coordinator, mock_api):
+        """13:30-02:45 is the exact window that used to block every write."""
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _schedule_data(
+            charge_timeChaf1="13:30", charge_timeChae1="02:45",
+        )}
+        coordinator._periodic_readable[SERIAL] = True
+
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
+
+        _, _, charge_list, _ = mock_api.setTimeChargeBySn.await_args.args
+        assert charge_list[0]["beginTime"] == "13:30"
+        assert charge_list[0]["endTime"] == "02:45"
+
+    async def test_api_reported_overlap_is_explained(
+        self, readable, mock_api, caplog
+    ):
+        from alphaess.alphaess import AlphaESSApiError
+
+        from custom_components.alphaess.coordinator import PERIODIC_OVERLAP
+
+        mock_api.setTimeChargeBySn.side_effect = AlphaESSApiError(
+            code=PERIODIC_OVERLAP, description="Set failed")
+
+        await readable.async_write_charge_config(SERIAL, grid_charge=1)
+
+        assert "overlap" in caplog.text
+        # The periods actually sent are named, so the report is actionable.
+        assert "01:00-05:00" in caplog.text
         mock_api.updateChargeConfigInfo.assert_awaited_once()
-        assert "overlaps discharge period" in caplog.text
 
     async def test_cancellation_during_periodic_write_is_not_swallowed(
         self, readable, mock_api
@@ -368,11 +443,13 @@ class TestFailureHandling:
         with pytest.raises(asyncio.CancelledError):
             await coordinator.async_probe_periodic_readable(SERIAL)
 
-    async def test_overlap_still_surfaces_legacy_errors(self, make_coordinator, mock_api):
-        """Skipping periodic makes legacy primary again, errors included."""
+    async def test_skipped_periodic_still_surfaces_legacy_errors(
+        self, make_coordinator, mock_api
+    ):
+        """When periodic is skipped, legacy is primary again, errors included."""
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: _schedule_data(
-            charge_timeChaf1="01:00", charge_timeChae1="18:00",
+            discharge_timeDisf1="00:00", discharge_timeDise1="00:00",
         )}
         coordinator._periodic_readable[SERIAL] = True
         mock_api.updateChargeConfigInfo.side_effect = OSError("api down")

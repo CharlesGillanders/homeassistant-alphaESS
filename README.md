@@ -111,9 +111,13 @@ Two things to be aware of:
   shown here. Per-weekday scheduling is not exposed by this integration; use Home Assistant
   automations if you need different times on different days.
 - **Charge and discharge periods must not overlap.** The legacy endpoints allowed this, the
-  periodic one rejects it. If your slots overlap the periodic write is skipped, a warning is
-  logged, and only the legacy endpoint is written — which on a migrated server means the change
-  will not take effect. Adjust the periods so they do not overlap.
+  periodic one rejects it with `6008`. The integration sends the schedule and lets the API decide
+  rather than guessing, so if you hit this the log names the exact periods it sent — adjust them
+  so they do not overlap, or clear the ones you are not using.
+- **Each period is sent with a power setpoint.** The periodic API accepts a period with no
+  `chargePower` and then ignores it, so the schedule appears in the app but the battery does
+  nothing. Where there is no setpoint to carry over from an existing periodic schedule, the
+  inverter's rated power is used.
 - **You need at least one charge period *and* one discharge period.** `setTimeChargeBySn`
   rejects an empty list (`6001 "time list is null"`) and a missing one (`10001`), and has no
   representation for "no periods on this side", so when either list would be empty the periodic
