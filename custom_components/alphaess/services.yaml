@@ -1,7 +1,15 @@
 setbatterycharge:
   name: Set Battery Charge
   description: >
-    Enables setting Alpha ESS Grid Charging Settings.
+    Enables setting Alpha ESS Grid Charging Settings via the periodic
+    schedule API (primary). On systems where AlphaESS answers 6017 (no
+    permission) for the periodic API, the legacy two-slot endpoints are used
+    as a backup instead; power fields are unsupported there. On periodic
+    systems AlphaESS requires at least one charge period and one discharge
+    period in the same schedule, so a one-sided call cannot initialise a
+    completely empty schedule: create one period of each type in the
+    AlphaESS app first, or stage both sides with the schedule entities and
+    Apply.
   fields:
     serial:
       name: Serial
@@ -54,6 +62,24 @@ setbatterycharge:
       selector:
         text:
           type: time
+    cp1power:
+      name: Charging Period 1 Power
+      description: Power in watts. Required when creating a new periodic slot.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 100000
+          unit_of_measurement: W
+    cp2power:
+      name: Charging Period 2 Power
+      description: Power in watts. Required when creating a new periodic slot.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 100000
+          unit_of_measurement: W
     chargestopsoc:
       name: Charge Cutoff
       description: Charging Stops at SOC [%].
@@ -62,13 +88,22 @@ setbatterycharge:
       default: 100
       selector:
         number:
-          min: 0
+          min: 10
           max: 100
           unit_of_measurement: "%"
 setbatterydischarge:
   name: Set Battery Discharge
   description: >
-    Enables setting Alpha ESS Battery Discharge Settings.
+    Enables setting Alpha ESS Battery Discharge Settings via the periodic
+    schedule API (primary). On systems where AlphaESS answers 6017 (no
+    permission) for the periodic API, the legacy two-slot endpoints are used
+    as a backup instead; power fields are unsupported there, and on the new
+    AlphaESS server the inverter may not act on the legacy discharge store.
+    On periodic systems AlphaESS requires at least one charge period and one
+    discharge period in the same schedule, so a one-sided call cannot
+    initialise a completely empty schedule: create one period of each type
+    in the AlphaESS app first, or stage both sides with the schedule
+    entities and Apply.
   fields:
     serial:
       name: Serial
@@ -121,14 +156,32 @@ setbatterydischarge:
       selector:
         text:
           type: time
+    dp1power:
+      name: Discharging Period 1 Power
+      description: Power in watts. Required when creating a new periodic slot.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 100000
+          unit_of_measurement: W
+    dp2power:
+      name: Discharging Period 2 Power
+      description: Power in watts. Required when creating a new periodic slot.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 100000
+          unit_of_measurement: W
     dischargecutoffsoc:
       name: Discharging Cutoff
       description: Discharging Cutoff SOC [%].
       required: true
-      example: 100
-      default: 100
+      example: 10
+      default: 10
       selector:
         number:
-          min: 0
+          min: 10
           max: 100
           unit_of_measurement: "%"

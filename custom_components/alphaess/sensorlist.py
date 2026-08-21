@@ -887,29 +887,89 @@ SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS: list[AlphaESSButtonDescription
         entity_category=EntityCategory.CONFIG,
     ),
     AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonApplySchedule,
+        name="Apply Charge/Discharge Schedule",
+        icon="mdi:content-save-check",
+        entity_category=EntityCategory.CONFIG,
+    ),
+    AlphaESSButtonDescription(
+        key=AlphaESSNames.ButtonDiscardSchedule,
+        name="Discard Schedule Changes",
+        icon="mdi:backup-restore",
+        entity_category=EntityCategory.CONFIG,
+    ),
+    AlphaESSButtonDescription(
         key=AlphaESSNames.ButtonRechargeConfig,
         name="Reset Charge/Discharge",
         icon="mdi:battery-off",
         entity_category=EntityCategory.CONFIG,
-    )
+    ),
+    # The Reset button clears only the legacy backup stores, so it reports
+    # unavailable on periodic-governed systems: AlphaESS rejects empty period
+    # lists, leaving a reset nothing it could truthfully do there.
 ]
 
 DISCHARGE_AND_CHARGE_NUMBERS: list[AlphaESSNumberDescription] = [
     AlphaESSNumberDescription(
         key=AlphaESSNames.batHighCap,
-        name="batHighCap",
+        name="Charge Cut-Off SOC",
         entity_category=EntityCategory.CONFIG,
         icon="mdi:battery-sync",
         native_unit_of_measurement=PERCENTAGE,
-
+        native_min_value=10,
+        native_max_value=100,
+        native_step=1,
     ),
     AlphaESSNumberDescription(
         key=AlphaESSNames.batUseCap,
-        name="batUseCap",
+        name="Discharge To SOC",
         entity_category=EntityCategory.CONFIG,
         icon="mdi:battery-sync",
         native_unit_of_measurement=PERCENTAGE,
-    )
+        native_min_value=10,
+        native_max_value=100,
+        native_step=1,
+    ),
+    AlphaESSNumberDescription(
+        key=AlphaESSNames.ChargePower1,
+        name="Charge Power 1",
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:battery-charging-high",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        native_min_value=1,
+        native_max_value=100000,
+        native_step=100,
+    ),
+    AlphaESSNumberDescription(
+        key=AlphaESSNames.ChargePower2,
+        name="Charge Power 2",
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:battery-charging-high",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        native_min_value=1,
+        native_max_value=100000,
+        native_step=100,
+    ),
+    AlphaESSNumberDescription(
+        key=AlphaESSNames.DischargePower1,
+        name="Discharge Power 1",
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:battery-arrow-down-outline",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        native_min_value=1,
+        native_max_value=100000,
+        native_step=100,
+    ),
+    AlphaESSNumberDescription(
+        key=AlphaESSNames.DischargePower2,
+        name="Discharge Power 2",
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:battery-arrow-down-outline",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        native_min_value=1,
+        native_max_value=100000,
+        native_step=100,
+    ),
 ]
 
 CHARGE_DISCHARGE_TIMES: list[AlphaESSTimeDescription] = [
@@ -986,6 +1046,19 @@ EV_DISCHARGE_AND_CHARGE_BUTTONS: list[AlphaESSButtonDescription] = [
         entity_category=EntityCategory.CONFIG,
     )
 
+]
+
+INVERTER_BINARY_SENSORS: list[AlphaESSBinarySensorDescription] = [
+    AlphaESSBinarySensorDescription(
+        key=AlphaESSNames.TimeBasedControl,
+        name="Time Based Control Active",
+        icon="mdi:calendar-clock",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # On if either charge or discharge time control is enabled in whichever
+    # schedule store governs the system. Off means the inverter runs a
+    # non-timed mode such as Self Consumption Plus, which live probing
+    # showed flips both enable flags to 0 while keeping the windows stored.
 ]
 
 EV_CHARGER_BINARY_SENSORS: list[AlphaESSBinarySensorDescription] = [
@@ -1108,6 +1181,14 @@ EV_CHARGING_DETAILS: list[AlphaESSSensorDescription] = [
         state_class=None,
     ),
     AlphaESSSensorDescription(
+        key=AlphaESSNames.evchargercount,
+        name="EV Charger Count",
+        icon="mdi:ev-station",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        native_unit_of_measurement=None,
+        state_class=None,
+    ),
+    AlphaESSSensorDescription(
         key=AlphaESSNames.evchargerstatusraw,
         name="EV Charger Status Raw",
         icon="mdi:ev-station",
@@ -1141,14 +1222,14 @@ EV_CHARGER_NUMBERS: list[AlphaESSNumberDescription] = [
 CHARGE_DISCHARGE_SWITCHES: list[AlphaESSSwitchDescription] = [
     AlphaESSSwitchDescription(
         key=AlphaESSNames.GridChargeEnabled,
-        name="Grid Charge Enabled",
+        name="Scheduled Charging",
         icon="mdi:battery-charging",
         entity_category=EntityCategory.CONFIG,
         coordinator_key="gridCharge",
     ),
     AlphaESSSwitchDescription(
         key=AlphaESSNames.DischargeTimeControlEnabled,
-        name="Discharge Time Control Enabled",
+        name="Scheduled Discharging",
         icon="mdi:battery-minus",
         entity_category=EntityCategory.CONFIG,
         coordinator_key="ctrDis",

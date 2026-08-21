@@ -123,8 +123,10 @@ class TestParseSummaryData:
         assert data[AlphaESSNames.SelfSufficiency] is None
 
 
-class TestParseChargeConfig:
-    def test_time_slot_formatting(self, parser):
+class TestBackupScheduleParsers:
+    """The legacy two-slot parsers feed entity data in backup mode only."""
+
+    def test_charge_config(self, parser):
         data = parser.parse_charge_config(
             {
                 "gridCharge": 1,
@@ -136,15 +138,10 @@ class TestParseChargeConfig:
         assert data["gridCharge"] == 1
         assert data[AlphaESSNames.batHighCap] == 95
         assert data[AlphaESSNames.ChargeTime1] == "01:00 - 05:00"
-        assert data[AlphaESSNames.ChargeTime2] == "00:00 - 00:00"
+        # An unused slot (start == end, or missing) reads as "Not set"
+        # instead of a zero-length midnight window.
+        assert data[AlphaESSNames.ChargeTime2] == "Not set"
         assert data["charge_timeChaf1"] == "01:00"
-
-    def test_second_charge_slot(self, parser):
-        data = parser.parse_charge_config(
-            {"timeChaf2": "13:00", "timeChae2": "15:00"}
-        )
-        assert data[AlphaESSNames.ChargeTime1] == "00:00 - 00:00"
-        assert data[AlphaESSNames.ChargeTime2] == "13:00 - 15:00"
 
     def test_discharge_config(self, parser):
         data = parser.parse_discharge_config(
@@ -157,15 +154,9 @@ class TestParseChargeConfig:
         )
         assert data["ctrDis"] == 0
         assert data[AlphaESSNames.batUseCap] == 15
-        assert data[AlphaESSNames.DischargeTime1] == "00:00 - 00:00"
+        assert data[AlphaESSNames.DischargeTime1] == "Not set"
         assert data[AlphaESSNames.DischargeTime2] == "20:00 - 23:00"
-
-    def test_first_discharge_slot(self, parser):
-        data = parser.parse_discharge_config(
-            {"timeDisf1": "18:00", "timeDise1": "21:00"}
-        )
-        assert data[AlphaESSNames.DischargeTime1] == "18:00 - 21:00"
-        assert data[AlphaESSNames.DischargeTime2] == "00:00 - 00:00"
+        assert data["discharge_timeDise2"] == "23:00"
 
 
 class TestParsePowerData:

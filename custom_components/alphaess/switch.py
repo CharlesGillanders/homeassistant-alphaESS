@@ -102,19 +102,19 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
         await self._set_value(0)
 
     async def _set_value(self, value: int) -> None:
-        """Send the updated config to the API."""
+        """Stage the updated flag for the atomic Apply Schedule action."""
         previous_state = self._optimistic_state
         self._optimistic_state = bool(value)
         self.async_write_ha_state()
 
         try:
             if self._coordinator_key == "gridCharge":
-                await self._coordinator.async_write_charge_config(
-                    self._serial, grid_charge=value,
+                self._coordinator.stage_schedule_change(
+                    self._serial, charge={"gridCharge": value},
                 )
             elif self._coordinator_key == "ctrDis":
-                await self._coordinator.async_write_discharge_config(
-                    self._serial, ctr_dis=value,
+                self._coordinator.stage_schedule_change(
+                    self._serial, discharge={"ctrDis": value},
                 )
         except Exception:
             # Nothing was written, so don't leave the UI claiming otherwise.
@@ -122,17 +122,30 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
                               self._coordinator_key, self._serial)
             self._optimistic_state = previous_state
             self.async_write_ha_state()
-            return
+            raise
 
-        # No immediate refresh — optimistic state is shown until the next
-        # scheduled coordinator update confirms the value from the API.
+        # The coordinator overlays the draft on subsequent polls so the value
+        # stays visible until it is applied or discarded.
 
     @property
     def available(self) -> bool:
-        """Switch controls require cloud API to function."""
-        if not self.coordinator.last_update_success:
+        """Switch controls require the cloud API, a usable schedule store,
+        and an active time-based working mode.
+
+        In a self-consumption mode the enable flags are accepted but ignored
+        by the inverter, and writing one would make the mode inference lie —
+        the working mode can only be changed in the AlphaESS app, so the
+        switches lock together with the rest of the schedule surface.
+        """
+        if (
+            not self.coordinator.last_update_success
+            or self._serial not in self._coordinator.data
+        ):
             return False
-        return self._coordinator.cloud_available
+        return (
+            self._coordinator.cloud_available
+            and self._coordinator.can_modify_time_controls(self._serial)
+        )
 
     @property
     def name(self):

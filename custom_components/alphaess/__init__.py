@@ -76,7 +76,9 @@ SERVICE_BATTERY_CHARGE_SCHEMA = vol.Schema(
         vol.Required('cp1end'): _api_time,
         vol.Required('cp2start'): _api_time,
         vol.Required('cp2end'): _api_time,
-        vol.Required('chargestopsoc'): vol.All(cv.positive_int, vol.Range(min=0, max=100)),
+        vol.Required('chargestopsoc'): vol.All(cv.positive_int, vol.Range(min=10, max=100)),
+        vol.Optional('cp1power'): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional('cp2power'): vol.All(vol.Coerce(int), vol.Range(min=1)),
     }
 )
 
@@ -88,7 +90,9 @@ SERVICE_BATTERY_DISCHARGE_SCHEMA = vol.Schema(
         vol.Required('dp1end'): _api_time,
         vol.Required('dp2start'): _api_time,
         vol.Required('dp2end'): _api_time,
-        vol.Required('dischargecutoffsoc'): vol.All(cv.positive_int, vol.Range(min=0, max=100)),
+        vol.Required('dischargecutoffsoc'): vol.All(cv.positive_int, vol.Range(min=10, max=100)),
+        vol.Optional('dp1power'): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional('dp2power'): vol.All(vol.Coerce(int), vol.Range(min=1)),
     }
 )
 
@@ -130,6 +134,43 @@ def _has_inverter_subentries(entry: ConfigEntry) -> bool:
         subentry.subentry_type == SUBENTRY_TYPE_INVERTER
         for subentry in entry.subentries.values()
     )
+
+
+# Display names that changed in 0.9.0. unique_ids embed the name, so
+# renamed entities migrate their registry entry instead of orphaning it —
+# entity_ids, history and automations all survive the rename.
+_RENAMED_ENTITY_NAMES = {
+    "Grid Charge Enabled": "Scheduled Charging",
+    "Discharge Time Control Enabled": "Scheduled Discharging",
+    "batHighCap": "Charge Cut-Off SOC",
+    "batUseCap": "Discharge To SOC",
+}
+
+
+def _migrate_renamed_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Move registry entries whose unique_id embeds a pre-0.9.0 name."""
+    ent_reg = er.async_get(hass)
+    prefix = f"{entry.entry_id}_"
+    for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        uid = entity_entry.unique_id
+        if not uid or not uid.startswith(prefix) or " - " not in uid:
+            continue
+        serial, name = uid[len(prefix):].split(" - ", 1)
+        new_name = _RENAMED_ENTITY_NAMES.get(name)
+        if new_name is None:
+            continue
+        new_uid = f"{prefix}{serial} - {new_name}"
+        if ent_reg.async_get_entity_id(entity_entry.domain, DOMAIN, new_uid):
+            _LOGGER.debug(
+                "Skipping unique_id migration for %s: %s already exists",
+                entity_entry.entity_id, new_uid,
+            )
+            continue
+        _LOGGER.debug(
+            "Migrating unique_id %s -> %s for %s",
+            uid, new_uid, entity_entry.entity_id,
+        )
+        ent_reg.async_update_entity(entity_entry.entity_id, new_unique_id=new_uid)
 
 
 def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -230,19 +271,14 @@ def _resolve_coordinator_for_serial(
 
     Resolved at call time so services keep working across entry reloads.
     """
-    fallback = None
     for entry in hass.config_entries.async_entries(DOMAIN):
         coordinator = getattr(entry, "runtime_data", None)
         if not isinstance(coordinator, AlphaESSDataUpdateCoordinator):
             continue
         if serial in (coordinator.data or {}):
             return coordinator
-        if fallback is None:
-            fallback = coordinator
-    if fallback is not None:
-        return fallback
     raise HomeAssistantError(
-        f"No loaded AlphaESS config entry found for serial {serial}"
+        f"No loaded AlphaESS config entry currently manages serial {serial}"
     )
 
 
@@ -258,6 +294,14 @@ async def _async_service_battery_charge(call: ServiceCall) -> None:
             times={
                 "timeChaf1": call.data["cp1start"], "timeChae1": call.data["cp1end"],
                 "timeChaf2": call.data["cp2start"], "timeChae2": call.data["cp2end"],
+            },
+            powers={
+                key: call.data[source]
+                for key, source in (
+                    ("chargePower1", "cp1power"),
+                    ("chargePower2", "cp2power"),
+                )
+                if source in call.data
             },
         )
     except AlphaESSApiError as err:
@@ -277,6 +321,14 @@ async def _async_service_battery_discharge(call: ServiceCall) -> None:
             times={
                 "timeDisf1": call.data["dp1start"], "timeDise1": call.data["dp1end"],
                 "timeDisf2": call.data["dp2start"], "timeDise2": call.data["dp2end"],
+            },
+            powers={
+                key: call.data[source]
+                for key, source in (
+                    ("chargePower1", "dp1power"),
+                    ("chargePower2", "dp2power"),
+                )
+                if source in call.data
             },
         )
     except AlphaESSApiError as err:
@@ -324,7 +376,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
         if err.status == 401:
             raise ConfigEntryAuthFailed("AlphaESS credentials rejected") from err
         raise ConfigEntryNotReady(f"AlphaESS cloud API not reachable: {err}") from err
-    except aiohttp.ClientError as err:
+    except (aiohttp.ClientError, TimeoutError) as err:
         raise ConfigEntryNotReady(f"AlphaESS cloud API not reachable: {err}") from err
 
     # If no subentries exist (e.g. after migration from v1), auto-create them
@@ -411,17 +463,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
         alt_polling_mode=alt_polling_mode,
         fast_scan_interval=timedelta(seconds=fast_scan_interval_seconds),
     )
+    # Reuse discovery for the first refresh. Repeating getESSList immediately
+    # can trigger AlphaESS 6053 and leave setup with no entities.
+    _coordinator.set_prefetched_ess_list(ess_list)
     await _coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = _coordinator
 
-    # Determine once per inverter whether the periodic schedule API is usable.
-    # Systems that aren't entitled return 6017 and keep using only the legacy
+    # The first coordinator refresh determines whether the periodic schedule
+    # API is usable. Systems that return 6017 keep using only the legacy
     # endpoints. Never fatal — a failure here just leaves it to be retried on
     # the first write.
-    for serial in list(_coordinator.data):
-        await _coordinator.async_probe_periodic_readable(serial)
-
     # Auto-create EV charger subentries for any discovered chargers
     existing_ev_serials = {
         sub.data.get(CONF_SERIAL_NUMBER)
@@ -470,6 +522,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
             if k != "_needs_device_cleanup"
         }
         hass.config_entries.async_update_entry(entry, options=new_options)
+
+    # Idempotent: only matches unique_ids still carrying a pre-0.9.0 name.
+    _migrate_renamed_unique_ids(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

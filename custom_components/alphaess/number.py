@@ -1,7 +1,10 @@
 import logging
 
 from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from alphaess.alphaess import AlphaESSApiError
 
 from .const import (
     CONF_PARENT_INVERTER,
@@ -10,12 +13,33 @@ from .const import (
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
-from .coordinator import AlphaESSDataUpdateCoordinator
+from .coordinator import AlphaESSDataUpdateCoordinator, describe_api_error
 from .device import build_ev_charger_device_info, build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import DISCHARGE_AND_CHARGE_NUMBERS, EV_CHARGER_NUMBERS
 
 _LOGGER = logging.getLogger(__name__)
+
+_SCHEDULE_NUMBER_FIELDS = {
+    AlphaESSNames.batHighCap: ("charge", "batHighCap"),
+    AlphaESSNames.batUseCap: ("discharge", "batUseCap"),
+    AlphaESSNames.ChargePower1: ("charge", "chargePower1"),
+    AlphaESSNames.ChargePower2: ("charge", "chargePower2"),
+    AlphaESSNames.DischargePower1: ("discharge", "chargePower1"),
+    AlphaESSNames.DischargePower2: ("discharge", "chargePower2"),
+}
+_PERIODIC_POWER_KEYS = {
+    AlphaESSNames.ChargePower1,
+    AlphaESSNames.ChargePower2,
+    AlphaESSNames.DischargePower1,
+    AlphaESSNames.DischargePower2,
+}
+# Stable store keys for the coordinator's number settings. Deliberately NOT
+# the display names, which are user-facing and allowed to change.
+_NUMBER_SETTING_KEYS = {
+    AlphaESSNames.batHighCap: "batHighCap",
+    AlphaESSNames.batUseCap: "batUseCap",
+}
 
 # Serialize value writes; the AlphaESS API rate-limits config writes.
 PARALLEL_UPDATES = 1
@@ -121,38 +145,58 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         self._native_unit_of_measurement = full_number_supported_states.native_unit_of_measurement
         self._icon = full_number_supported_states.icon
         self._name = full_number_supported_states.name
+        self._attr_native_min_value = full_number_supported_states.native_min_value
+        self._attr_native_max_value = full_number_supported_states.native_max_value
+        self._attr_native_step = full_number_supported_states.native_step
 
         if self.key is AlphaESSNames.batHighCap:
             self._def_initial_value = float(90)
-        else:
+        elif self.key is AlphaESSNames.batUseCap:
             self._def_initial_value = float(10)
+        else:
+            self._def_initial_value = None
 
         if device_info:
             self._attr_device_info = device_info
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        last_state = await self.async_get_last_number_data()
-
-        try:
-            last_value = last_state.native_value
-            if last_value is not None:
-                self._attr_native_value = last_value
+        coordinator_value = self._coordinator.data.get(self._serial, {}).get(self.key)
+        if coordinator_value is not None:
+            self._attr_native_value = float(coordinator_value)
             self.save_value(self._attr_native_value)
-        except Exception:
+            return
+
+        # Cutoff values existed as local RestoreNumber settings before they
+        # became schedule drafts, so retain that fallback for legacy-only
+        # accounts. Power is never restored: presenting a stale rate as remote
+        # state could make a later full replacement unsafe.
+        if self._def_initial_value is None:
+            self._attr_native_value = None
+            return
+        try:
+            last_state = await self.async_get_last_number_data()
+            last_value = last_state.native_value
+            self._attr_native_value = (
+                float(last_value) if last_value is not None else self._def_initial_value
+            )
+        except (AttributeError, TypeError, ValueError):
             self._attr_native_value = self._def_initial_value
             _LOGGER.info(
                 "No saved state found for %s. Using initial value: %s",
                 self._name, self._def_initial_value,
             )
-            self.save_value(self._attr_native_value)
-            self.async_write_ha_state()
+        self.save_value(self._attr_native_value)
+        self.async_write_ha_state()
 
     def save_value(self, value):
         """Persist the value on the coordinator for charge/discharge commands."""
-        self._coordinator.set_number_setting(self._serial, self._name, value)
+        setting_key = _NUMBER_SETTING_KEYS.get(self.key)
+        if setting_key is None:
+            return
+        self._coordinator.set_number_setting(self._serial, setting_key, value)
         _LOGGER.debug(
-            "Saved %s=%s for %s on coordinator", self._name, value, self._serial,
+            "Saved %s=%s for %s on coordinator", setting_key, value, self._serial,
         )
 
     async def async_set_native_value(self, value: float) -> None:
@@ -161,16 +205,14 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         self.save_value(value)
         self.async_write_ha_state()
 
-        # Push to API
+        # Stage with the other schedule fields. The upstream endpoints replace
+        # the whole resource, so writing this one field immediately could reset
+        # times the user is still editing.
         try:
-            if self.key is AlphaESSNames.batHighCap:
-                await self._coordinator.async_write_charge_config(
-                    self._serial, bat_high_cap=value,
-                )
-            elif self.key is AlphaESSNames.batUseCap:
-                await self._coordinator.async_write_discharge_config(
-                    self._serial, bat_use_cap=value,
-                )
+            side, field = _SCHEDULE_NUMBER_FIELDS[self.key]
+            self._coordinator.stage_schedule_change(
+                self._serial, **{side: {field: value}},
+            )
         except Exception:
             # Nothing was written, so put the stored value back too -- it is
             # what the charge/discharge buttons will send next time. With no
@@ -179,20 +221,47 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
             _LOGGER.exception("Failed to set %s for %s, reverting", self._name, self._serial)
             self._attr_native_value = previous_value
             if previous_value is None:
-                self._coordinator.clear_number_setting(self._serial, self._name)
+                setting_key = _NUMBER_SETTING_KEYS.get(self.key)
+                if setting_key is not None:
+                    self._coordinator.clear_number_setting(self._serial, setting_key)
             else:
                 self.save_value(previous_value)
             self.async_write_ha_state()
-            return
+            raise
 
-        await self._coordinator.async_request_refresh()
+    def _handle_coordinator_update(self) -> None:
+        """Follow the committed or draft schedule, including Discard."""
+        data = self._coordinator.data.get(self._serial, {})
+        if self.key in data:
+            value = data[self.key]
+            self._attr_native_value = float(value) if value is not None else None
+            if value is not None:
+                self.save_value(self._attr_native_value)
+        super()._handle_coordinator_update()
 
     @property
     def available(self) -> bool:
-        """Number controls require cloud API to function."""
-        if not self.coordinator.last_update_success:
+        """Number controls require the cloud API and a usable schedule store.
+
+        Per-period powers exist only in the periodic (primary) schedule API;
+        in legacy backup mode those entities stay unavailable.
+        """
+        if (
+            not self.coordinator.last_update_success
+            or self._serial not in self._coordinator.data
+        ):
             return False
-        return self._coordinator.cloud_available
+        if self.key in _PERIODIC_POWER_KEYS:
+            return (
+                self._coordinator.cloud_available
+                and self._coordinator.is_periodic_schedule_readable(self._serial)
+                and self._coordinator.is_time_based_control_active(self._serial)
+                is not False
+            )
+        return (
+            self._coordinator.cloud_available
+            and self._coordinator.can_modify_time_controls(self._serial)
+        )
 
     @property
     def native_value(self):
@@ -260,14 +329,32 @@ class AlphaEVNumber(CoordinatorEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set EV charger current via API."""
-        await self._coordinator.set_ev_charger_current(self._serial, int(value))
+        try:
+            await self._coordinator.set_ev_charger_current(self._serial, int(value))
+        except AlphaESSApiError as err:
+            # A raw library exception reaches the frontend as "Unknown error";
+            # keep the API's return code and explanation visible.
+            raise HomeAssistantError(
+                f"AlphaESS rejected the EV charger current for {self._serial}: "
+                f"{describe_api_error(err)}"
+            ) from err
+        except HomeAssistantError:
+            raise
+        except Exception as err:
+            raise HomeAssistantError(
+                f"The EV charger current for {self._serial} could not be sent: {err}"
+            ) from err
 
     @property
     def available(self) -> bool:
         """EV charger controls require cloud API to function."""
-        if not self.coordinator.last_update_success:
+        serial_data = self._coordinator.data.get(self._serial)
+        if not self.coordinator.last_update_success or serial_data is None:
             return False
-        return self._coordinator.cloud_available
+        return (
+            self._coordinator.cloud_available
+            and serial_data.get(AlphaESSNames.evchargersn) == self._ev_serial
+        )
 
     @property
     def name(self):

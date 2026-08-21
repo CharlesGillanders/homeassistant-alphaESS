@@ -2,6 +2,7 @@ import logging
 import time as time_mod
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from alphaess.alphaess import AlphaESSApiError
@@ -15,7 +16,11 @@ from .const import (
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
-from .coordinator import AlphaESSDataUpdateCoordinator
+from .coordinator import (
+    AlphaESSDataUpdateCoordinator,
+    SchedulePartialWriteError,
+    ScheduleWriteUnknownError,
+)
 from .device import build_ev_charger_device_info, build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import EV_DISCHARGE_AND_CHARGE_BUTTONS, SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
@@ -138,7 +143,12 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         self._coordinator = coordinator
         self._name = key_supported_states.name
         self._key = key_supported_states.key
-        if not ev_charger:
+        schedule_action_keys = {
+            AlphaESSNames.ButtonApplySchedule,
+            AlphaESSNames.ButtonDiscardSchedule,
+            AlphaESSNames.ButtonRechargeConfig,
+        }
+        if not ev_charger and self._key not in schedule_action_keys:
             self._movement_state = self.name.split()[-1]
 
         self._icon = key_supported_states.icon
@@ -147,7 +157,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         self._subentry = subentry
         self._ev_serial = ev_serial
 
-        if self._key != AlphaESSNames.ButtonRechargeConfig:
+        if self._key not in schedule_action_keys:
             if not ev_charger:
                 self._time = int(self._name.split()[0])
 
@@ -189,18 +199,27 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             self._movement_state = None
             try:
                 await self._coordinator.control_ev(self._serial, self._ev_serial, direction)
-            except AlphaESSApiError as err:
-                _LOGGER.error("EV %s command rejected for %s: %s",
-                              action.lower(), self._serial, err)
+            except Exception as err:
+                api_rejection = isinstance(err, AlphaESSApiError)
+                failure = "rejected" if api_rejection else "could not send"
+                _LOGGER.error("EV %s command %s for %s: %s",
+                              action.lower(), failure, self._serial, err)
                 if not self._notifications_disabled:
                     await create_persistent_notification(
                         self.hass,
                         message=(
-                            f"AlphaESS rejected the EV charger {action.lower()} command for "
+                            f"AlphaESS {failure} the EV charger {action.lower()} command for "
                             f"{self._serial}: {err}. Check EV Charger Status and try again."
                         ),
                         title=f"{self._serial} EV Charger {action} failed")
-                return
+                if isinstance(err, HomeAssistantError):
+                    raise
+                # A raw AlphaESSApiError surfaces in the frontend as an
+                # anonymous "Unknown error"; keep the API's own explanation.
+                raise HomeAssistantError(
+                    f"AlphaESS {failure} the EV charger {action.lower()} command "
+                    f"for {self._serial}: {err}"
+                ) from err
 
             _LOGGER.info("EV charger %s command sent for %s", action.lower(), self._serial)
             if not self._notifications_disabled:
@@ -217,6 +236,72 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             await _send_ev_command("Start", 1)
             return
 
+        if self._key == AlphaESSNames.ButtonApplySchedule:
+            try:
+                await self._coordinator.async_apply_schedule_draft(self._serial)
+            except (SchedulePartialWriteError, ScheduleWriteUnknownError) as err:
+                # Part of the change may already be live (backup mode writes
+                # two stores), or the response was lost after the POST. Say
+                # so; a silent log line hides an active schedule.
+                outcome = (
+                    "has an unknown outcome"
+                    if isinstance(err, ScheduleWriteUnknownError)
+                    else "was only partly applied"
+                )
+                _LOGGER.error(
+                    "Apply Schedule %s for %s: %s", outcome, self._serial, err,
+                )
+                if not self._notifications_disabled:
+                    await create_persistent_notification(
+                        self.hass,
+                        message=(
+                            f"The schedule Apply for {self._serial} {outcome} "
+                            f"and may already be active: {err}. "
+                            "Check the AlphaESS app before retrying."
+                        ),
+                        title=f"{self._serial} Apply outcome uncertain",
+                    )
+                raise
+            except Exception as err:
+                _LOGGER.error("Apply Schedule failed for %s: %s", self._serial, err)
+                if not self._notifications_disabled:
+                    await create_persistent_notification(
+                        self.hass,
+                        message=(
+                            f"AlphaESS could not apply the schedule changes for "
+                            f"{self._serial}: {err}"
+                        ),
+                        title=f"{self._serial} Apply failed",
+                    )
+                raise
+            if not self._notifications_disabled:
+                newer_edits = self._coordinator.has_schedule_draft(self._serial)
+                await create_persistent_notification(
+                    self.hass,
+                    message=(
+                        f"AlphaESS accepted the submitted schedule changes for "
+                        f"{self._serial}. Newer edits remain pending; select Apply again."
+                        if newer_edits
+                        else f"AlphaESS accepted the schedule changes for {self._serial}."
+                    ),
+                    title=(
+                        f"{self._serial} Schedule Partly Applied"
+                        if newer_edits
+                        else f"{self._serial} Schedule Accepted"
+                    ),
+                )
+            return
+
+        if self._key == AlphaESSNames.ButtonDiscardSchedule:
+            self._coordinator.discard_schedule_draft(self._serial)
+            if not self._notifications_disabled:
+                await create_persistent_notification(
+                    self.hass,
+                    message=f"Pending schedule changes discarded for {self._serial}.",
+                    title=f"{self._serial} Schedule Restored",
+                )
+            return
+
         last_discharge_update = self._coordinator.last_discharge_update
         last_charge_update = self._coordinator.last_charge_update
         rate_limit = ALPHA_POST_REQUEST_RESTRICTION.total_seconds()
@@ -228,19 +313,47 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 last_update_dict[self._serial] = now
                 try:
                     await update_fn(update_key, self._serial, self._time)
-                except AlphaESSApiError as err:
+                except (SchedulePartialWriteError, ScheduleWriteUnknownError) as err:
+                    # Part of the change may already be live, or a lost
+                    # response left it indeterminate. Keep the cooldown so an
+                    # immediate retry cannot duplicate a potentially live
+                    # charge/discharge command.
+                    last_update_dict[self._serial] = time_mod.monotonic()
+                    outcome = (
+                        "has an unknown outcome"
+                        if isinstance(err, ScheduleWriteUnknownError)
+                        else "was only partly applied"
+                    )
+                    _LOGGER.error(
+                        "%s command %s for %s: %s",
+                        movement_direction, outcome, self._serial, err,
+                    )
+                    if not self._notifications_disabled:
+                        await create_persistent_notification(
+                            self.hass,
+                            message=(
+                                f"The {movement_direction.lower()} command for "
+                                f"{self._serial} {outcome} and may already be "
+                                f"active: {err}. Check the AlphaESS app before "
+                                "retrying."
+                            ),
+                            title=f"{self._serial} {movement_direction} outcome uncertain",
+                        )
+                    raise
+                except Exception as err:
                     # Nothing was applied, so don't make the user sit out the
                     # rate limit before they can try again.
                     last_update_dict[self._serial] = last_update
-                    _LOGGER.error("%s command rejected for %s: %s",
+                    _LOGGER.error("%s command failed for %s: %s",
                                   movement_direction, self._serial, err)
                     if not self._notifications_disabled:
                         await create_persistent_notification(
                             self.hass,
-                            message=f"AlphaESS rejected the {movement_direction.lower()} command "
+                            message=f"AlphaESS could not apply the {movement_direction.lower()} command "
                                     f"for {self._serial}: {err}",
                             title=f"{self._serial} {movement_direction} failed")
-                    return
+                    raise
+                last_update_dict[self._serial] = time_mod.monotonic()
                 _LOGGER.info("Notifications disabled = %s for %s", self._notifications_disabled, self._serial)
                 if not self._notifications_disabled:
                     _LOGGER.info("Sending notification for %s %s", self._serial, movement_direction)
@@ -250,11 +363,20 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             else:
                 remaining = rate_limit - (now - last_update)
                 minutes, seconds = divmod(remaining, 60)
+                wait_message = (
+                    f"Please wait {int(minutes)} minutes and {int(seconds)} seconds."
+                )
 
                 if not self._notifications_disabled:
                     await create_persistent_notification(self.hass,
-                                                         message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
+                                                         message=wait_message,
                                                          title=f"{self._serial} cannot call {movement_direction}")
+                # No command was sent. Returning silently here reads as
+                # success to the frontend and to automations.
+                raise HomeAssistantError(
+                    f"The {movement_direction.lower()} command for {self._serial} "
+                    f"is rate limited. {wait_message}"
+                )
 
         now = time_mod.monotonic()
 
@@ -268,30 +390,61 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
                 last_discharge_update[self._serial] = last_charge_update[self._serial] = now
                 try:
                     await self._coordinator.reset_config(self._serial)
-                except AlphaESSApiError as err:
-                    last_charge_update[self._serial] = previous_charge
-                    last_discharge_update[self._serial] = previous_discharge
-                    _LOGGER.error("Reset rejected for %s: %s", self._serial, err)
+                except (SchedulePartialWriteError, ScheduleWriteUnknownError) as err:
+                    completed = time_mod.monotonic()
+                    last_discharge_update[self._serial] = completed
+                    last_charge_update[self._serial] = completed
+                    outcome = (
+                        "has an unknown outcome"
+                        if isinstance(err, ScheduleWriteUnknownError)
+                        else "was only partly applied"
+                    )
+                    _LOGGER.error("Reset %s for %s: %s", outcome, self._serial, err)
                     if not self._notifications_disabled:
                         await create_persistent_notification(
                             self.hass,
-                            message=f"AlphaESS rejected the reset for {self._serial}: {err}",
+                            message=(
+                                f"The reset for {self._serial} {outcome}: {err}. "
+                                "Some settings may already have changed; check the "
+                                "AlphaESS app before retrying."
+                            ),
+                            title=f"{self._serial} Reset outcome uncertain",
+                        )
+                    raise
+                except Exception as err:
+                    last_charge_update[self._serial] = previous_charge
+                    last_discharge_update[self._serial] = previous_discharge
+                    _LOGGER.error("Reset failed for %s: %s", self._serial, err)
+                    if not self._notifications_disabled:
+                        await create_persistent_notification(
+                            self.hass,
+                            message=f"AlphaESS could not fully reset {self._serial}: {err}",
                             title=f"{self._serial} Reset failed")
-                    return
+                    raise
+                completed = time_mod.monotonic()
+                last_discharge_update[self._serial] = completed
+                last_charge_update[self._serial] = completed
                 if not self._notifications_disabled:
                     await create_persistent_notification(self.hass,
                                                          message=f"Charge and discharge configuration reset for {self._serial}.",
                                                          title=f"{self._serial} Reset")
             else:
-                # Reset button is throttled - just show wait message
+                # Reset button is throttled - show the wait and fail the press
                 last_update = last_charge_update.get(self._serial) or last_discharge_update.get(self._serial)
+                wait_message = "Please wait before resetting again."
                 if last_update:
                     remaining = rate_limit - (now - last_update)
                     minutes, seconds = divmod(remaining, 60)
+                    wait_message = (
+                        f"Please wait {int(minutes)} minutes and {int(seconds)} seconds."
+                    )
                     if not self._notifications_disabled:
                         await create_persistent_notification(self.hass,
-                                                             message=f"Please wait {int(minutes)} minutes and {int(seconds)} seconds.",
+                                                             message=wait_message,
                                                              title=f"{self._serial} cannot reset yet")
+                raise HomeAssistantError(
+                    f"The reset for {self._serial} is rate limited. {wait_message}"
+                )
         elif self._movement_state == "Discharge":
             await handle_time_restriction(last_discharge_update,
                                           self._coordinator.update_discharge, "batUseCap",
@@ -305,6 +458,46 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         """Buttons require cloud API to function."""
         if not self.coordinator.last_update_success:
             return False
+        serial_data = self._coordinator.data.get(self._serial)
+        if serial_data is None:
+            return False
+        if self._ev_serial is not None and serial_data.get(
+            AlphaESSNames.evchargersn
+        ) != self._ev_serial:
+            return False
+        if self._key in (
+            AlphaESSNames.ButtonApplySchedule,
+            AlphaESSNames.ButtonDiscardSchedule,
+        ):
+            # In a self-consumption working mode nothing time-based can be
+            # written, so a stranded draft cannot be applied (or discarded)
+            # until the app returns the inverter to a time-based mode.
+            return (
+                self._coordinator.cloud_available
+                and self._coordinator.has_schedule_draft(self._serial)
+                and not self._coordinator.is_schedule_apply_in_progress(self._serial)
+                and self._coordinator.is_time_based_control_active(self._serial)
+                is not False
+            )
+        if self._key == AlphaESSNames.ButtonRechargeConfig:
+            # The reset clears only the legacy backup stores; on a system the
+            # periodic schedule governs it could only fail, so report it as
+            # unavailable there instead. In a self-consumption mode it would
+            # silently re-enable time-based control, so it locks there too.
+            return (
+                self._coordinator.cloud_available
+                and self._coordinator.can_reset_schedule(self._serial)
+                and self._coordinator.is_time_based_control_active(self._serial)
+                is not False
+            )
+        if getattr(self, "_movement_state", None) in ("Charge", "Discharge"):
+            # Duration buttons need a usable schedule store and active
+            # time-based control; in a self-consumption mode a press would
+            # silently re-enable timed control.
+            return (
+                self._coordinator.cloud_available
+                and self._coordinator.can_modify_time_controls(self._serial)
+            )
         return self._coordinator.cloud_available
 
     @property

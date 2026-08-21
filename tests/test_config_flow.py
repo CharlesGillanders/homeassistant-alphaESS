@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 import pytest
+from alphaess.alphaess import AlphaESSApiError
 
 from custom_components.alphaess import config_flow
 from custom_components.alphaess.config_flow import (
@@ -36,9 +37,8 @@ def _response_error(status):
     )
 
 
-@pytest.fixture(autouse=True)
-def _fast_sleep(monkeypatch):
-    monkeypatch.setattr(config_flow.asyncio, "sleep", AsyncMock())
+def _api_error(code):
+    return AlphaESSApiError(code=code, description="API rejected request")
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +52,6 @@ def _fake_clientsession(monkeypatch):
 @pytest.fixture
 def mock_client(monkeypatch):
     client = MagicMock()
-    client.authenticate = AsyncMock(return_value=True)
     client.getESSList = AsyncMock(
         return_value=[{"sysSn": "AL123", "minv": "SMILE5-INV"}]
     )
@@ -67,6 +66,15 @@ class TestValidateInput:
         result = await validate_input(mock_hass, USER_INPUT)
         assert result["title"] == "app-id"
         assert result["ess_list"][0]["sysSn"] == "AL123"
+        mock_client.getESSList.assert_awaited_once_with()
+        mock_client.authenticate.assert_not_called()
+        config_flow.alphaess.alphaess.assert_called_once_with(
+            "app-id",
+            "app-secret",
+            session=config_flow.async_get_clientsession.return_value,
+            verify_ssl=True,
+            raise_on_error=True,
+        )
 
     async def test_empty_ess_list(self, mock_hass, mock_client):
         mock_client.getESSList.return_value = None
@@ -74,17 +82,27 @@ class TestValidateInput:
         assert result["ess_list"] == []
 
     async def test_invalid_auth(self, mock_hass, mock_client):
-        mock_client.authenticate.side_effect = _response_error(401)
+        mock_client.getESSList.side_effect = _response_error(401)
+        with pytest.raises(InvalidAuth):
+            await validate_input(mock_hass, USER_INPUT)
+
+    async def test_body_auth_error(self, mock_hass, mock_client):
+        mock_client.getESSList.side_effect = _api_error(6007)
         with pytest.raises(InvalidAuth):
             await validate_input(mock_hass, USER_INPUT)
 
     async def test_other_response_error(self, mock_hass, mock_client):
-        mock_client.authenticate.side_effect = _response_error(500)
-        with pytest.raises(aiohttp.ClientResponseError):
+        mock_client.getESSList.side_effect = _response_error(500)
+        with pytest.raises(CannotConnect):
+            await validate_input(mock_hass, USER_INPUT)
+
+    async def test_other_body_error(self, mock_hass, mock_client):
+        mock_client.getESSList.side_effect = _api_error(6042)
+        with pytest.raises(CannotConnect):
             await validate_input(mock_hass, USER_INPUT)
 
     async def test_cannot_connect(self, mock_hass, mock_client):
-        mock_client.authenticate.side_effect = aiohttp.ClientConnectorError(
+        mock_client.getESSList.side_effect = aiohttp.ClientConnectorError(
             MagicMock(), OSError("no route")
         )
         with pytest.raises(CannotConnect):
@@ -124,7 +142,7 @@ class TestUserFlow:
         assert list(result["subentries"]) == []
 
     async def test_cannot_connect_error(self, mock_hass, mock_client):
-        mock_client.authenticate.side_effect = aiohttp.ClientConnectorError(
+        mock_client.getESSList.side_effect = aiohttp.ClientConnectorError(
             MagicMock(), OSError("no route")
         )
         flow = _make_flow(mock_hass)
@@ -133,7 +151,7 @@ class TestUserFlow:
         assert result["errors"] == {"base": "cannot_connect"}
 
     async def test_invalid_auth_error(self, mock_hass, mock_client):
-        mock_client.authenticate.side_effect = _response_error(401)
+        mock_client.getESSList.side_effect = _response_error(401)
         flow = _make_flow(mock_hass)
         result = await flow.async_step_user(dict(USER_INPUT))
         assert result["errors"] == {"base": "invalid_auth"}
@@ -174,14 +192,14 @@ class TestReauthFlow:
         )
 
     async def test_reauth_invalid_auth(self, mock_hass, mock_client):
-        mock_client.authenticate.side_effect = _response_error(401)
+        mock_client.getESSList.side_effect = _response_error(401)
         entry = FakeEntry()
         flow = self._make_reauth_flow(mock_hass, entry)
         result = await flow.async_step_reauth_confirm({"AppSecret": "bad"})
         assert result["errors"] == {"base": "invalid_auth"}
 
     async def test_reauth_cannot_connect(self, mock_hass, mock_client):
-        mock_client.authenticate.side_effect = aiohttp.ClientConnectorError(
+        mock_client.getESSList.side_effect = aiohttp.ClientConnectorError(
             MagicMock(), OSError("x")
         )
         entry = FakeEntry()
@@ -221,7 +239,24 @@ def _make_subentry_flow(mock_hass, api):
     flow.hass = mock_hass
     flow.context = {"source": "user"}
     entry = FakeEntry()
-    entry.runtime_data = SimpleNamespace(api=api)
+
+    async def request_verification_code(serial, check_code):
+        return await api.getVerificationCode(serial, check_code)
+
+    async def bind_system(serial, code):
+        return await api.bindSn(serial, code)
+
+    async def unbind_system(serial):
+        return await api.unBindSn(serial)
+
+    entry.runtime_data = SimpleNamespace(
+        api=api,
+        async_request_verification_code=AsyncMock(
+            side_effect=request_verification_code
+        ),
+        async_bind_system=AsyncMock(side_effect=bind_system),
+        async_unbind_system=AsyncMock(side_effect=unbind_system),
+    )
     flow._get_entry = MagicMock(return_value=entry)
     return flow, entry
 
@@ -234,17 +269,22 @@ class TestSubentryUserStep:
         assert result["step_id"] == "user"
 
     async def test_verification_requested(self, mock_hass, mock_api):
-        mock_api.getVerificationCode.return_value = {"ok": True}
+        # Successful AlphaESS mutations return data:null -> None.
+        mock_api.getVerificationCode.return_value = None
         flow, _ = _make_subentry_flow(mock_hass, mock_api)
         result = await flow.async_step_user(
             {"serial_number": " AL999 ", "check_code": " CODE "}
+        )
+        entry = flow._get_entry.return_value
+        entry.runtime_data.async_request_verification_code.assert_awaited_once_with(
+            "AL999", "CODE"
         )
         mock_api.getVerificationCode.assert_awaited_once_with("AL999", "CODE")
         assert result["step_id"] == "verify"
         assert flow._sysSn == "AL999"
 
-    async def test_verification_request_returns_none(self, mock_hass, mock_api):
-        mock_api.getVerificationCode.return_value = None
+    async def test_verification_request_api_rejection(self, mock_hass, mock_api):
+        mock_api.getVerificationCode.side_effect = _api_error(6004)
         flow, _ = _make_subentry_flow(mock_hass, mock_api)
         result = await flow.async_step_user(
             {"serial_number": "AL999", "check_code": "CODE"}
@@ -269,23 +309,37 @@ class TestSubentryVerifyStep:
         assert result["step_id"] == "verify"
 
     async def test_bind_success(self, mock_hass, mock_api):
-        mock_api.bindSn.return_value = {"ok": True}
+        # Successful AlphaESS mutations return data:null -> None.
+        mock_api.bindSn.return_value = None
         flow, entry = _make_subentry_flow(mock_hass, mock_api)
         flow._sysSn = "AL999"
         result = await flow.async_step_verify({"verification_code": " 1234 "})
+        entry.runtime_data.async_bind_system.assert_awaited_once_with(
+            "AL999", "1234"
+        )
         mock_api.bindSn.assert_awaited_once_with("AL999", "1234")
         assert result["type"] == "create_entry"
+        assert result["unique_id"] == f"{SUBENTRY_TYPE_INVERTER}_AL999"
         assert result["data"][CONF_SERIAL_NUMBER] == "AL999"
         mock_hass.config_entries.async_schedule_reload.assert_called_once_with(
             entry.entry_id
         )
 
-    async def test_bind_returns_none(self, mock_hass, mock_api):
-        mock_api.bindSn.return_value = None
+    async def test_bind_api_rejection(self, mock_hass, mock_api):
+        mock_api.bindSn.side_effect = _api_error(6046)
         flow, _ = _make_subentry_flow(mock_hass, mock_api)
         flow._sysSn = "AL999"
         result = await flow.async_step_verify({"verification_code": "1234"})
         assert result["errors"] == {"base": "bind_failed"}
+
+    async def test_already_bound_is_idempotent_success(self, mock_hass, mock_api):
+        mock_api.bindSn.side_effect = _api_error(6003)
+        flow, _ = _make_subentry_flow(mock_hass, mock_api)
+        flow._sysSn = "AL999"
+        result = await flow.async_step_verify({"verification_code": "1234"})
+        assert result["type"] == "create_entry"
+        assert result["unique_id"] == f"{SUBENTRY_TYPE_INVERTER}_AL999"
+        assert result["data"][CONF_SERIAL_NUMBER] == "AL999"
 
     async def test_bind_raises(self, mock_hass, mock_api):
         mock_api.bindSn.side_effect = OSError("api down")
@@ -341,11 +395,14 @@ class TestSubentryReconfigureStep:
         assert result["errors"] == {"base": "invalid_ip"}
 
     async def test_unbind_success(self, mock_hass, mock_api):
-        mock_api.unBindSn.return_value = {"ok": True}
+        # Successful AlphaESS mutations return data:null -> None.
+        mock_api.unBindSn.return_value = None
         flow, entry, subentry = _make_reconfigure_flow(mock_hass, mock_api)
         result = await flow.async_step_reconfigure({"confirm_unbind": True})
         assert result["type"] == "abort"
         assert result["reason"] == "unbind_successful"
+        entry.runtime_data.async_unbind_system.assert_awaited_once_with("AL999")
+        mock_api.unBindSn.assert_awaited_once_with("AL999")
         mock_hass.config_entries.async_remove_subentry.assert_called_once_with(
             entry, subentry.subentry_id
         )
@@ -353,8 +410,17 @@ class TestSubentryReconfigureStep:
             entry.entry_id
         )
 
-    async def test_unbind_returns_none(self, mock_hass, mock_api):
-        mock_api.unBindSn.return_value = None
+    async def test_already_unbound_is_idempotent_success(self, mock_hass, mock_api):
+        mock_api.unBindSn.side_effect = _api_error(6005)
+        flow, entry, subentry = _make_reconfigure_flow(mock_hass, mock_api)
+        result = await flow.async_step_reconfigure({"confirm_unbind": True})
+        assert result["reason"] == "unbind_successful"
+        mock_hass.config_entries.async_remove_subentry.assert_called_once_with(
+            entry, subentry.subentry_id
+        )
+
+    async def test_unbind_api_rejection(self, mock_hass, mock_api):
+        mock_api.unBindSn.side_effect = _api_error(6042)
         flow, _, _ = _make_reconfigure_flow(mock_hass, mock_api)
         result = await flow.async_step_reconfigure({"confirm_unbind": True})
         assert result["errors"] == {"base": "unbind_failed"}
