@@ -6,9 +6,10 @@ Linux-only), so the suite runs identically on Windows, macOS and Linux/CI.
 The plugin is disabled via `-p no:homeassistant` in pyproject.toml.
 """
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 import pytest
+from alphaess.alphaess import alphaess as AlphaESSApiClient
 
 from custom_components.alphaess.coordinator import AlphaESSDataUpdateCoordinator
 
@@ -55,8 +56,8 @@ def mock_hass():
 
 @pytest.fixture
 def mock_api():
-    """Return a mocked alphaess API client."""
-    api = MagicMock()
+    """Return a signature-checked mock of the pinned upstream client."""
+    api = create_autospec(AlphaESSApiClient, instance=True)
     api.ipaddress = None
     for method in (
         "getESSList",
@@ -81,7 +82,7 @@ def mock_api():
         "unBindSn",
         "authenticate",
     ):
-        setattr(api, method, AsyncMock(return_value=None))
+        getattr(api, method).return_value = None
     return api
 
 

@@ -1,14 +1,16 @@
 """Coordinator for AlphaEss integration."""
 import asyncio
 import logging
+import math
 import time as time_mod
+from copy import deepcopy
 from datetime import timedelta
 from typing import Any
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -16,10 +18,14 @@ from alphaess import alphaess
 from alphaess.alphaess import AlphaESSApiError
 
 from .const import (
+    AUTH_FAILURE_CODES,
     CONF_SERIAL_NUMBER,
     DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
     DOMAIN,
+    FAST_API_CALL_INTERVAL_SECONDS,
     LOWER_INVERTER_API_CALL_LIST,
+    MIN_API_CALL_INTERVAL_SECONDS,
+    RATE_LIMIT_CODE,
     SCAN_INTERVAL,
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
@@ -29,9 +35,9 @@ from .enums import AlphaESSNames
 _LOGGER = logging.getLogger(__name__)
 
 # --- Periodic (setTimeChargeBySn) schedule -----------------------------------
-# executeCycleType 0 = daily, 1 = weekly. We always write daily so the periodic
-# schedule mirrors the two-slot legacy config the entities are modelled on;
-# per-weekday scheduling is intentionally out of scope (see issue #267).
+# executeCycleType 0 = daily, 1 = weekly. Existing values are preserved. The
+# two-slot HA surface may add periods only to a daily schedule because it has no
+# weekday selector with which to define a new weekly period safely.
 PERIODIC_DAILY = 0
 
 # chargeLimit is documented as [10, 100]; anything outside returns 6001.
@@ -39,9 +45,8 @@ PERIODIC_MIN_CHARGE_LIMIT = 10
 PERIODIC_MAX_CHARGE_LIMIT = 100
 
 # Values for the "Periodic Schedule Read" diagnostic sensor. This reports
-# whether getTimeChargeBySn can be read on this account, which is NOT the same
-# as whether the system is on the periodic backend — the read and write
-# endpoints are separately permissioned. Both APIs are written either way.
+# whether getTimeChargeBySn can be read on this account. A partial write cannot
+# safely preserve this full-replacement resource unless the read succeeds.
 PERIODIC_READ_OK = "readable"
 PERIODIC_READ_UNAVAILABLE = "unreadable"
 PERIODIC_READ_UNKNOWN = "unknown"
@@ -51,7 +56,37 @@ PERIODIC_READ_UNKNOWN = "unknown"
 # retrying. See docs/RETURN_CODES.md in alphaess-openAPI.
 PERIODIC_NOT_ENTITLED = 6017
 
-MINUTES_PER_DAY = 1440
+# "Set failed". Overlap is one possible cause documented by the upstream
+# project, but the return code itself is generic.
+PERIODIC_OVERLAP = 6008
+
+
+class ScheduleWriteError(HomeAssistantError):
+    """Raised when a full-replacement schedule cannot be applied safely."""
+
+
+class ScheduleConflictError(ScheduleWriteError):
+    """Raised when a remote schedule changed while a local draft was open."""
+
+
+class SchedulePartialWriteError(ScheduleWriteError):
+    """Raised when one backup store accepted a change and another did not.
+
+    Only possible in legacy backup mode, where charge and discharge are two
+    separate stores. The periodic (primary) mode is a single store and cannot
+    partially fail.
+    """
+
+
+class ScheduleWriteUnknownError(ScheduleWriteError):
+    """Raised when a write response was lost and remote state is unknown."""
+
+
+class SchedulePartialWriteUnknownError(
+    SchedulePartialWriteError, ScheduleWriteUnknownError
+):
+    """Raised when one store is known-good and another write is indeterminate."""
+
 
 
 def describe_api_error(err: AlphaESSApiError) -> str:
@@ -69,42 +104,25 @@ def describe_api_error(err: AlphaESSApiError) -> str:
     return described
 
 
-def _time_to_minutes(value: str) -> int:
-    """Convert an "HH:mm" string into minutes since midnight."""
-    hours, _, minutes = value.partition(":")
-    return int(hours) * 60 + int(minutes)
 
 
-def _period_intervals(period: dict[str, Any]) -> list[tuple[int, int]]:
-    """Return the half-open minute intervals a period covers.
+def _format_periods(periods: list[dict[str, Any]]) -> str:
+    """Render a period list for a log line."""
+    if not periods:
+        return "none"
+    return ", ".join(f"{p['beginTime']}-{p['endTime']}" for p in periods)
 
-    A period whose end is not after its start wraps midnight, so it is split
-    into two intervals to keep overlap testing simple.
+
+def _format_window(begin: Any, end: Any) -> str:
+    """Render one two-slot window for the period sensors.
+
+    AlphaESS has no "empty" value: an unused slot is stored with start equal
+    to end (usually 00:00-00:00), which reads better as "Not set" than as a
+    zero-length midnight window.
     """
-    start = _time_to_minutes(period["beginTime"])
-    end = _time_to_minutes(period["endTime"])
-    if end > start:
-        return [(start, end)]
-    return [(start, MINUTES_PER_DAY), (0, end)]
-
-
-def find_overlapping_periods(
-    charge_periods: list[dict[str, Any]],
-    discharge_periods: list[dict[str, Any]],
-) -> tuple[dict[str, Any], dict[str, Any]] | None:
-    """Return the first charge/discharge period pair that overlaps, if any.
-
-    The legacy endpoints happily accept overlapping charge and discharge
-    windows, but setTimeChargeBySn rejects them with 6008. Callers use this to
-    skip the periodic write instead of failing it.
-    """
-    for charge in charge_periods:
-        for discharge in discharge_periods:
-            for c_start, c_end in _period_intervals(charge):
-                for d_start, d_end in _period_intervals(discharge):
-                    if c_start < d_end and d_start < c_end:
-                        return charge, discharge
-    return None
+    if not begin or not end or begin == end:
+        return "Not set"
+    return f"{begin} - {end}"
 
 
 class DataProcessor:
@@ -208,11 +226,14 @@ class InverterDataParser:
             AlphaESSNames.fourGModule: self.dp.safe_get(device_info, "g4moudle"),
         }
 
-    def parse_ev_data(self, ev_data: dict | None, invertor: dict) -> dict[str, Any]:
+    def parse_ev_data(
+        self, ev_data: list[dict[str, Any]] | dict[str, Any] | None, invertor: dict
+    ) -> dict[str, Any]:
         """Parse EV charger data."""
         if not ev_data:
             return {}
 
+        ev_count = len(ev_data) if isinstance(ev_data, list) else 1
         ev_data = ev_data[0] if isinstance(ev_data, list) else ev_data
         ev_status = invertor.get("EVStatus", {})
         ev_current = invertor.get("EVCurrent", {})
@@ -220,6 +241,7 @@ class InverterDataParser:
         return {
             AlphaESSNames.evchargersn: self.dp.safe_get(ev_data, "evchargerSn"),
             AlphaESSNames.evchargermodel: self.dp.safe_get(ev_data, "evchargerModel"),
+            AlphaESSNames.evchargercount: ev_count,
             AlphaESSNames.evchargerstatus: self.dp.safe_get(ev_status, "evchargerStatus"),
             AlphaESSNames.evchargerstatusraw: self.dp.safe_get(ev_status, "evchargerStatus"),
             AlphaESSNames.evcurrentsetting: self.dp.safe_get(ev_current, "currentsetting"),
@@ -329,71 +351,45 @@ class InverterDataParser:
         return data
 
     def parse_charge_config(self, config: dict) -> dict[str, Any]:
-        """Parse charge configuration."""
-        data = {}
-        for key in ["gridCharge", AlphaESSNames.batHighCap]:
-            if key == AlphaESSNames.batHighCap:
-                data[key] = self.dp.safe_get(config, "batHighCap")
-            else:
-                data[key] = self.dp.safe_get(config, key)
+        """Parse the legacy charge configuration (backup mode only)."""
+        data: dict[str, Any] = {
+            "gridCharge": self.dp.safe_get(config, "gridCharge"),
+            AlphaESSNames.batHighCap: self.dp.safe_get(config, "batHighCap"),
+        }
 
-        # Parse time slots with the correct key names
         time_start_1 = self.dp.safe_get(config, "timeChaf1")
         time_end_1 = self.dp.safe_get(config, "timeChae1")
         time_start_2 = self.dp.safe_get(config, "timeChaf2")
         time_end_2 = self.dp.safe_get(config, "timeChae2")
 
-        # Format as "HH:MM - HH:MM" to match expected format
-        if time_start_1 and time_end_1:
-            data[AlphaESSNames.ChargeTime1] = f"{time_start_1} - {time_end_1}"
-        else:
-            data[AlphaESSNames.ChargeTime1] = "00:00 - 00:00"
+        data[AlphaESSNames.ChargeTime1] = _format_window(time_start_1, time_end_1)
+        data[AlphaESSNames.ChargeTime2] = _format_window(time_start_2, time_end_2)
 
-        if time_start_2 and time_end_2:
-            data[AlphaESSNames.ChargeTime2] = f"{time_start_2} - {time_end_2}"
-        else:
-            data[AlphaESSNames.ChargeTime2] = "00:00 - 00:00"
-
-        # Also keep the raw values for compatibility
         data["charge_timeChaf1"] = time_start_1
         data["charge_timeChae1"] = time_end_1
         data["charge_timeChaf2"] = time_start_2
         data["charge_timeChae2"] = time_end_2
-
         return data
 
     def parse_discharge_config(self, config: dict) -> dict[str, Any]:
-        """Parse discharge configuration."""
-        data = {}
-        for key in ["ctrDis", AlphaESSNames.batUseCap]:
-            if key == AlphaESSNames.batUseCap:
-                data[key] = self.dp.safe_get(config, "batUseCap")
-            else:
-                data[key] = self.dp.safe_get(config, key)
+        """Parse the legacy discharge configuration (backup mode only)."""
+        data: dict[str, Any] = {
+            "ctrDis": self.dp.safe_get(config, "ctrDis"),
+            AlphaESSNames.batUseCap: self.dp.safe_get(config, "batUseCap"),
+        }
 
-        # Parse time slots with the correct key names
         time_start_1 = self.dp.safe_get(config, "timeDisf1")
         time_end_1 = self.dp.safe_get(config, "timeDise1")
         time_start_2 = self.dp.safe_get(config, "timeDisf2")
         time_end_2 = self.dp.safe_get(config, "timeDise2")
 
-        # Format as "HH:MM - HH:MM" to match expected format
-        if time_start_1 and time_end_1:
-            data[AlphaESSNames.DischargeTime1] = f"{time_start_1} - {time_end_1}"
-        else:
-            data[AlphaESSNames.DischargeTime1] = "00:00 - 00:00"
+        data[AlphaESSNames.DischargeTime1] = _format_window(time_start_1, time_end_1)
+        data[AlphaESSNames.DischargeTime2] = _format_window(time_start_2, time_end_2)
 
-        if time_start_2 and time_end_2:
-            data[AlphaESSNames.DischargeTime2] = f"{time_start_2} - {time_end_2}"
-        else:
-            data[AlphaESSNames.DischargeTime2] = "00:00 - 00:00"
-
-        # Also keep the raw values for compatibility
         data["discharge_timeDisf1"] = time_start_1
         data["discharge_timeDise1"] = time_end_1
         data["discharge_timeDisf2"] = time_start_2
         data["discharge_timeDise2"] = time_end_2
-
         return data
 
 
@@ -432,6 +428,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         self.api = client
         self.hass = hass
         self.data: dict[str, dict[str, Any]] = {}
+        self._prefetched_ess_list: list[dict[str, Any]] | None = None
         self.entry = entry
 
         self._last_full_poll: float | None = None  # monotonic timestamp of last full poll
@@ -465,13 +462,17 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         self.inverter_count = len(self.model_list)
         self.LOCAL_INVERTER_COUNT = 0 if self.inverter_count <= 1 else self.inverter_count
 
-        # Configure throttling based on inverter types
-        self.throttle_multiplier = 0.0
+        # AlphaESS advises at least ten seconds between polling calls. Apply it
+        # to every model; unsupported endpoints are skipped separately.
+        self.throttle_multiplier = float(MIN_API_CALL_INTERVAL_SECONDS)
         self.has_throttle = True
-        if (all(inverter not in self.model_list for inverter in LOWER_INVERTER_API_CALL_LIST)
-                and len(self.model_list) > 0):
-            self.has_throttle = False
-            self.throttle_multiplier = 1.25
+        # All OpenAPI reads and writes share one gate. Poll sleeps alone cannot
+        # protect a button/service call that arrives during a coordinator poll.
+        self._api_request_lock = asyncio.Lock()
+        self._last_api_request_completed: float | None = None
+        # All calls run on the fast lane until the server ever answers 6053;
+        # see _call_interval for the live-probe evidence behind it.
+        self._fast_api_lane = True
 
         # Per-serial throttle tracking for charge/discharge buttons (monotonic timestamps)
         self.last_discharge_update: dict[str, float] = {}
@@ -481,18 +482,42 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # keyed by serial then setting key. Replaces the old hass.data[DOMAIN][serial] store.
         self.number_settings: dict[str, dict[str, float]] = {}
 
-        # Periodic schedule (setTimeChargeBySn) entitlement per serial.
-        # Missing/None = not yet determined, True/False = known answer.
+        # The periodic schedule API is the primary schedule store; keep its
+        # last-known-good snapshot per serial. Systems that AlphaESS answers
+        # 6017 for fall back to the legacy two-slot endpoints ("backup mode"),
+        # whose snapshots live in _legacy_schedules. A system is in exactly
+        # one mode; the stores are never mixed (issue #269).
+        self._periodic_schedules: dict[str, dict[str, Any]] = {}
+        self._legacy_schedules: dict[str, dict[str, dict[str, Any]]] = {}
+        self._periodic_overlaid_serials: set[str] = set()
+
+        # Periodic schedule (getTimeChargeBySn) readability per serial.
+        # Missing = not yet determined, True/False = known answer.
         self._periodic_readable: dict[str, bool] = {}
 
-        # Last known chargePower per serial, keyed "charge"/"discharge", so a
-        # power setpoint configured in the AlphaESS app survives our writes.
-        self._periodic_power: dict[str, dict[str, int]] = {}
+        # Entity changes are drafts. A user can edit start/end/limits/switches
+        # without emitting a series of unsafe intermediate full replacements,
+        # then commit once with the Apply Schedule button.
+        self._schedule_drafts: dict[str, dict[str, dict[str, Any]]] = {}
+        self._schedule_draft_dirty: dict[str, dict[str, set[str]]] = {}
+        self._schedule_draft_base_periodic: dict[str, dict[str, Any]] = {}
+        self._schedule_draft_base_legacy: dict[str, dict[str, dict[str, Any]]] = {}
+        self._schedule_draft_revisions: dict[str, int] = {}
+        self._schedule_write_revisions: dict[str, int] = {}
+        self._schedule_apply_in_progress: set[str] = set()
+
+        # Serialise every schedule read/modify/write transaction across time,
+        # number, switch, button and service platforms.
+        self._schedule_locks: dict[str, asyncio.Lock] = {}
 
         # Serials whose periodic *write* came back 6017. Unlike the read, this
         # is the endpoint we actually care about answering for itself, so once
         # it refuses there is no point asking again.
         self._periodic_write_denied: set[str] = set()
+
+        # The current entity model exposes one EV charger per inverter. Do not
+        # silently truncate the upstream list when an account has more.
+        self._multi_ev_warned: set[str] = set()
 
         # Guards temporary mutation of the shared API client's ipaddress
         self._local_ip_lock = asyncio.Lock()
@@ -508,6 +533,85 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
                     self._ev_charger_subentry_map[serial] = subentry_id
 
+    def _call_interval(self) -> float:
+        """Return the current spacing between OpenAPI calls.
+
+        At the documented 10-second spacing a two-inverter full poll takes
+        minutes, which blocks HA startup and delays app-side changes (such
+        as a work-mode switch flipping Time Based Control) by up to five
+        minutes. The new server was live-probed accepting reads at
+        sub-second spacing without 6053, so everything runs at the fast pace
+        and any 6053 drops the session straight back to the documented
+        interval (with that one call retried once).
+        """
+        if self._fast_api_lane:
+            return min(
+                float(FAST_API_CALL_INTERVAL_SECONDS), self.throttle_multiplier
+            )
+        return self.throttle_multiplier
+
+    async def _call_cloud_api(self, method, *args, **kwargs) -> Any:
+        """Call one OpenAPI endpoint after the currently required interval."""
+        async with self._api_request_lock:
+            if self._last_api_request_completed is not None:
+                remaining = self._call_interval() - (
+                    time_mod.monotonic() - self._last_api_request_completed
+                )
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+            try:
+                return await method(*args, **kwargs)
+            except AlphaESSApiError as err:
+                if err.code == RATE_LIMIT_CODE and self._fast_api_lane:
+                    # The fast lane overshot this server's limits. Fall back
+                    # to the documented spacing for the rest of the session
+                    # and retry this one call once.
+                    self._fast_api_lane = False
+                    _LOGGER.info(
+                        "AlphaESS rate-limited the fast lane (6053); "
+                        "dropping to %ss spacing", self.throttle_multiplier,
+                    )
+                    await asyncio.sleep(self.throttle_multiplier)
+                    return await method(*args, **kwargs)
+                raise
+            finally:
+                # A rejected or indeterminate request still consumed an API
+                # attempt and must participate in the next-call delay.
+                self._last_api_request_completed = time_mod.monotonic()
+
+    async def _async_wait_for_api_interval(self) -> None:
+        """Hold the API gate until a just-completed request is safe to follow."""
+        async with self._api_request_lock:
+            if self._last_api_request_completed is None:
+                return
+            remaining = self.throttle_multiplier - (
+                time_mod.monotonic() - self._last_api_request_completed
+            )
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+
+    async def async_request_verification_code(
+        self, serial: str, check_code: str
+    ) -> Any:
+        """Request a bind code through the shared OpenAPI gate."""
+        return await self._call_cloud_api(
+            self.api.getVerificationCode, serial, check_code
+        )
+
+    async def async_bind_system(self, serial: str, code: str) -> Any:
+        """Bind a system and leave enough space before setup reloads."""
+        try:
+            return await self._call_cloud_api(self.api.bindSn, serial, code)
+        finally:
+            await self._async_wait_for_api_interval()
+
+    async def async_unbind_system(self, serial: str) -> Any:
+        """Unbind a system and leave enough space before setup reloads."""
+        try:
+            return await self._call_cloud_api(self.api.unBindSn, serial)
+        finally:
+            await self._async_wait_for_api_interval()
+
     async def _read(self, method, *args) -> Any:
         """Run a polling read, tolerating an API-level rejection.
 
@@ -519,13 +623,61 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         the inverter is unreachable.
         """
         try:
-            return await method(*args)
+            return await self._call_cloud_api(method, *args)
         except AlphaESSApiError as err:
+            if err.code in AUTH_FAILURE_CODES:
+                raise ConfigEntryAuthFailed(
+                    f"AlphaESS credentials rejected: {err}"
+                ) from err
             _LOGGER.debug(
                 "%s returned %s; continuing without it",
                 getattr(method, "__name__", method), describe_api_error(err),
             )
             return None
+
+    async def _async_get_ess_list(self) -> Any:
+        """Consume setup's successful discovery result before polling again."""
+        if self._prefetched_ess_list is not None:
+            units = self._prefetched_ess_list
+            self._prefetched_ess_list = None
+            return units
+        return await self._read(self.api.getESSList)
+
+    def set_prefetched_ess_list(self, units: list[dict[str, Any]]) -> None:
+        """Reuse setup discovery and account for the request in API spacing."""
+        self._prefetched_ess_list = units
+        self._last_api_request_completed = time_mod.monotonic()
+
+    def _prune_unbound_systems(self, active_serials: set[str]) -> None:
+        """Drop state for systems absent from a successful ESS-list response."""
+        stale_serials = set(self.data) - active_serials
+        for serial in stale_serials:
+            _LOGGER.info("Removing unbound AlphaESS system %s from coordinator state", serial)
+            self.data.pop(serial, None)
+            for cache in (
+                self._periodic_schedules,
+                self._legacy_schedules,
+                self._periodic_readable,
+                self._schedule_drafts,
+                self._schedule_draft_dirty,
+                self._schedule_draft_base_periodic,
+                self._schedule_draft_base_legacy,
+                self._schedule_draft_revisions,
+                self._schedule_write_revisions,
+                self.number_settings,
+                self._inverter_error_count,
+                self.last_charge_update,
+                self.last_discharge_update,
+            ):
+                cache.pop(serial, None)
+            self._periodic_write_denied.discard(serial)
+            self._periodic_overlaid_serials.discard(serial)
+            self._multi_ev_warned.discard(serial)
+            # Drop the write lock too, but never while a transaction holds it:
+            # popping a held lock would let a new one be created alongside it.
+            lock = self._schedule_locks.get(serial)
+            if lock is not None and not lock.locked():
+                self._schedule_locks.pop(serial, None)
 
     def get_inverter_subentry_id(self, serial: str) -> str | None:
         """Get the subentry ID for an inverter by its serial number."""
@@ -553,7 +705,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
 
     async def set_ev_charger_current(self, serial: str, value: int) -> None:
         """Set EV charger current setting."""
-        result = await self.api.setEvChargerCurrentsBySn(serial, value)
+        result = await self._call_cloud_api(
+            self.api.setEvChargerCurrentsBySn,
+            sysSn=serial, currentsetting=value,
+        )
         _LOGGER.info(
             "Set EV charger current for %s to %sA - Result: %s",
             serial, value, result,
@@ -573,9 +728,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             return None
 
     def can_control_ev(self, serial: str, direction: int) -> bool:
-        """Validate if EV remote command is compatible with current charger state.
+        """Whether an EV command looks compatible with the last known state.
 
         Direction: 0 = stop, 1 = start.
+
+        Advisory only, and used for the Can Start/Stop Charging binary sensors.
+        It deliberately does not gate control_ev: the status behind it is as
+        old as the last poll, and our mapping of states to allowed commands is
+        our reading of the API rather than the API's own rule.
         """
         status = self.get_ev_charger_status_raw(serial)
         if status is None:
@@ -587,40 +747,56 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             return status in (3, 4, 5)
         return False
 
-    async def control_ev(self, serial: str, ev_serial: str, direction: str) -> None:
-        """Control EV charger."""
-        parsed_direction = int(direction)
-        if not self.can_control_ev(serial, parsed_direction):
-            _LOGGER.warning(
-                "Skipping EV control command for %s (%s), direction=%s due to incompatible state=%s",
-                serial,
-                ev_serial,
-                direction,
-                self.get_ev_charger_status_raw(serial),
-            )
-            return
+    async def control_ev(self, serial: str, ev_serial: str, direction: int | str) -> None:
+        """Control EV charger.
 
-        result = await self.api.remoteControlEvCharger(serial, ev_serial, direction)
+        Sent regardless of the last known charger state. Refusing locally meant
+        a status that was merely stale, or missing because the status endpoint
+        had failed, silently swallowed the command; and with no status at all it
+        blocked every command indefinitely. The charger is the authority on what
+        it will accept, so ask it and report what it says.
+        """
+        control_mode = int(direction)
+        if not self.can_control_ev(serial, control_mode):
+            _LOGGER.debug(
+                "EV command for %s (%s) direction=%s does not match the last known "
+                "state=%s; sending anyway",
+                serial, ev_serial, direction, self.get_ev_charger_status_raw(serial),
+            )
+
+        result = await self._call_cloud_api(
+            self.api.remoteControlEvCharger,
+            sysSn=serial,
+            evchargerSn=ev_serial,
+            controlMode=control_mode,
+        )
         _LOGGER.info(
             "Control EV Charger: %s for serial: %s Direction: %s - Result: %s",
             ev_serial, serial, direction, result,
         )
 
     async def reset_config(self, serial: str) -> None:
-        """Reset charge and discharge configuration."""
-        bat_use_cap = self.get_number_setting(serial, "batUseCap", 10)
-        bat_high_cap = self.get_number_setting(serial, "batHighCap", 90)
+        """Reset both legacy backup stores (backup mode only).
 
-        await self._async_apply_schedule(
+        The periodic store cannot be cleared — AlphaESS rejects empty period
+        lists — so on periodic-governed systems this action raises and the
+        Reset button reports unavailable instead.
+        """
+        if self.is_time_based_control_active(serial) is False:
+            raise ScheduleWriteError(
+                "Time-based control is disabled: the inverter is in a "
+                "self-consumption working mode, which a reset cannot change; "
+                "switch the working mode in the AlphaESS app first"
+            )
+        await self._safe_async_apply_schedule(
             serial,
+            clear_all=True,
             charge={
-                "batHighCap": bat_high_cap,
                 "gridCharge": 1,
                 "timeChaf1": "00:00", "timeChae1": "00:00",
                 "timeChaf2": "00:00", "timeChae2": "00:00",
             },
             discharge={
-                "batUseCap": bat_use_cap,
                 "ctrDis": 1,
                 "timeDisf1": "00:00", "timeDise1": "00:00",
                 "timeDisf2": "00:00", "timeDise2": "00:00",
@@ -633,48 +809,66 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             self.data[serial]["ctrDis"] = 1
             self.async_set_updated_data(self.data)
 
-    async def update_discharge(self, name: str, serial: str, time_period: int) -> None:
-        """Update discharge configuration for specified time period."""
-        bat_use_cap = self.get_number_setting(serial, name, 10)
+    async def update_discharge(self, _name: str, serial: str, time_period: int) -> None:
+        """Update discharge configuration for specified time period.
+
+        Only slot 1 is written. The buttons used to zero slot 2 as well, which
+        on the periodic store deleted an app-configured second period — the
+        same class of app-state stomp as issue #269.
+        """
+        if self.is_time_based_control_active(serial) is False:
+            raise ScheduleWriteError(
+                "Time-based control is disabled: the inverter is in a "
+                "self-consumption working mode, which the quick discharge "
+                "button cannot change; switch the working mode in the "
+                "AlphaESS app first"
+            )
         start_time, end_time = self.time_helper.calculate_time_window(time_period)
 
-        await self.async_write_discharge_config(
+        await self._safe_async_apply_schedule(
             serial,
-            bat_use_cap=bat_use_cap,
-            ctr_dis=1,
-            times={
+            discharge={
+                "ctrDis": 1,
                 "timeDisf1": start_time, "timeDise1": end_time,
-                "timeDisf2": "00:00", "timeDise2": "00:00",
             },
+            now_window=True,
         )
 
         _LOGGER.info(
-            "Updated discharge config - Capacity: %s, Period: %s to %s",
-            bat_use_cap, start_time, end_time,
+            "Updated discharge config - Period: %s to %s",
+            start_time, end_time,
         )
         # Optimistically update so the discharge switch reflects enabled immediately
         if serial in self.data:
             self.data[serial]["ctrDis"] = 1
             self.async_set_updated_data(self.data)
 
-    async def update_charge(self, name: str, serial: str, time_period: int) -> None:
-        """Update charge configuration for specified time period."""
-        bat_high_cap = self.get_number_setting(serial, name, 90)
+    async def update_charge(self, _name: str, serial: str, time_period: int) -> None:
+        """Update charge configuration for specified time period.
+
+        Only slot 1 is written; see update_discharge.
+        """
+        if self.is_time_based_control_active(serial) is False:
+            raise ScheduleWriteError(
+                "Time-based control is disabled: the inverter is in a "
+                "self-consumption working mode, which the quick charge "
+                "button cannot change; switch the working mode in the "
+                "AlphaESS app first"
+            )
         start_time, end_time = self.time_helper.calculate_time_window(time_period)
 
-        await self.async_write_charge_config(
+        await self._safe_async_apply_schedule(
             serial,
-            bat_high_cap=bat_high_cap,
-            grid_charge=1,
-            times={
+            charge={
+                "gridCharge": 1,
                 "timeChaf1": start_time, "timeChae1": end_time,
-                "timeChaf2": "00:00", "timeChae2": "00:00",
             },
+            now_window=True,
         )
 
         _LOGGER.info(
-            "Updated charge config - Capacity: %s, Period: %s to %s",
-            bat_high_cap, start_time, end_time,
+            "Updated charge config - Period: %s to %s",
+            start_time, end_time,
         )
         # Optimistically update so the charge switch reflects enabled immediately
         if serial in self.data:
@@ -684,13 +878,599 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
     # ------------------------------------------------------------------
     # Charge / discharge schedule writes
     #
-    # AlphaESS has migrated some regions (UK, AUS/NZ) to a backend that only
-    # acts on the periodic schedule API. There, updateChargeConfigInfo still
-    # answers 200 but the inverter never applies the change until someone
-    # presses Save in the app (issue #267), or the downstream SetConfig times
-    # out entirely (issue #269). Other regions only understand the legacy
-    # endpoints. So every write goes to both: periodic first, legacy after.
+    # The periodic schedule API (getTimeChargeBySn / setTimeChargeBySn) is
+    # the PRIMARY and preferred schedule store: it is what the AlphaESS app
+    # manages on the new backend. The legacy two-slot endpoints remain only
+    # as a BACKUP for systems whose developer account AlphaESS answers 6017
+    # for on the periodic read — until the permission is granted, they are
+    # the only control surface those systems have.
+    #
+    # A system is in exactly one mode. Periodic mode never reads or writes
+    # the legacy stores; backup mode never builds state from the periodic
+    # projection. Mixing the two caused issue #269 (hidden legacy periods,
+    # phantom overlaps, accepted-but-inert writes). Note the backup's limits:
+    # live probing (2026-08, SN AL7011023030623) showed the new backend
+    # round-trips legacy writes but may not act on the discharge store.
     # ------------------------------------------------------------------
+
+    def is_legacy_backup_active(self, serial: str) -> bool:
+        """Return whether this system runs on the legacy backup endpoints.
+
+        Only a definitive 6017 on the periodic READ selects backup mode. A
+        write-denied system (read works, write 6017) stays fail-closed: the
+        app-facing periodic store governs its inverter, so backup writes
+        could only diverge from it.
+        """
+        return (
+            self._periodic_readable.get(serial) is False
+            and serial not in self._periodic_write_denied
+        )
+
+    @staticmethod
+    def _legacy_state_from_data(
+        data: dict[str, Any],
+    ) -> dict[str, dict[str, Any]] | None:
+        """Return a complete legacy snapshot, or None when a poll was incomplete."""
+        state = {
+            "charge": {
+                "batHighCap": data.get(AlphaESSNames.batHighCap),
+                "gridCharge": data.get("gridCharge"),
+                "timeChaf1": data.get("charge_timeChaf1"),
+                "timeChae1": data.get("charge_timeChae1"),
+                "timeChaf2": data.get("charge_timeChaf2"),
+                "timeChae2": data.get("charge_timeChae2"),
+            },
+            "discharge": {
+                "batUseCap": data.get(AlphaESSNames.batUseCap),
+                "ctrDis": data.get("ctrDis"),
+                "timeDisf1": data.get("discharge_timeDisf1"),
+                "timeDise1": data.get("discharge_timeDise1"),
+                "timeDisf2": data.get("discharge_timeDisf2"),
+                "timeDise2": data.get("discharge_timeDise2"),
+            },
+        }
+        if any(value is None for side in state.values() for value in side.values()):
+            return None
+        return state
+
+    @staticmethod
+    def _normalise_legacy_side(side: str, payload: Any) -> dict[str, Any]:
+        """Validate one full legacy GET response without inventing defaults."""
+        fields = {
+            "charge": (
+                "batHighCap", "gridCharge", "timeChaf1", "timeChae1",
+                "timeChaf2", "timeChae2",
+            ),
+            "discharge": (
+                "batUseCap", "ctrDis", "timeDisf1", "timeDise1",
+                "timeDisf2", "timeDise2",
+            ),
+        }[side]
+        if not isinstance(payload, dict):
+            raise ScheduleWriteError(
+                f"Cannot update the {side} schedule: its full current configuration "
+                "could not be read"
+            )
+        missing = [key for key in fields if payload.get(key) is None]
+        if missing:
+            raise ScheduleWriteError(
+                f"Cannot update the {side} schedule without resetting unknown fields; "
+                f"the API omitted {', '.join(missing)}"
+            )
+        return {key: payload[key] for key in fields}
+
+    def _cache_legacy_state(
+        self,
+        serial: str,
+        data: dict[str, Any],
+        *,
+        expected_revision: int | None = None,
+    ) -> None:
+        """Retain complete legacy snapshots from successful backup-mode polls."""
+        if (
+            expected_revision is not None
+            and self._schedule_write_revisions.get(serial, 0) != expected_revision
+        ):
+            _LOGGER.debug(
+                "Ignoring a legacy schedule poll for %s that started before a write",
+                serial,
+            )
+            return
+        state = self._legacy_state_from_data(data)
+        if state is not None:
+            self._legacy_schedules[serial] = deepcopy(state)
+            # Fresh legacy data has replaced any lingering periodic
+            # projection from before a 6017 transition.
+            self._periodic_overlaid_serials.discard(serial)
+
+    def _mark_schedule_write(self, serial: str) -> None:
+        """Invalidate legacy snapshots older than a write attempt."""
+        self._schedule_write_revisions[serial] = (
+            self._schedule_write_revisions.get(serial, 0) + 1
+        )
+
+    async def _async_write_legacy_charge(self, serial: str, charge: dict[str, Any]) -> None:
+        """Write the two-slot charge config via updateChargeConfigInfo."""
+        result = await self._call_cloud_api(
+            self.api.updateChargeConfigInfo,
+            sysSn=serial,
+            batHighCap=charge["batHighCap"],
+            gridCharge=charge["gridCharge"],
+            timeChae1=charge["timeChae1"],
+            timeChae2=charge["timeChae2"],
+            timeChaf1=charge["timeChaf1"],
+            timeChaf2=charge["timeChaf2"],
+        )
+        _LOGGER.info("Updated charge config for %s: %s - Result: %s", serial, charge, result)
+
+    async def _async_write_legacy_discharge(self, serial: str, discharge: dict[str, Any]) -> None:
+        """Write the two-slot discharge config via updateDisChargeConfigInfo."""
+        result = await self._call_cloud_api(
+            self.api.updateDisChargeConfigInfo,
+            sysSn=serial,
+            batUseCap=discharge["batUseCap"],
+            ctrDis=discharge["ctrDis"],
+            timeDise1=discharge["timeDise1"],
+            timeDise2=discharge["timeDise2"],
+            timeDisf1=discharge["timeDisf1"],
+            timeDisf2=discharge["timeDisf2"],
+        )
+        _LOGGER.info("Updated discharge config for %s: %s - Result: %s", serial, discharge, result)
+
+    @staticmethod
+    def _normalise_periodic_schedule(payload: Any) -> dict[str, Any]:
+        """Keep the complete writable periodic payload and strip read-only fields."""
+        if not isinstance(payload, dict):
+            raise ScheduleWriteError("The periodic schedule response was not an object")
+        if payload.get("executeCycleType") not in (0, 1):
+            raise ScheduleWriteError("The periodic schedule omitted a valid executeCycleType")
+
+        result: dict[str, Any] = {
+            "executeCycleType": int(payload["executeCycleType"]),
+        }
+        for key in ("gridChargeCycle", "ctrDisCycle"):
+            if payload.get(key) is not None:
+                result[key] = int(payload[key])
+
+        writable_fields = (
+            "beginTime", "endTime", "weeks", "chargePower", "chargeLimit",
+        )
+        for list_key in ("chargeTimeList", "dischargeTimeList"):
+            periods = payload.get(list_key)
+            if not isinstance(periods, list):
+                raise ScheduleWriteError(f"The periodic schedule omitted {list_key}")
+            normalised: list[dict[str, Any]] = []
+            for period in periods:
+                if not isinstance(period, dict):
+                    raise ScheduleWriteError(f"{list_key} contained a non-object period")
+                cleaned = {
+                    key: deepcopy(period[key])
+                    for key in writable_fields
+                    if period.get(key) is not None
+                }
+                if cleaned.get("beginTime") is None or cleaned.get("endTime") is None:
+                    raise ScheduleWriteError(f"{list_key} contained a period without both times")
+                normalised.append(cleaned)
+            result[list_key] = normalised
+        return result
+
+    def _state_from_periodic(
+        self, serial: str, schedule: dict[str, Any]
+    ) -> dict[str, dict[str, Any]]:
+        """Map the first two periodic periods onto the existing entity surface."""
+        charge_periods = schedule["chargeTimeList"]
+        discharge_periods = schedule["dischargeTimeList"]
+
+        state = {
+            "charge": {
+                # The only fallbacks for an empty period list are the user's
+                # own number settings and the long-standing defaults.
+                "batHighCap": (
+                    charge_periods[0].get("chargeLimit") if charge_periods
+                    else self.get_number_setting(serial, "batHighCap", 90)
+                ),
+                "gridCharge": schedule.get("gridChargeCycle", 1),
+                "timeChaf1": "00:00", "timeChae1": "00:00",
+                "timeChaf2": "00:00", "timeChae2": "00:00",
+                "chargePower1": None, "chargePower2": None,
+            },
+            "discharge": {
+                # The legacy discharge store is retired; the only fallbacks
+                # for an empty periodic list are the user's own number
+                # settings and the long-standing defaults.
+                "batUseCap": (
+                    discharge_periods[0].get("chargeLimit") if discharge_periods
+                    else self.get_number_setting(serial, "batUseCap", 10)
+                ),
+                "ctrDis": schedule.get("ctrDisCycle", 1),
+                "timeDisf1": "00:00", "timeDise1": "00:00",
+                "timeDisf2": "00:00", "timeDise2": "00:00",
+                "chargePower1": None, "chargePower2": None,
+            },
+        }
+        for index, period in enumerate(charge_periods[:2], start=1):
+            state["charge"][f"timeChaf{index}"] = period["beginTime"]
+            state["charge"][f"timeChae{index}"] = period["endTime"]
+            state["charge"][f"chargePower{index}"] = period.get("chargePower")
+        for index, period in enumerate(discharge_periods[:2], start=1):
+            state["discharge"][f"timeDisf{index}"] = period["beginTime"]
+            state["discharge"][f"timeDise{index}"] = period["endTime"]
+            state["discharge"][f"chargePower{index}"] = period.get("chargePower")
+        return state
+
+    def _schedule_entity_state(self, serial: str) -> dict[str, dict[str, Any]]:
+        """Return the current entity view: an open draft, the periodic
+        snapshot (primary), or the legacy snapshot (backup mode)."""
+        if serial in self._schedule_drafts:
+            return deepcopy(self._schedule_drafts[serial])
+        if (
+            serial in self._periodic_schedules
+            and self._periodic_readable.get(serial) is True
+            and serial not in self._periodic_write_denied
+        ):
+            self._periodic_overlaid_serials.add(serial)
+            return self._state_from_periodic(serial, self._periodic_schedules[serial])
+        if self.is_legacy_backup_active(serial):
+            cached = self._legacy_schedules.get(serial, {})
+            if serial in self._periodic_overlaid_serials:
+                # The entity data may still hold a periodic projection after
+                # a 6017 transition; never reinterpret that as legacy values.
+                state = None
+            else:
+                state = self._legacy_state_from_data(self.data.get(serial) or {})
+            if state is not None:
+                # A one-sided write can leave the cache newer than the polled
+                # view for just that side; the cache wins where it exists.
+                for side in ("charge", "discharge"):
+                    if side in cached:
+                        state[side] = deepcopy(cached[side])
+            elif all(side in cached for side in ("charge", "discharge")):
+                state = deepcopy(cached)
+            if state is not None:
+                self._legacy_schedules[serial] = deepcopy(state)
+                self._periodic_overlaid_serials.discard(serial)
+                return state
+        raise ScheduleWriteError(
+            f"Cannot edit the schedule for {serial}: no schedule store is "
+            "usable yet for this system"
+        )
+
+    @staticmethod
+    def _put_schedule_state(data: dict[str, Any], state: dict[str, dict[str, Any]]) -> None:
+        """Overlay the authoritative/draft schedule onto coordinator entity data."""
+        charge = state["charge"]
+        data[AlphaESSNames.batHighCap] = charge["batHighCap"]
+        data["gridCharge"] = charge["gridCharge"]
+        data["charge_timeChaf1"] = charge["timeChaf1"]
+        data["charge_timeChae1"] = charge["timeChae1"]
+        data["charge_timeChaf2"] = charge["timeChaf2"]
+        data["charge_timeChae2"] = charge["timeChae2"]
+        data[AlphaESSNames.ChargeTime1] = _format_window(
+            charge["timeChaf1"], charge["timeChae1"]
+        )
+        data[AlphaESSNames.ChargeTime2] = _format_window(
+            charge["timeChaf2"], charge["timeChae2"]
+        )
+        data[AlphaESSNames.ChargePower1] = charge.get("chargePower1")
+        data[AlphaESSNames.ChargePower2] = charge.get("chargePower2")
+        discharge = state["discharge"]
+        data[AlphaESSNames.batUseCap] = discharge["batUseCap"]
+        data["ctrDis"] = discharge["ctrDis"]
+        data["discharge_timeDisf1"] = discharge["timeDisf1"]
+        data["discharge_timeDise1"] = discharge["timeDise1"]
+        data["discharge_timeDisf2"] = discharge["timeDisf2"]
+        data["discharge_timeDise2"] = discharge["timeDise2"]
+        data[AlphaESSNames.DischargeTime1] = _format_window(
+            discharge["timeDisf1"], discharge["timeDise1"]
+        )
+        data[AlphaESSNames.DischargeTime2] = _format_window(
+            discharge["timeDisf2"], discharge["timeDise2"]
+        )
+        data[AlphaESSNames.DischargePower1] = discharge.get("chargePower1")
+        data[AlphaESSNames.DischargePower2] = discharge.get("chargePower2")
+        data[AlphaESSNames.ChargeRange] = (
+            f"{discharge['batUseCap']}% - {charge['batHighCap']}%"
+        )
+        # Whether any time-based control is enabled in the governing store.
+        # A non-timed mode such as Self Consumption Plus flips both enable
+        # flags to 0 while keeping the configured windows stored.
+        data[AlphaESSNames.TimeBasedControl] = (
+            int(charge["gridCharge"]) == 1 or int(discharge["ctrDis"]) == 1
+        )
+
+    def _overlay_schedule_view(self, serial: str, data: dict[str, Any]) -> None:
+        """Keep drafts/periodic state from being reset by a stale legacy poll."""
+        try:
+            state = self._schedule_entity_state(serial)
+        except ScheduleWriteError:
+            return
+        self._put_schedule_state(data, state)
+        # The mode indicator must reflect the committed store, not a draft:
+        # a staged enable flag cannot change the working mode.
+        committed = self._committed_enable_flags(serial)
+        if committed is not None:
+            data[AlphaESSNames.TimeBasedControl] = (
+                committed[0] == 1 or committed[1] == 1
+            )
+
+    def _publish_schedule_view(self, serial: str) -> None:
+        """Publish a schedule view change to all coordinator entities."""
+        if serial not in self.data:
+            return
+        self._overlay_schedule_view(serial, self.data[serial])
+        self.async_set_updated_data({key: dict(value) for key, value in self.data.items()})
+
+    def stage_schedule_change(
+        self,
+        serial: str,
+        *,
+        charge: dict[str, Any] | None = None,
+        discharge: dict[str, Any] | None = None,
+    ) -> None:
+        """Stage entity edits; no remote replacement occurs until Apply."""
+        if not charge and not discharge:
+            return
+        readable = self._periodic_readable.get(serial)
+        if readable is None:
+            raise ScheduleWriteError(
+                "Cannot stage schedule changes until AlphaESS confirms whether the "
+                "periodic schedule can be read"
+            )
+        if serial in self._periodic_write_denied:
+            raise ScheduleWriteError(
+                "Schedule control requires the AlphaESS periodic schedule API "
+                "(setTimeChargeBySn), whose writes AlphaESS refuses for this "
+                "system; ask AlphaESS to enable the timed charge/discharge "
+                "permission for your account"
+            )
+        if readable is True and serial not in self._periodic_schedules:
+            raise ScheduleWriteError(
+                "Cannot stage schedule changes until the complete periodic schedule "
+                "has been read"
+            )
+        power_fields = {"chargePower1", "chargePower2"}
+        if readable is False and any(
+            changes and power_fields.intersection(changes)
+            for changes in (charge, discharge)
+        ):
+            raise ScheduleWriteError(
+                "Per-period power exists only in the periodic schedule API, "
+                "which AlphaESS has not enabled for this system; the legacy "
+                "backup endpoints have no power field"
+            )
+        active = self.is_time_based_control_active(serial)
+        if active is False:
+            # A self-consumption working mode is running. Field testing
+            # showed the enable flags are accepted but ignored there, so
+            # nothing — switches included — may be edited; the mode can only
+            # be changed in the AlphaESS app.
+            raise ScheduleWriteError(
+                "Time-based control is disabled: the inverter is in a "
+                "self-consumption working mode, which can only be changed in "
+                "the AlphaESS app. Controls unlock automatically once a "
+                "time-based mode is active"
+            )
+        if active is True:
+            # Refuse to author the 0/0 flag state: it is indistinguishable
+            # from a self-consumption mode afterwards, and leaving it is
+            # app-only anyway. Disable the last timer from the app instead.
+            flags = self._committed_enable_flags(serial) or (1, 1)
+            grid_flag, dis_flag = flags
+            draft = self._schedule_drafts.get(serial)
+            if draft is not None:
+                grid_flag = int(draft["charge"].get("gridCharge", grid_flag))
+                dis_flag = int(draft["discharge"].get("ctrDis", dis_flag))
+            if charge and "gridCharge" in charge:
+                grid_flag = int(charge["gridCharge"])
+            if discharge and "ctrDis" in discharge:
+                dis_flag = int(discharge["ctrDis"])
+            if grid_flag == 0 and dis_flag == 0:
+                raise ScheduleWriteError(
+                    "Turning off the last enabled timer would look identical "
+                    "to a self-consumption mode and lock every control; "
+                    "disable it from the AlphaESS app instead"
+                )
+        if serial not in self._schedule_drafts:
+            self._schedule_drafts[serial] = self._schedule_entity_state(serial)
+            self._schedule_draft_dirty[serial] = {"charge": set(), "discharge": set()}
+            if readable is True:
+                self._schedule_draft_base_periodic[serial] = deepcopy(
+                    self._periodic_schedules[serial]
+                )
+            else:
+                self._schedule_draft_base_legacy[serial] = deepcopy(
+                    self._legacy_schedules[serial]
+                )
+
+        for side, changes in (("charge", charge), ("discharge", discharge)):
+            if changes:
+                self._schedule_drafts[serial][side].update(changes)
+                self._schedule_draft_dirty[serial][side].update(changes)
+        self._schedule_draft_revisions[serial] = (
+            self._schedule_draft_revisions.get(serial, 0) + 1
+        )
+        self._publish_schedule_view(serial)
+
+    def has_schedule_draft(self, serial: str) -> bool:
+        """Return whether this inverter has unapplied schedule changes."""
+        return serial in self._schedule_drafts
+
+    def is_schedule_field_staged(self, serial: str, coordinator_key: str) -> bool:
+        """Return whether this schedule field was explicitly staged in the draft.
+
+        The entity keys are "<side>_<api field>", e.g. charge_timeChaf1.
+        """
+        dirty = self._schedule_draft_dirty.get(serial)
+        if not dirty:
+            return False
+        side, _, field = coordinator_key.partition("_")
+        return field in dirty.get(side, ())
+
+    def is_schedule_apply_in_progress(self, serial: str) -> bool:
+        """Return whether this inverter has a remote Apply transaction in flight."""
+        return serial in self._schedule_apply_in_progress
+
+    def is_periodic_schedule_readable(self, serial: str) -> bool:
+        """Return whether per-period fields can be read and written safely."""
+        return (
+            self._periodic_readable.get(serial) is True
+            and serial not in self._periodic_write_denied
+            and serial in self._periodic_schedules
+        )
+
+    def can_stage_schedule(self, serial: str) -> bool:
+        """Return whether schedule edits have a live, known base.
+
+        Primary mode needs the periodic schedule readable, writable and
+        cached. Backup mode (definitive 6017) needs a complete legacy
+        snapshot instead.
+        """
+        if serial not in self.data:
+            return False
+        if self.is_periodic_schedule_readable(serial):
+            return True
+        if not self.is_legacy_backup_active(serial):
+            return False
+        cached = self._legacy_schedules.get(serial, {})
+        if all(side in cached for side in ("charge", "discharge")):
+            return True
+        if serial in self._periodic_overlaid_serials:
+            return False
+        return self._legacy_state_from_data(self.data.get(serial) or {}) is not None
+
+    def _committed_enable_flags(self, serial: str) -> tuple[int, int] | None:
+        """Return the committed (gridCharge, ctrDis) flags of the governing
+        store, or None while no store snapshot is available."""
+        if self.is_periodic_schedule_readable(serial):
+            schedule = self._periodic_schedules[serial]
+            return (
+                int(schedule.get("gridChargeCycle", 1)),
+                int(schedule.get("ctrDisCycle", 1)),
+            )
+        if self.is_legacy_backup_active(serial):
+            cached = self._legacy_schedules.get(serial, {})
+            if all(side in cached for side in ("charge", "discharge")):
+                return (
+                    int(cached["charge"]["gridCharge"]),
+                    int(cached["discharge"]["ctrDis"]),
+                )
+        return None
+
+    def is_time_based_control_active(self, serial: str) -> bool | None:
+        """Return whether the inverter's timed working mode is active.
+
+        Based on the COMMITTED store state, not the draft view: field
+        testing showed the working mode is app-authority only — writing an
+        enable flag does not leave a self-consumption mode — so a staged
+        flag must never count as active. False means a mode such as Self
+        Consumption (Plus) is running and every schedule control locks;
+        polling unlocks them automatically when the app-side mode changes.
+        """
+        flags = self._committed_enable_flags(serial)
+        if flags is not None:
+            return flags[0] == 1 or flags[1] == 1
+        value = self.data.get(serial, {}).get(AlphaESSNames.TimeBasedControl)
+        return None if value is None else bool(value)
+
+    def can_modify_time_controls(self, serial: str) -> bool:
+        """Return whether the timed-schedule editing surfaces should be live."""
+        return (
+            self.can_stage_schedule(serial)
+            and self.is_time_based_control_active(serial) is not False
+        )
+
+    def can_reset_schedule(self, serial: str) -> bool:
+        """Return whether Reset Charge/Discharge can possibly succeed.
+
+        Only the legacy backup stores can be cleared; the periodic store
+        rejects empty period lists. Reporting this lets the button become
+        unavailable instead of failing on every press.
+        """
+        return self.is_legacy_backup_active(serial)
+
+    def discard_schedule_draft(self, serial: str) -> None:
+        """Discard local entity edits and restore the latest remote view."""
+        if serial in self._schedule_apply_in_progress:
+            raise ScheduleWriteError(
+                "Cannot discard schedule changes while Apply is still in progress"
+            )
+        self._schedule_draft_revisions[serial] = (
+            self._schedule_draft_revisions.get(serial, 0) + 1
+        )
+        self._schedule_drafts.pop(serial, None)
+        self._schedule_draft_dirty.pop(serial, None)
+        self._schedule_draft_base_periodic.pop(serial, None)
+        self._schedule_draft_base_legacy.pop(serial, None)
+        self._publish_schedule_view(serial)
+
+    async def async_apply_schedule_draft(self, serial: str) -> None:
+        """Apply all dirty entity fields as one read/modify/write transaction."""
+        draft = self._schedule_drafts.get(serial)
+        dirty = self._schedule_draft_dirty.get(serial)
+        if draft is None or dirty is None:
+            raise ScheduleWriteError(f"There are no pending schedule changes for {serial}")
+        if self.is_time_based_control_active(serial) is False:
+            # The working mode changed to self-consumption after this draft
+            # was opened; applying it would write to a store the inverter
+            # is not following.
+            raise ScheduleWriteError(
+                "Time-based control is disabled: the inverter is in a "
+                "self-consumption working mode, which can only be changed in "
+                "the AlphaESS app. The pending draft stays available until a "
+                "time-based mode is active again"
+            )
+        revision = self._schedule_draft_revisions.get(serial, 0)
+        if serial in self._schedule_apply_in_progress:
+            raise ScheduleWriteError(f"A schedule Apply is already in progress for {serial}")
+
+        charge = {key: draft["charge"][key] for key in dirty["charge"]} or None
+        discharge = {
+            key: draft["discharge"][key] for key in dirty["discharge"]
+        } or None
+        self._schedule_apply_in_progress.add(serial)
+        self._publish_schedule_view(serial)
+        try:
+            await self._safe_async_apply_schedule(
+                serial,
+                charge=charge,
+                discharge=discharge,
+                expected_periodic=self._schedule_draft_base_periodic.get(serial),
+                expected_legacy=self._schedule_draft_base_legacy.get(serial),
+            )
+        except SchedulePartialWriteError:
+            # Backup mode only: one legacy store accepted the change. Keep
+            # the draft for retry, but advance its conflict base to what the
+            # API already accepted.
+            if serial in self._legacy_schedules:
+                self._schedule_draft_base_legacy[serial] = deepcopy(
+                    self._legacy_schedules[serial]
+                )
+            raise
+        finally:
+            self._schedule_apply_in_progress.discard(serial)
+            self._publish_schedule_view(serial)
+        if self._schedule_draft_revisions.get(serial, 0) != revision:
+            # Another edit (or Discard followed by a new edit) happened while
+            # the API calls were awaiting responses. Keep that newer intent;
+            # the next Apply starts from the state this transaction committed.
+            if serial in self._schedule_drafts:
+                if serial in self._periodic_schedules:
+                    self._schedule_draft_base_periodic[serial] = deepcopy(
+                        self._periodic_schedules[serial]
+                    )
+                else:
+                    self._schedule_draft_base_periodic.pop(serial, None)
+                if serial in self._legacy_schedules:
+                    self._schedule_draft_base_legacy[serial] = deepcopy(
+                        self._legacy_schedules[serial]
+                    )
+            self._publish_schedule_view(serial)
+            return
+        self._schedule_drafts.pop(serial, None)
+        self._schedule_draft_dirty.pop(serial, None)
+        self._schedule_draft_base_periodic.pop(serial, None)
+        self._schedule_draft_base_legacy.pop(serial, None)
+        self._publish_schedule_view(serial)
 
     async def async_write_charge_config(
         self,
@@ -699,18 +1479,34 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         bat_high_cap: float | None = None,
         grid_charge: int | None = None,
         times: dict[str, str] | None = None,
+        powers: dict[str, float] | None = None,
     ) -> None:
         """Apply a charge configuration change.
 
         `times` is keyed by the legacy API names (timeChaf1/timeChae1/
         timeChaf2/timeChae2); anything omitted keeps its current value.
         """
-        overrides: dict[str, Any] = dict(times or {})
+        active = self.is_time_based_control_active(serial)
+        if active is False:
+            raise ScheduleWriteError(
+                "Time-based control is disabled: the inverter is in a "
+                "self-consumption working mode, which can only be changed in "
+                "the AlphaESS app; nothing was written"
+            )
+        if grid_charge == 0 and active is True:
+            flags = self._committed_enable_flags(serial)
+            if flags is not None and flags[1] == 0:
+                raise ScheduleWriteError(
+                    "Turning off the last enabled timer would look identical "
+                    "to a self-consumption mode; disable it from the AlphaESS "
+                    "app instead"
+                )
+        overrides: dict[str, Any] = {**(times or {}), **(powers or {})}
         if bat_high_cap is not None:
             overrides["batHighCap"] = bat_high_cap
         if grid_charge is not None:
             overrides["gridCharge"] = grid_charge
-        await self._async_apply_schedule(serial, charge=overrides)
+        await self._safe_async_apply_schedule(serial, charge=overrides)
 
     async def async_write_discharge_config(
         self,
@@ -719,120 +1515,77 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         bat_use_cap: float | None = None,
         ctr_dis: int | None = None,
         times: dict[str, str] | None = None,
+        powers: dict[str, float] | None = None,
     ) -> None:
         """Apply a discharge configuration change.
 
         `times` is keyed by the legacy API names (timeDisf1/timeDise1/
         timeDisf2/timeDise2); anything omitted keeps its current value.
         """
-        overrides: dict[str, Any] = dict(times or {})
+        active = self.is_time_based_control_active(serial)
+        if active is False:
+            raise ScheduleWriteError(
+                "Time-based control is disabled: the inverter is in a "
+                "self-consumption working mode, which can only be changed in "
+                "the AlphaESS app; nothing was written"
+            )
+        if ctr_dis == 0 and active is True:
+            flags = self._committed_enable_flags(serial)
+            if flags is not None and flags[0] == 0:
+                raise ScheduleWriteError(
+                    "Turning off the last enabled timer would look identical "
+                    "to a self-consumption mode; disable it from the AlphaESS "
+                    "app instead"
+                )
+        overrides: dict[str, Any] = {**(times or {}), **(powers or {})}
         if bat_use_cap is not None:
             overrides["batUseCap"] = bat_use_cap
         if ctr_dis is not None:
             overrides["ctrDis"] = ctr_dis
-        await self._async_apply_schedule(serial, discharge=overrides)
-
-    def _current_schedule_state(self, serial: str) -> dict[str, dict[str, Any]]:
-        """Read the full charge and discharge config out of coordinator data."""
-        data = self.data.get(serial) or {}
-
-        def value_or(key: Any, default: Any) -> Any:
-            # The parsers store None when the API omitted a field, so a plain
-            # dict.get(key, default) would hand None straight to the API. Note
-            # 0 is a valid value for gridCharge/ctrDis, so `or` won't do.
-            value = data.get(key)
-            return default if value is None else value
-
-        return {
-            "charge": {
-                "batHighCap": value_or(AlphaESSNames.batHighCap, 90),
-                "gridCharge": value_or("gridCharge", 1),
-                "timeChaf1": data.get("charge_timeChaf1") or "00:00",
-                "timeChae1": data.get("charge_timeChae1") or "00:00",
-                "timeChaf2": data.get("charge_timeChaf2") or "00:00",
-                "timeChae2": data.get("charge_timeChae2") or "00:00",
-            },
-            "discharge": {
-                "batUseCap": value_or(AlphaESSNames.batUseCap, 10),
-                "ctrDis": value_or("ctrDis", 1),
-                "timeDisf1": data.get("discharge_timeDisf1") or "00:00",
-                "timeDise1": data.get("discharge_timeDise1") or "00:00",
-                "timeDisf2": data.get("discharge_timeDisf2") or "00:00",
-                "timeDise2": data.get("discharge_timeDise2") or "00:00",
-            },
-        }
-
-    async def _async_apply_schedule(
-        self,
-        serial: str,
-        *,
-        charge: dict[str, Any] | None = None,
-        discharge: dict[str, Any] | None = None,
-    ) -> None:
-        """Write a charge and/or discharge change to both scheduling APIs.
-
-        Both are always written. Whether a system is on the periodic backend
-        cannot be detected up front — the read endpoint is separately
-        permissioned and returns 6017 on exactly the accounts that need the
-        periodic write most — so gating on it would skip the write for the
-        users this is meant to fix.
-
-        The change is only reported as failed when the legacy write fails and
-        the periodic one didn't go through either, so an entity that updated
-        itself optimistically reverts only when nothing was written at all.
-        """
-        state = self._current_schedule_state(serial)
-        if charge:
-            state["charge"].update(charge)
-        if discharge:
-            state["discharge"].update(discharge)
-
-        periodic_written = await self._async_write_periodic_schedule(serial, state)
-
-        try:
-            if charge is not None:
-                await self._async_write_legacy_charge(serial, state["charge"])
-            if discharge is not None:
-                await self._async_write_legacy_discharge(serial, state["discharge"])
-        except asyncio.CancelledError:
-            raise
-        except Exception as err:
-            if not periodic_written:
-                raise
-            _LOGGER.warning(
-                "Legacy charge/discharge write failed for %s (%s), but the periodic "
-                "schedule request went through so the change may still take effect",
-                serial, err,
-            )
+        await self._safe_async_apply_schedule(serial, discharge=overrides)
 
     async def _async_resolve_unknown_periodic_read(self) -> None:
         """Retry the periodic read for any inverter still undecided.
 
         The setup read can come back inconclusive if the cloud hiccups, which
         would otherwise leave the diagnostic sensor reading "unknown" forever.
-        Once an inverter has an answer it is never read again, so this costs at
-        most one extra call per inverter.
+        Readable schedules are refreshed on each full poll so changes made in
+        the AlphaESS app are not overwritten from a setup-time cache. Permanent
+        6017 rejections are the only results not retried.
         """
         for serial in list(self.data):
-            if serial not in self._periodic_readable:
+            if self._periodic_readable.get(serial) is not False:
                 await self.async_probe_periodic_readable(serial)
 
     async def async_probe_periodic_readable(self, serial: str) -> bool | None:
-        """Read the periodic schedule, to cache chargePower and for diagnostics.
+        """Serialise a periodic refresh with schedule write transactions."""
+        lock = self._schedule_locks.setdefault(serial, asyncio.Lock())
+        async with lock:
+            return await self._async_probe_periodic_readable_locked(serial)
 
-        This says whether the schedule is *readable* on this account, which is
-        not the same as whether the system is on the periodic backend — the two
-        are separately permissioned. It deliberately does not gate the write.
+    async def _async_probe_periodic_readable_locked(
+        self, serial: str
+    ) -> bool | None:
+        """Read and retain the complete periodic schedule for diagnostics/writes.
+
+        A partial update is allowed only when this full-replacement resource
+        can be read first. A definitive 6017 means this system has no schedule
+        surface at all (the legacy endpoints are retired); transient, empty or
+        malformed responses remain unknown and fail closed on writes.
 
         Returns True/False once known and caches it. Returns None when the
         answer could not be established (transport error), leaving the cache
         untouched so it is retried later.
         """
         try:
-            payload = await self.api.getTimeChargeBySn(serial)
+            payload = await self._call_cloud_api(self.api.getTimeChargeBySn, serial)
         except asyncio.CancelledError:
             raise
         except AlphaESSApiError as err:
+            if err.code in AUTH_FAILURE_CODES:
+                raise ConfigEntryAuthFailed(
+                    f"AlphaESS credentials rejected: {err}"
+                ) from err
             # The API answered and refused. 6017 means this system is not
             # entitled to the feature, which will not change on a retry, so
             # cache it. Anything else might, so leave the answer open.
@@ -840,6 +1593,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 _LOGGER.debug("Periodic schedule not readable for %s: %s",
                               serial, describe_api_error(err))
                 self._periodic_readable[serial] = False
+                self._periodic_schedules.pop(serial, None)
                 return False
             _LOGGER.debug("Periodic schedule read for %s failed with %s",
                           serial, describe_api_error(err))
@@ -848,195 +1602,579 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             _LOGGER.debug("Periodic schedule probe failed for %s: %s", serial, err)
             return None
 
-        if not payload:
-            # Answered successfully but with nothing in it.
-            _LOGGER.debug("Periodic schedule for %s read back empty", serial)
-            self._periodic_readable[serial] = False
-            return False
+        if payload is None:
+            _LOGGER.debug("Periodic schedule for %s returned no data", serial)
+            return None
+
+        try:
+            schedule = self._normalise_periodic_schedule(payload)
+        except ScheduleWriteError as err:
+            _LOGGER.warning("Periodic schedule for %s is not safely writable: %s", serial, err)
+            return None
 
         self._periodic_readable[serial] = True
-        self._cache_periodic_power(serial, payload)
+        self._periodic_schedules[serial] = schedule
+        if serial in self.data:
+            self._overlay_schedule_view(serial, self.data[serial])
         _LOGGER.debug("Periodic schedule API available for %s", serial)
         return True
 
-    def _cache_periodic_power(self, serial: str, payload: dict[str, Any]) -> None:
-        """Remember the chargePower setpoints already configured on a system."""
-        powers: dict[str, int] = {}
-        for name, key in (("charge", "chargeTimeList"), ("discharge", "dischargeTimeList")):
-            for period in payload.get(key) or []:
-                power = period.get("chargePower")
-                if power is not None:
-                    powers[name] = power
-                    break
-        if powers:
-            self._periodic_power.setdefault(serial, {}).update(powers)
+    def _patch_periodic_schedule(
+        self,
+        serial: str,
+        schedule: dict[str, Any],
+        *,
+        charge: dict[str, Any] | None,
+        discharge: dict[str, Any] | None,
+        now_window: bool = False,
+    ) -> dict[str, Any]:
+        """Patch only dirty fields while preserving the full periodic resource.
 
-    @staticmethod
-    def _build_period_list(
-        slots: list[tuple[str | None, str | None]],
-        charge_limit: Any,
-        charge_power: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Build a setTimeChargeBySn period list from legacy two-slot times.
-
-        Slots whose start equals their end are the legacy way of saying
-        "disabled"; the periodic API has no zero-length period, so they are
-        dropped and an all-disabled config becomes an empty list.
+        now_window marks a quick-action write ("charge/discharge for the next N
+        minutes"). It tightens the weekly check below and swaps draft-flavoured
+        error messages for ones that name a remedy that works from a button.
         """
-        try:
-            limit: float = float(charge_limit)
-        except (TypeError, ValueError):
-            limit = PERIODIC_MIN_CHARGE_LIMIT
-        clamped = max(PERIODIC_MIN_CHARGE_LIMIT, min(PERIODIC_MAX_CHARGE_LIMIT, limit))
-        if clamped != limit:
-            _LOGGER.debug(
-                "Clamped periodic chargeLimit from %s to %s (allowed range is %s-%s)",
-                charge_limit, clamped, PERIODIC_MIN_CHARGE_LIMIT, PERIODIC_MAX_CHARGE_LIMIT,
-            )
+        proposed = deepcopy(schedule)
+        cycle_type = proposed["executeCycleType"]
 
-        periods: list[dict[str, Any]] = []
-        for begin, end in slots:
-            if not begin or not end or begin == end:
+        side_specs = {
+            "charge": {
+                "changes": charge,
+                "list": "chargeTimeList",
+                "cycle": "gridChargeCycle",
+                "cycle_field": "gridCharge",
+                "limit": "batHighCap",
+                "start": "timeChaf",
+                "end": "timeChae",
+            },
+            "discharge": {
+                "changes": discharge,
+                "list": "dischargeTimeList",
+                "cycle": "ctrDisCycle",
+                "cycle_field": "ctrDis",
+                "limit": "batUseCap",
+                "start": "timeDisf",
+                "end": "timeDise",
+            },
+        }
+
+        for side, spec in side_specs.items():
+            changes = spec["changes"]
+            if not changes:
                 continue
-            period: dict[str, Any] = {
-                "beginTime": begin,
-                "endTime": end,
-                "chargeLimit": clamped,
+
+            cycle_field = spec["cycle_field"]
+            if cycle_field in changes:
+                proposed[spec["cycle"]] = int(changes[cycle_field])
+
+            list_key = spec["list"]
+            original = proposed[list_key]
+            if spec["limit"] in changes:
+                # Apply the HA cutoff only to the two slots it represented in
+                # the original resource. If slot 1 is removed below, an unseen
+                # third app period must not shift into index 2 and be changed.
+                for period in original[:2]:
+                    period["chargeLimit"] = changes[spec["limit"]]
+            start_prefix = spec["start"]
+            end_prefix = spec["end"]
+            slot_keys = {
+                f"{prefix}{index}"
+                for prefix in (start_prefix, end_prefix, "chargePower")
+                for index in (1, 2)
             }
-            if charge_power is not None:
-                period["chargePower"] = charge_power
-            periods.append(period)
-        return periods
+            if slot_keys.intersection(changes):
+                managed: list[dict[str, Any]] = []
+                for index in (1, 2):
+                    existing = original[index - 1] if len(original) >= index else None
+                    start_key = f"{start_prefix}{index}"
+                    end_key = f"{end_prefix}{index}"
+                    power_key = f"chargePower{index}"
+                    begin = changes.get(
+                        start_key,
+                        existing.get("beginTime") if existing else "00:00",
+                    )
+                    end = changes.get(
+                        end_key,
+                        existing.get("endTime") if existing else "00:00",
+                    )
+                    changed_slot_keys = {start_key, end_key, power_key}.intersection(changes)
+                    if existing is None and changed_slot_keys:
+                        if start_key not in changes or end_key not in changes:
+                            raise ScheduleWriteError(
+                                f"Set both the start and end for new {side} period {index} "
+                                "before applying the schedule"
+                            )
+                    elif existing is None:
+                        continue
+                    if begin == end:
+                        continue
 
-    async def _async_write_periodic_schedule(
-        self, serial: str, state: dict[str, dict[str, Any]]
-    ) -> bool:
-        """Push the whole schedule via setTimeChargeBySn.
+                    if existing is not None:
+                        if (
+                            now_window
+                            and changed_slot_keys
+                            and cycle_type != PERIODIC_DAILY
+                            and dt_util.now().isoweekday()
+                            not in (existing.get("weeks") or ())
+                        ):
+                            # Retargeting would be accepted, run on other
+                            # weekdays, and do nothing now — an inert write of
+                            # exactly the issue #269 kind.
+                            raise ScheduleWriteError(
+                                f"The periodic schedule is weekly and {side} period "
+                                f"{index} ({existing['beginTime']}-"
+                                f"{existing['endTime']}) does not run today; a "
+                                "quick button cannot retarget it without silently "
+                                "rescheduling its other weekdays. Adjust the "
+                                "schedule in the AlphaESS app instead"
+                            )
+                        period = deepcopy(existing)
+                        period["beginTime"] = begin
+                        period["endTime"] = end
+                        if power_key in changes:
+                            period["chargePower"] = changes[power_key]
+                    else:
+                        if cycle_type != PERIODIC_DAILY:
+                            raise ScheduleWriteError(
+                                f"Cannot add {side} period {index} to a weekly schedule "
+                                "because the two-slot entities cannot choose weekdays"
+                            )
+                        power = changes.get(power_key)
+                        if power is None:
+                            if now_window:
+                                raise ScheduleWriteError(
+                                    f"The quick {side} button cannot create {side} "
+                                    f"period {index}: AlphaESS needs an explicit "
+                                    "positive power (chargePower) for a new period. "
+                                    "Create the period in the AlphaESS app, or stage "
+                                    "its times and power with the schedule entities "
+                                    "and select Apply Charge/Discharge Schedule"
+                                )
+                            raise ScheduleWriteError(
+                                f"Set an explicit positive power for new {side} period "
+                                f"{index} before applying the schedule"
+                            )
+                        limit = changes.get(spec["limit"])
+                        if limit is None and original:
+                            limit = original[0].get("chargeLimit")
+                        if limit is None:
+                            if now_window:
+                                raise ScheduleWriteError(
+                                    f"The quick {side} button cannot create {side} "
+                                    f"period {index} without a cutoff SOC. Create the "
+                                    "period in the AlphaESS app, or stage it with the "
+                                    "schedule entities and select Apply "
+                                    "Charge/Discharge Schedule"
+                                )
+                            raise ScheduleWriteError(
+                                f"Set an explicit cutoff SOC for new {side} period {index} "
+                                "before applying the schedule"
+                            )
+                        period = {
+                            "beginTime": begin,
+                            "endTime": end,
+                            "chargeLimit": limit,
+                            "chargePower": power,
+                        }
+                    managed.append(period)
+                proposed[list_key] = managed + deepcopy(original[2:])
 
-        Always attempted — see _async_apply_schedule for why this is not gated
-        on the read endpoint — except on systems the API has already told us
-        outright are not entitled to it.
+        for list_key in ("chargeTimeList", "dischargeTimeList"):
+            periods = proposed[list_key]
+            if not periods:
+                raise ScheduleWriteError(
+                    "setTimeChargeBySn requires at least one charge period and one "
+                    f"discharge period; {list_key} would be empty. Add a period to "
+                    "each side in the AlphaESS app, or stage both sides with the "
+                    "schedule entities and apply them together"
+                )
+            for position, period in enumerate(periods, start=1):
+                # Name the offending period: it may be one the app created and
+                # this write merely round-trips, so "a period" alone reads as
+                # the integration blaming the change the user just made.
+                where = (
+                    f"{list_key} period {position} "
+                    f"({period.get('beginTime')}-{period.get('endTime')})"
+                )
+                try:
+                    limit = float(period["chargeLimit"])
+                except (KeyError, TypeError, ValueError) as err:
+                    raise ScheduleWriteError(
+                        f"{where} has no valid chargeLimit; repair it in the "
+                        "AlphaESS app or via the schedule entities"
+                    ) from err
+                if not PERIODIC_MIN_CHARGE_LIMIT <= limit <= PERIODIC_MAX_CHARGE_LIMIT:
+                    raise ScheduleWriteError(
+                        f"{where} has chargeLimit {limit}; the periodic "
+                        "API accepts 10-100 and the value was not changed silently"
+                    )
+                try:
+                    raw_power = period["chargePower"]
+                    if isinstance(raw_power, bool):
+                        raise TypeError
+                    power = float(raw_power)
+                except (KeyError, TypeError, ValueError) as err:
+                    raise ScheduleWriteError(
+                        f"{where} has no valid chargePower; sending it "
+                        "would create an accepted but inert schedule. Set its "
+                        "power in the AlphaESS app (or the Power entities for "
+                        "periods 1-2) and retry"
+                    ) from err
+                if not math.isfinite(power) or power <= 0:
+                    raise ScheduleWriteError(
+                        f"{where} has non-positive chargePower {power}; sending it "
+                        "would create an accepted but inert schedule. Set its "
+                        "power in the AlphaESS app (or the Power entities for "
+                        "periods 1-2) and retry"
+                    )
+                if not power.is_integer():
+                    raise ScheduleWriteError(
+                        f"{where} has non-integral chargePower {power}; "
+                        "the periodic API accepts whole watts"
+                    )
+                # Home Assistant NumberEntity values arrive as floats. The
+                # upstream contract requires a JSON integer for chargePower.
+                period["chargePower"] = int(power)
+                if cycle_type == 1 and not period.get("weeks"):
+                    raise ScheduleWriteError(
+                        f"Weekly {where} has no weekdays"
+                    )
+        return proposed
 
-        Returns True only when the API accepted the schedule. The client runs
-        with raise_on_error, so a rejection arrives as AlphaESSApiError rather
-        than being flattened into the same None a success returns.
-        """
-        if serial in self._periodic_write_denied:
-            return False
-
-        charge = state["charge"]
-        discharge = state["discharge"]
-        powers = self._periodic_power.get(serial, {})
-
-        charge_periods = self._build_period_list(
-            [
-                (charge["timeChaf1"], charge["timeChae1"]),
-                (charge["timeChaf2"], charge["timeChae2"]),
-            ],
-            charge["batHighCap"],
-            powers.get("charge"),
-        )
-        discharge_periods = self._build_period_list(
-            [
-                (discharge["timeDisf1"], discharge["timeDise1"]),
-                (discharge["timeDisf2"], discharge["timeDise2"]),
-            ],
-            discharge["batUseCap"],
-            powers.get("discharge"),
-        )
-
-        # Both lists are required and neither may be empty: the live API answers
-        # an empty list with 6001 "time list is null", and omitting one with
-        # 10001. There is no verified way to express "no periods on this side" —
-        # a 00:00-00:00 element passes validation but its meaning is unconfirmed,
-        # and if the server reads end <= start as wrapping midnight it would be a
-        # 24-hour window. Skip rather than risk it; the legacy write still runs.
-        if not charge_periods or not discharge_periods:
-            _LOGGER.warning(
-                "Skipping the periodic schedule write for %s: setTimeChargeBySn "
-                "requires at least one charge period and one discharge period, "
-                "and %s is empty. Only the legacy endpoints were written",
+    async def _safe_async_apply_schedule(
+        self,
+        serial: str,
+        *,
+        charge: dict[str, Any] | None = None,
+        discharge: dict[str, Any] | None = None,
+        expected_periodic: dict[str, Any] | None = None,
+        expected_legacy: dict[str, dict[str, Any]] | None = None,
+        clear_all: bool = False,
+        now_window: bool = False,
+    ) -> None:
+        """Safely patch the schedule store this system runs on."""
+        if charge is None and discharge is None:
+            return
+        lock = self._schedule_locks.setdefault(serial, asyncio.Lock())
+        async with lock:
+            await self._safe_async_apply_schedule_locked(
                 serial,
-                "the charge list" if not charge_periods else "the discharge list",
+                charge=charge,
+                discharge=discharge,
+                expected_periodic=expected_periodic,
+                expected_legacy=expected_legacy,
+                clear_all=clear_all,
+                now_window=now_window,
             )
-            return False
 
-        overlap = find_overlapping_periods(charge_periods, discharge_periods)
-        if overlap:
-            _LOGGER.warning(
-                "Skipping the periodic schedule write for %s: charge period %s-%s "
-                "overlaps discharge period %s-%s, which setTimeChargeBySn rejects. "
-                "Adjust the periods so they do not overlap",
-                serial,
-                overlap[0]["beginTime"], overlap[0]["endTime"],
-                overlap[1]["beginTime"], overlap[1]["endTime"],
+    async def _safe_async_apply_schedule_locked(
+        self,
+        serial: str,
+        *,
+        charge: dict[str, Any] | None,
+        discharge: dict[str, Any] | None,
+        expected_periodic: dict[str, Any] | None,
+        expected_legacy: dict[str, dict[str, Any]] | None = None,
+        clear_all: bool = False,
+        now_window: bool = False,
+    ) -> None:
+        """Read, conflict-check and write the schedule while holding the lock."""
+        periodic_current: dict[str, Any] | None = None
+        periodic_error: Exception | None = None
+
+        if (
+            serial not in self._periodic_write_denied
+            and self._periodic_readable.get(serial) is not False
+        ):
+            try:
+                payload = await self._call_cloud_api(
+                    self.api.getTimeChargeBySn, serial
+                )
+                if payload is None:
+                    raise ScheduleWriteError(
+                        "The periodic schedule returned no data, so nothing was changed"
+                    )
+                periodic_current = self._normalise_periodic_schedule(payload)
+                self._periodic_readable[serial] = True
+                self._periodic_schedules[serial] = deepcopy(periodic_current)
+            except asyncio.CancelledError:
+                raise
+            except AlphaESSApiError as err:
+                if err.code == PERIODIC_NOT_ENTITLED:
+                    self._periodic_readable[serial] = False
+                    self._periodic_schedules.pop(serial, None)
+                else:
+                    periodic_error = err
+            except Exception as err:
+                periodic_error = err
+
+        if periodic_current is None:
+            if self.is_legacy_backup_active(serial):
+                if expected_periodic is not None:
+                    raise ScheduleWriteError(
+                        "The periodic schedule used to open this draft is no "
+                        "longer available for this system; discard the draft "
+                        "and try again. Nothing was changed"
+                    )
+                await self._apply_legacy_backup_locked(
+                    serial,
+                    charge=charge,
+                    discharge=discharge,
+                    expected_legacy=expected_legacy,
+                    clear_all=clear_all,
+                )
+                return
+            if serial in self._periodic_write_denied:
+                raise ScheduleWriteError(
+                    "Schedule control requires the AlphaESS periodic schedule "
+                    "API (setTimeChargeBySn), whose writes AlphaESS refuses "
+                    "for this system (6017 No operation permissions); ask "
+                    "AlphaESS to enable the timed charge/discharge "
+                    "permission. Nothing was changed"
+                )
+            if expected_periodic is not None:
+                raise ScheduleWriteError(
+                    "The periodic schedule used to open this draft can no longer "
+                    "be read; nothing was changed"
+                ) from periodic_error
+            detail = f": {periodic_error}" if periodic_error else ""
+            raise ScheduleWriteError(
+                f"The current periodic schedule could not be read safely{detail}; "
+                "nothing was changed"
+            ) from periodic_error
+
+        if expected_legacy is not None:
+            # The draft was opened against the backup stores, but the system
+            # now answers on the periodic API. The base it was edited from
+            # describes a different resource.
+            raise ScheduleConflictError(
+                "The periodic schedule API became available after this draft "
+                "was opened on the legacy backup; discard the draft, review "
+                "the fresh values, and try again"
             )
-            return False
+        if clear_all:
+            raise ScheduleWriteError(
+                "AlphaESS does not provide a verified way to clear the "
+                "periodic schedule because both period lists must stay "
+                "non-empty; nothing was changed"
+            )
+
+        if expected_periodic is not None and periodic_current != expected_periodic:
+            raise ScheduleConflictError(
+                "The AlphaESS periodic schedule changed after this draft was opened. "
+                "Discard the draft, review the fresh values, and try again"
+            )
+
+        periodic_proposed = self._patch_periodic_schedule(
+            serial, periodic_current, charge=charge, discharge=discharge,
+            now_window=now_window,
+        )
+
+        if periodic_proposed == periodic_current:
+            _LOGGER.debug(
+                "Periodic schedule for %s already matches the requested values",
+                serial,
+            )
+            self._publish_schedule_view(serial)
+            return
 
         try:
-            await self.api.setTimeChargeBySn(
-                serial,
-                PERIODIC_DAILY,
-                charge_periods,
-                discharge_periods,
-                gridChargeCycle=int(charge["gridCharge"]),
-                ctrDisCycle=int(discharge["ctrDis"]),
+            kwargs = {
+                key: periodic_proposed[key]
+                for key in ("gridChargeCycle", "ctrDisCycle")
+                if key in periodic_proposed
+            }
+            await self._call_cloud_api(
+                self.api.setTimeChargeBySn,
+                sysSn=serial,
+                executeCycleType=periodic_proposed["executeCycleType"],
+                chargeTimeList=periodic_proposed["chargeTimeList"],
+                dischargeTimeList=periodic_proposed["dischargeTimeList"],
+                **kwargs,
             )
         except asyncio.CancelledError:
             raise
         except AlphaESSApiError as err:
             if err.code == PERIODIC_NOT_ENTITLED:
-                # Definitive, and from the write itself rather than inferred
-                # from the read. Stop attempting it for this system.
                 self._periodic_write_denied.add(serial)
+                self._periodic_schedules.pop(serial, None)
                 _LOGGER.info(
-                    "%s is not entitled to the periodic schedule API: %s; "
-                    "using the legacy endpoints only from now on",
+                    "%s is not entitled to periodic schedule writes: %s",
                     serial, describe_api_error(err),
+                )
+            elif err.code == PERIODIC_OVERLAP:
+                _LOGGER.warning(
+                    "AlphaESS returned generic set-failed for periodic schedule %s "
+                    "(%s). Overlap is one possible cause. Charge %s, discharge %s",
+                    serial, describe_api_error(err),
+                    _format_periods(periodic_proposed["chargeTimeList"]),
+                    _format_periods(periodic_proposed["dischargeTimeList"]),
                 )
             else:
                 _LOGGER.warning(
                     "Periodic schedule write for %s rejected with %s",
                     serial, describe_api_error(err),
                 )
-            return False
+            self._publish_schedule_view(serial)
+            raise ScheduleWriteError(
+                f"The periodic schedule for {serial} was not updated: "
+                f"{describe_api_error(err)}"
+            ) from err
         except Exception as err:
-            # Don't give up on the change — the legacy write still follows and
-            # is what the unmigrated backends act on.
+            # The POST may have been stored before the response was lost.
             _LOGGER.warning("Periodic schedule write failed for %s: %s", serial, err)
-            return False
+            self._publish_schedule_view(serial)
+            raise ScheduleWriteUnknownError(
+                f"The periodic schedule write for {serial} has an unknown "
+                f"outcome: {err}. Check the AlphaESS app before retrying"
+            ) from err
 
+        self._periodic_schedules[serial] = deepcopy(periodic_proposed)
         _LOGGER.info(
             "Wrote periodic schedule for %s - charge: %s, discharge: %s",
-            serial, charge_periods, discharge_periods,
-        )
-        return True
-
-    async def _async_write_legacy_charge(self, serial: str, charge: dict[str, Any]) -> None:
-        """Write the two-slot charge config via updateChargeConfigInfo."""
-        result = await self.api.updateChargeConfigInfo(
             serial,
-            charge["batHighCap"],
-            charge["gridCharge"],
-            charge["timeChae1"],
-            charge["timeChae2"],
-            charge["timeChaf1"],
-            charge["timeChaf2"],
+            periodic_proposed["chargeTimeList"],
+            periodic_proposed["dischargeTimeList"],
         )
-        _LOGGER.info("Updated charge config for %s: %s - Result: %s", serial, charge, result)
+        self._publish_schedule_view(serial)
 
-    async def _async_write_legacy_discharge(self, serial: str, discharge: dict[str, Any]) -> None:
-        """Write the two-slot discharge config via updateDisChargeConfigInfo."""
-        result = await self.api.updateDisChargeConfigInfo(
-            serial,
-            discharge["batUseCap"],
-            discharge["ctrDis"],
-            discharge["timeDise1"],
-            discharge["timeDise2"],
-            discharge["timeDisf1"],
-            discharge["timeDisf2"],
-        )
-        _LOGGER.info("Updated discharge config for %s: %s - Result: %s", serial, discharge, result)
+    async def _apply_legacy_backup_locked(
+        self,
+        serial: str,
+        *,
+        charge: dict[str, Any] | None,
+        discharge: dict[str, Any] | None,
+        expected_legacy: dict[str, dict[str, Any]] | None,
+        clear_all: bool,
+    ) -> None:
+        """Read-modify-write the legacy backup stores.
+
+        Reached only for systems whose periodic READ is definitively 6017.
+        Charge and discharge are two separate full-replacement stores here,
+        so a two-sided change can partially fail; that surfaces as a
+        SchedulePartialWriteError naming what already landed.
+        """
+        power_fields = {"chargePower1", "chargePower2"}
+        if any(
+            changes and power_fields.intersection(changes)
+            for changes in (charge, discharge)
+        ):
+            raise ScheduleWriteError(
+                "Per-period power exists only in the periodic schedule API, "
+                "which AlphaESS has not enabled for this system; the legacy "
+                "backup endpoints have no power field. Nothing was changed"
+            )
+
+        legacy_changes = {
+            side: (
+                {key: value for key, value in changes.items()}
+                if changes
+                else None
+            )
+            for side, changes in (("charge", charge), ("discharge", discharge))
+        }
+
+        # Invalidate any poll snapshot that started before this transaction.
+        self._mark_schedule_write(serial)
+        legacy_current: dict[str, dict[str, Any]] = {}
+        for side, method in (
+            ("charge", self.api.getChargeConfigInfo),
+            ("discharge", self.api.getDisChargeConfigInfo),
+        ):
+            if not legacy_changes[side]:
+                continue
+            try:
+                legacy_current[side] = self._normalise_legacy_side(
+                    side, await self._call_cloud_api(method, serial)
+                )
+            except asyncio.CancelledError:
+                raise
+            except ScheduleWriteError:
+                raise
+            except Exception as err:
+                raise ScheduleWriteError(
+                    f"The full current legacy {side} configuration could not be "
+                    f"read: {err}; nothing was changed"
+                ) from err
+
+        if expected_legacy is not None:
+            for side, current in legacy_current.items():
+                if current != expected_legacy.get(side):
+                    raise ScheduleConflictError(
+                        f"The AlphaESS legacy {side} schedule changed after this "
+                        "draft was opened. Discard the draft, review the fresh "
+                        "values, and try again"
+                    )
+
+        legacy_proposed = {
+            side: self._normalise_legacy_side(
+                side, {**legacy_current[side], **legacy_changes[side]}
+            )
+            for side in legacy_current
+        }
+
+        satisfied: set[str] = set()
+        outcome_unknown: set[str] = set()
+        errors: dict[str, Exception] = {}
+        for side in ("charge", "discharge"):
+            if side not in legacy_proposed:
+                continue
+            if legacy_proposed[side] == legacy_current[side]:
+                satisfied.add(side)
+                self._legacy_schedules.setdefault(serial, {})[side] = deepcopy(
+                    legacy_current[side]
+                )
+                _LOGGER.debug(
+                    "Legacy %s schedule for %s already matches the requested values",
+                    side, serial,
+                )
+                continue
+            try:
+                self._mark_schedule_write(serial)
+                if side == "charge":
+                    await self._async_write_legacy_charge(serial, legacy_proposed[side])
+                else:
+                    await self._async_write_legacy_discharge(serial, legacy_proposed[side])
+                satisfied.add(side)
+                self._legacy_schedules.setdefault(serial, {})[side] = deepcopy(
+                    legacy_proposed[side]
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                errors[side] = err
+                if not isinstance(err, AlphaESSApiError):
+                    outcome_unknown.add(side)
+
+        self._publish_schedule_view(serial)
+
+        if errors and satisfied:
+            landed = ", ".join(sorted(satisfied))
+            failed = "; ".join(f"{side}: {err}" for side, err in errors.items())
+            error_type = (
+                SchedulePartialWriteUnknownError
+                if outcome_unknown
+                else SchedulePartialWriteError
+            )
+            failure_state = (
+                "had an unknown outcome" if outcome_unknown else "failed"
+            )
+            raise error_type(
+                f"The legacy {landed} schedule for {serial} matches the "
+                f"requested values, but the other write {failure_state} "
+                f"({failed}). Check the AlphaESS app before retrying"
+            ) from next(iter(errors.values()))
+        if errors:
+            error = next(iter(errors.values()))
+            error_type = (
+                ScheduleWriteUnknownError if outcome_unknown else ScheduleWriteError
+            )
+            outcome = (
+                "No schedule store is known to have accepted the change"
+                if outcome_unknown
+                else "No AlphaESS schedule store accepted the change"
+            )
+            raise error_type(f"{outcome} for {serial}: {error}") from error
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]] | None:
         """Update data via library."""
@@ -1050,19 +2188,49 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         self._last_poll_type = "normal"
 
         try:
-            throttle_delay = self.throttle_multiplier
+            throttle_delay = self._call_interval()
 
             # Get list of registered inverters
-            units = await self._read(self.api.getESSList)
+            units = await self._async_get_ess_list()
+            if units is None:
+                return self._finalize_data()
+            if not isinstance(units, list) or any(
+                not isinstance(unit, dict) for unit in units
+            ):
+                raise TypeError("getESSList returned an invalid response shape")
+            if any(
+                not isinstance(unit.get("sysSn"), str)
+                or not unit["sysSn"].strip()
+                for unit in units
+            ):
+                _LOGGER.warning("getESSList returned an item without a valid system serial")
+                self.cloud_available = False
+                self._update_diagnostics()
+                return self._finalize_data()
+            active_serials = {unit["sysSn"] for unit in units}
+            if len(active_serials) != len(units):
+                _LOGGER.warning("getESSList returned duplicate system serials")
+                units = list({unit["sysSn"]: unit for unit in units}.values())
+            self._prune_unbound_systems(active_serials)
             if not units:
-                return self.data
+                self.cloud_available = True
+                self._last_full_poll_utc = dt_util.utcnow().isoformat(timespec="seconds")
+                return self._finalize_data()
+            await asyncio.sleep(throttle_delay)
+
+            # Resolve the schedule mode BEFORE fetching, so the first cycle
+            # after startup already polls the right store: a 6017 answer here
+            # selects the legacy backup and its config reads happen in this
+            # same cycle, instead of the schedule entities sitting
+            # unavailable until the next full poll.
+            for unit in units:
+                if self._periodic_readable.get(unit["sysSn"]) is None:
+                    await self.async_probe_periodic_readable(unit["sysSn"])
 
             # Fetch data per-inverter separately
             any_success = False
             for idx, unit in enumerate(units):
-                serial = unit.get("sysSn")
-                if not serial:
-                    continue
+                serial = unit["sysSn"]
 
                 # Per-inverter error backoff
                 err_count = self._inverter_error_count.get(serial, 0)
@@ -1075,15 +2243,25 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         continue
 
                 try:
+                    schedule_revision = self._schedule_write_revisions.get(serial, 0)
                     invertor = await self._fetch_inverter_data(
                         serial, unit, throttle_delay, get_power=True, get_ev=True,
                         include_local_ip=(idx == 0),
                     )
                     inverter_data = self._parse_inverter_data(invertor)
+                    if self.is_legacy_backup_active(serial):
+                        self._cache_legacy_state(
+                            serial,
+                            inverter_data,
+                            expected_revision=schedule_revision,
+                        )
+                    self._overlay_schedule_view(serial, inverter_data)
                     self.data[serial] = inverter_data
                     self._inverter_error_count[serial] = 0
                     any_success = True
                 except asyncio.CancelledError:
+                    raise
+                except ConfigEntryAuthFailed:
                     raise
                 except aiohttp.ClientResponseError as err:
                     if err.status == 401:
@@ -1128,32 +2306,72 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         )
 
         try:
-            throttle_delay = self.throttle_multiplier
+            throttle_delay = self._call_interval()
 
             if need_full:
                 # Full poll — per-inverter API calls
                 self._last_poll_type = "full"
                 _LOGGER.debug("Alt mode: performing full poll")
-                units = await self._read(self.api.getESSList)
+                units = await self._async_get_ess_list()
+                if units is None:
+                    return self._finalize_data()
+                if not isinstance(units, list) or any(
+                    not isinstance(unit, dict) for unit in units
+                ):
+                    raise TypeError("getESSList returned an invalid response shape")
+                if any(
+                    not isinstance(unit.get("sysSn"), str)
+                    or not unit["sysSn"].strip()
+                    for unit in units
+                ):
+                    _LOGGER.warning(
+                        "getESSList returned an item without a valid system serial"
+                    )
+                    self.cloud_available = False
+                    self._update_diagnostics()
+                    return self._finalize_data()
+                active_serials = {unit["sysSn"] for unit in units}
+                if len(active_serials) != len(units):
+                    _LOGGER.warning("getESSList returned duplicate system serials")
+                    units = list({unit["sysSn"]: unit for unit in units}.values())
+                self._prune_unbound_systems(active_serials)
                 if not units:
-                    return self.data
+                    self.cloud_available = True
+                    self._last_full_poll = now
+                    self._last_full_poll_utc = dt_util.utcnow().isoformat(timespec="seconds")
+                    return self._finalize_data()
+                await asyncio.sleep(throttle_delay)
+
+                # Resolve the schedule mode before fetching; see the normal
+                # poll for why this must happen in the same cycle.
+                for unit in units:
+                    if self._periodic_readable.get(unit["sysSn"]) is None:
+                        await self.async_probe_periodic_readable(unit["sysSn"])
 
                 any_success = False
                 for idx, unit in enumerate(units):
-                    serial = unit.get("sysSn")
-                    if not serial:
-                        continue
+                    serial = unit["sysSn"]
                     try:
+                        schedule_revision = self._schedule_write_revisions.get(serial, 0)
                         invertor = await self._fetch_inverter_data(
                             serial, unit, throttle_delay, get_power=True, get_ev=True,
                             include_local_ip=(idx == 0),
                         )
                         inverter_data = self._parse_inverter_data(invertor)
+                        if self.is_legacy_backup_active(serial):
+                            self._cache_legacy_state(
+                                serial,
+                                inverter_data,
+                                expected_revision=schedule_revision,
+                            )
+                        self._overlay_schedule_view(serial, inverter_data)
                         self.data[serial] = inverter_data
                         # Clear error count on success
                         self._inverter_error_count[serial] = 0
                         any_success = True
                     except asyncio.CancelledError:
+                        raise
+                    except ConfigEntryAuthFailed:
                         raise
                     except aiohttp.ClientResponseError as err:
                         if err.status == 401:
@@ -1225,6 +2443,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         self._inverter_error_count[serial] = 0
                     except asyncio.CancelledError:
                         raise
+                    except ConfigEntryAuthFailed:
+                        raise
                     except aiohttp.ClientResponseError as err:
                         if err.status == 401:
                             raise ConfigEntryAuthFailed("AlphaESS credentials rejected") from err
@@ -1269,8 +2489,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         "readable" - getTimeChargeBySn returns a schedule. "unreadable" - it is
         rejected, usually 6017. "unknown" - no answer yet.
 
-        This is a diagnostic only. An unreadable schedule does not mean the
-        system is on the old backend, and does not stop the periodic write.
+        Only an explicit 6017 result is classified as unreadable and permits a
+        legacy-only update. Unknown, empty and malformed reads fail closed.
         """
         readable = self._periodic_readable.get(serial)
         if readable is None:
@@ -1309,11 +2529,18 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             unit["LastPower"] = await self._read(self.api.getLastPowerData, serial)
             await asyncio.sleep(throttle_delay)
 
-        unit["ChargeConfig"] = await self._read(self.api.getChargeConfigInfo, serial)
-        await asyncio.sleep(throttle_delay)
-
-        unit["DisChargeConfig"] = await self._read(self.api.getDisChargeConfigInfo, serial)
-        await asyncio.sleep(throttle_delay)
+        # Schedule state comes from the periodic API (primary). Only systems
+        # in legacy backup mode (definitive 6017) poll the legacy two-slot
+        # stores — for them it is the only schedule surface there is.
+        if self.is_legacy_backup_active(serial):
+            unit["ChargeConfig"] = await self._read(
+                self.api.getChargeConfigInfo, serial
+            )
+            await asyncio.sleep(throttle_delay)
+            unit["DisChargeConfig"] = await self._read(
+                self.api.getDisChargeConfigInfo, serial
+            )
+            await asyncio.sleep(throttle_delay)
 
         if get_power:
             unit["OneDayPower"] = await self._read(self.api.getOneDayPowerBySn, serial, today)
@@ -1325,6 +2552,17 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 await asyncio.sleep(throttle_delay)
                 if unit["EVData"]:
                     ev_list = unit["EVData"]
+                    if (
+                        isinstance(ev_list, list)
+                        and len(ev_list) > 1
+                        and serial not in self._multi_ev_warned
+                    ):
+                        self._multi_ev_warned.add(serial)
+                        _LOGGER.warning(
+                            "AlphaESS returned %s EV chargers for %s; this integration "
+                            "currently exposes only the first charger",
+                            len(ev_list), serial,
+                        )
                     ev_item = ev_list[0] if isinstance(ev_list, list) else ev_list
                     ev_serial = ev_item.get("evchargerSn")
                     if ev_serial:
@@ -1335,6 +2573,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                             self.api.getEvChargerCurrentsBySn, serial)
                         await asyncio.sleep(throttle_delay)
             except asyncio.CancelledError:
+                raise
+            except ConfigEntryAuthFailed:
                 raise
             except Exception:
                 _LOGGER.debug("Failed to fetch EV data for %s", serial, exc_info=True)
@@ -1474,19 +2714,20 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             one_day_power = invertor.get("OneDayPower", {})
             data.update(self.parser.parse_power_data(power_data, one_day_power))
 
-        # Add configuration data
+        # Schedule configuration (times, cutoffs, enable flags, Charging
+        # Range) is owned by _put_schedule_state via the periodic overlay.
+        # In legacy backup mode the polled two-slot stores feed the same keys.
         charge_config = invertor.get("ChargeConfig", {})
         if charge_config:
             data.update(self.parser.parse_charge_config(charge_config))
-
         discharge_config = invertor.get("DisChargeConfig", {})
         if discharge_config:
             data.update(self.parser.parse_discharge_config(discharge_config))
-
-        # Add Charging Range (combining charge and discharge data)
-        if charge_config or discharge_config:
-            bat_high_cap = charge_config.get("batHighCap", 90) if charge_config else 90
-            bat_use_cap = discharge_config.get("batUseCap", 10) if discharge_config else 10
-            data[AlphaESSNames.ChargeRange] = f"{bat_use_cap}% - {bat_high_cap}%"
-
+        if charge_config and discharge_config:
+            bat_high_cap = charge_config.get("batHighCap")
+            bat_use_cap = discharge_config.get("batUseCap")
+            if bat_high_cap is not None and bat_use_cap is not None:
+                data[AlphaESSNames.ChargeRange] = (
+                    f"{bat_use_cap}% - {bat_high_cap}%"
+                )
         return data

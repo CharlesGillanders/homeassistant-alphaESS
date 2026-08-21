@@ -32,7 +32,20 @@ ALPHA_POST_REQUEST_RESTRICTION = timedelta(seconds=30)
 CONF_ALT_POLLING_MODE = "alt_polling_mode"
 CONF_FAST_SCAN_INTERVAL_SECONDS = "fast_scan_interval_seconds"
 DEFAULT_FAST_SCAN_INTERVAL_SECONDS = 15
-MIN_FAST_SCAN_INTERVAL_SECONDS = 5
+MIN_API_CALL_INTERVAL_SECONDS = 10
+# AlphaESS documents 10 seconds as the minimum polling interval. Faster
+# polling can be rejected with 6053 and make otherwise healthy fields appear
+# missing when read errors are absorbed by the coordinator.
+
+# The working call spacing. Live-probed 2026-08-17 on the new server
+# (SN AL7011023030623): mixed and repeated reads at 0.5-5s spacing never
+# returned 6053, so calls run at this pace — otherwise a two-inverter full
+# poll takes minutes and app-side changes (like a work-mode switch) lag by
+# up to five. Any 6053 drops the session back to the documented
+# MIN_API_CALL_INTERVAL_SECONDS and retries that one call once.
+FAST_API_CALL_INTERVAL_SECONDS = 1
+RATE_LIMIT_CODE = 6053
+MIN_FAST_SCAN_INTERVAL_SECONDS = MIN_API_CALL_INTERVAL_SECONDS
 MAX_FAST_SCAN_INTERVAL_SECONDS = 300
 
 # Subentry types

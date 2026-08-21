@@ -30,6 +30,31 @@ DISCHARGE_TIME_KEYS = {
     "discharge_timeDise2": "timeDise2",
 }
 
+# Each slot's other half. AlphaESS has no "empty" value: an unused slot is
+# stored as start == end (usually 00:00-00:00), so a slot whose halves match
+# is displayed as unknown rather than as a zero-length midnight window.
+_SLOT_PARTNERS = {
+    "charge_timeChaf1": "charge_timeChae1",
+    "charge_timeChae1": "charge_timeChaf1",
+    "charge_timeChaf2": "charge_timeChae2",
+    "charge_timeChae2": "charge_timeChaf2",
+    "discharge_timeDisf1": "discharge_timeDise1",
+    "discharge_timeDise1": "discharge_timeDisf1",
+    "discharge_timeDisf2": "discharge_timeDise2",
+    "discharge_timeDise2": "discharge_timeDisf2",
+}
+
+
+def _parse_time(raw) -> time | None:
+    """Parse an HH:MM string, tolerating missing or malformed values."""
+    if not raw:
+        return None
+    try:
+        parts = str(raw).split(":")
+        return time(int(parts[0]), int(parts[1]))
+    except (ValueError, IndexError):
+        return None
+
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up AlphaESS time entities."""
@@ -91,16 +116,27 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
         return self._value_from_coordinator()
 
     def _value_from_coordinator(self) -> time | None:
-        """Parse the time value from coordinator data."""
+        """Parse the time value from coordinator data.
+
+        A slot whose start equals its end is the API's representation of
+        "not set", so both halves read as unknown instead of 00:00. A half that
+        was explicitly staged keeps showing what was staged: while the other
+        half is still being edited the two can match briefly, and blanking the
+        value then reads as a lost edit — to a person and to an automation that
+        writes one half at a time and reads it back.
+        """
         data = self._coordinator.data.get(self._serial, {})
-        raw_time = data.get(self._coordinator_key)
-        if raw_time:
-            try:
-                parts = raw_time.split(":")
-                return time(int(parts[0]), int(parts[1]))
-            except (ValueError, IndexError):
-                pass
-        return None
+        value = _parse_time(data.get(self._coordinator_key))
+        if value is None:
+            return None
+        if self._coordinator.is_schedule_field_staged(
+            self._serial, self._coordinator_key
+        ):
+            return value
+        partner = _parse_time(data.get(_SLOT_PARTNERS[self._coordinator_key]))
+        if partner is not None and partner == value:
+            return None
+        return value
 
     def _handle_coordinator_update(self) -> None:
         """Update local value when coordinator refreshes."""
@@ -108,7 +144,7 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
         super()._handle_coordinator_update()
 
     async def async_set_value(self, value: time) -> None:
-        """Update the time value via API, rounded to nearest 15 minutes."""
+        """Stage a rounded time value for the atomic Apply Schedule action."""
         # Round to nearest 15-minute interval
         total_minutes = value.hour * 60 + value.minute
         rounded_minutes = round(total_minutes / 15) * 15
@@ -124,29 +160,35 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
 
         try:
             if self._coordinator_key in CHARGE_TIME_KEYS:
-                await self._coordinator.async_write_charge_config(
+                self._coordinator.stage_schedule_change(
                     self._serial,
-                    times={CHARGE_TIME_KEYS[self._coordinator_key]: time_str},
+                    charge={CHARGE_TIME_KEYS[self._coordinator_key]: time_str},
                 )
             elif self._coordinator_key in DISCHARGE_TIME_KEYS:
-                await self._coordinator.async_write_discharge_config(
+                self._coordinator.stage_schedule_change(
                     self._serial,
-                    times={DISCHARGE_TIME_KEYS[self._coordinator_key]: time_str},
+                    discharge={DISCHARGE_TIME_KEYS[self._coordinator_key]: time_str},
                 )
         except Exception:
-            _LOGGER.exception("Failed to update time for %s, reverting", self._coordinator_key)
+            _LOGGER.exception("Failed to stage time for %s, reverting", self._coordinator_key)
             self._attr_native_value = previous_value
             self.async_write_ha_state()
-            return
-
-        await self._coordinator.async_request_refresh()
+            raise
 
     @property
     def available(self) -> bool:
-        """Time controls require cloud API to function."""
-        if not self.coordinator.last_update_success:
+        """Time controls require the cloud API, a usable schedule store, and
+        time-based control being active — in a self-consumption mode there is
+        nothing a time edit could act on."""
+        if (
+            not self.coordinator.last_update_success
+            or self._serial not in self._coordinator.data
+        ):
             return False
-        return self._coordinator.cloud_available
+        return (
+            self._coordinator.cloud_available
+            and self._coordinator.can_modify_time_controls(self._serial)
+        )
 
     @property
     def name(self):

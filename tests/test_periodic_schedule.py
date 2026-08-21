@@ -1,438 +1,765 @@
-"""Tests for the periodic (setTimeChargeBySn) charge/discharge schedule.
+"""Safety regressions for charge/discharge schedule transactions.
 
-Covers the dual-write behaviour added for issues #267 and #269: every schedule
-change is pushed to the periodic API first (the only one migrated AlphaESS
-backends act on) and then to the legacy two-slot endpoints — unconditionally,
-because which backend a system is on cannot be detected up front.
+The periodic schedule (``getTimeChargeBySn``/``setTimeChargeBySn``) is the only
+schedule store the integration uses; the legacy charge/discharge endpoints are
+retired and must never be called. These tests exercise the boundaries that
+caused issue #269: entity edits are staged until one explicit Apply, every
+write is a fresh-read/patch/single-POST transaction, and a known-invalid
+transaction must fail before any POST is made.
 """
-import asyncio
-from unittest.mock import AsyncMock
+
+from copy import deepcopy
 
 import pytest
+from alphaess.alphaess import AlphaESSApiError
+from homeassistant.util import dt as dt_util
 
 from custom_components.alphaess.coordinator import (
-    PERIODIC_DAILY,
-    PERIODIC_READ_OK,
-    PERIODIC_READ_UNAVAILABLE,
-    PERIODIC_READ_UNKNOWN,
-    find_overlapping_periods,
+    PERIODIC_NOT_ENTITLED,
+    PERIODIC_OVERLAP,
+    ScheduleConflictError,
+    ScheduleWriteError,
 )
 from custom_components.alphaess.enums import AlphaESSNames
 
 SERIAL = "ALP123456"
+GHOST_BEGIN = "13:30"
+GHOST_END = "02:45"
 
 
-def _period(begin, end):
-    return {"beginTime": begin, "endTime": end, "chargeLimit": 90}
+def _api_error(code: int, description: str | None = None) -> AlphaESSApiError:
+    """Build the API exception shape raised by alphaessopenapi."""
+    return AlphaESSApiError(code=code, description=description)
 
 
-def _schedule_data(**overrides):
-    """Coordinator data for a system with one charge and one discharge window."""
-    data = {
-        "gridCharge": 1,
-        AlphaESSNames.batHighCap: 90,
-        "charge_timeChaf1": "01:00",
-        "charge_timeChae1": "05:00",
-        "charge_timeChaf2": "00:00",
-        "charge_timeChae2": "00:00",
-        "ctrDis": 1,
-        AlphaESSNames.batUseCap: 20,
-        "discharge_timeDisf1": "17:00",
-        "discharge_timeDise1": "21:00",
-        "discharge_timeDisf2": "00:00",
-        "discharge_timeDise2": "00:00",
+def _period(
+    begin: str,
+    end: str,
+    *,
+    limit: int = 90,
+    power: int = 3000,
+    weeks: list[int] | None = None,
+) -> dict:
+    period = {
+        "beginTime": begin,
+        "endTime": end,
+        "chargeLimit": limit,
+        "chargePower": power,
     }
-    data.update(overrides)
+    if weeks is not None:
+        period["weeks"] = list(weeks)
+    return period
+
+
+def _daily_schedule(
+    *,
+    charge: list[dict] | None = None,
+    discharge: list[dict] | None = None,
+    grid_charge: int = 1,
+    discharge_enabled: int = 1,
+) -> dict:
+    return {
+        "executeCycleType": 0,
+        "gridChargeCycle": grid_charge,
+        "ctrDisCycle": discharge_enabled,
+        "chargeTimeList": deepcopy(
+            charge
+            if charge is not None
+            else [_period("01:00", "05:00", limit=90, power=3000)]
+        ),
+        "dischargeTimeList": deepcopy(
+            discharge
+            if discharge is not None
+            else [_period("17:00", "21:00", limit=20, power=2500)]
+        ),
+    }
+
+
+def _weekly_schedule() -> dict:
+    weekdays = [1, 2, 3, 4, 5]
+    weekend = [6, 7]
+    return {
+        "executeCycleType": 1,
+        "gridChargeCycle": 1,
+        "ctrDisCycle": 1,
+        "chargeTimeList": [
+            _period("00:30", "02:00", limit=80, power=1100, weeks=weekdays),
+            _period("02:15", "03:30", limit=85, power=2200, weeks=weekdays),
+            _period("04:00", "05:00", limit=95, power=3300, weeks=weekend),
+        ],
+        "dischargeTimeList": [
+            _period("16:00", "17:00", limit=15, power=1400, weeks=weekdays),
+            _period("17:15", "18:15", limit=20, power=2400, weeks=weekdays),
+            _period("19:00", "20:00", limit=25, power=3400, weeks=weekend),
+        ],
+    }
+
+
+def _legacy_charge(
+    *,
+    begin1: str = "01:00",
+    end1: str = "05:00",
+    begin2: str = "00:00",
+    end2: str = "00:00",
+    limit: int = 90,
+    enabled: int = 1,
+) -> dict:
+    """Build a charge-side entity snapshot (legacy key names, data-only)."""
+    return {
+        "batHighCap": limit,
+        "gridCharge": enabled,
+        "timeChaf1": begin1,
+        "timeChae1": end1,
+        "timeChaf2": begin2,
+        "timeChae2": end2,
+    }
+
+
+def _legacy_discharge(
+    *,
+    begin1: str = "17:00",
+    end1: str = "21:00",
+    begin2: str = "00:00",
+    end2: str = "00:00",
+    limit: int = 20,
+    enabled: int = 1,
+) -> dict:
+    """Build a discharge-side entity snapshot (legacy key names, data-only)."""
+    return {
+        "batUseCap": limit,
+        "ctrDis": enabled,
+        "timeDisf1": begin1,
+        "timeDise1": end1,
+        "timeDisf2": begin2,
+        "timeDise2": end2,
+    }
+
+
+def _entity_data(charge: dict, discharge: dict, *, poinv: float | None = 5.0) -> dict:
+    data = {
+        AlphaESSNames.batHighCap: charge["batHighCap"],
+        "gridCharge": charge["gridCharge"],
+        "charge_timeChaf1": charge["timeChaf1"],
+        "charge_timeChae1": charge["timeChae1"],
+        "charge_timeChaf2": charge["timeChaf2"],
+        "charge_timeChae2": charge["timeChae2"],
+        AlphaESSNames.batUseCap: discharge["batUseCap"],
+        "ctrDis": discharge["ctrDis"],
+        "discharge_timeDisf1": discharge["timeDisf1"],
+        "discharge_timeDise1": discharge["timeDise1"],
+        "discharge_timeDisf2": discharge["timeDisf2"],
+        "discharge_timeDise2": discharge["timeDise2"],
+    }
+    if poinv is not None:
+        data[AlphaESSNames.poinv] = poinv
     return data
 
 
-@pytest.fixture
-def readable(make_coordinator, mock_api):
-    """A coordinator whose system returns a periodic schedule when read."""
-    coordinator = make_coordinator()
-    coordinator.data = {SERIAL: _schedule_data()}
-    coordinator._periodic_readable[SERIAL] = True
-    return coordinator
+def _schedule_data() -> dict:
+    """Return a complete entity data snapshot for shared tests."""
+    return _entity_data(_legacy_charge(), _legacy_discharge())
 
 
-@pytest.fixture
-def unreadable(make_coordinator, mock_api):
-    """A coordinator whose read came back 6017 "no operation permissions"."""
-    coordinator = make_coordinator()
-    coordinator.data = {SERIAL: _schedule_data()}
-    coordinator._periodic_readable[SERIAL] = False
-    return coordinator
+def _seed(
+    coordinator,
+    *,
+    periodic: dict | None = None,
+    charge: dict | None = None,
+    discharge: dict | None = None,
+    readable: bool | None = True,
+    poinv: float | None = 5.0,
+):
+    """Seed coordinator entity data and the periodic snapshot.
 
-
-class TestOverlapDetection:
-    def test_no_overlap(self):
-        assert find_overlapping_periods([_period("01:00", "05:00")],
-                                        [_period("17:00", "21:00")]) is None
-
-    def test_touching_edges_do_not_overlap(self):
-        assert find_overlapping_periods([_period("01:00", "05:00")],
-                                        [_period("05:00", "07:00")]) is None
-
-    def test_plain_overlap(self):
-        assert find_overlapping_periods([_period("01:00", "06:00")],
-                                        [_period("05:00", "07:00")]) is not None
-
-    def test_overnight_charge_overlaps_early_discharge(self):
-        # 23:00-02:00 wraps midnight and must still be caught.
-        assert find_overlapping_periods([_period("23:00", "02:00")],
-                                        [_period("01:00", "03:00")]) is not None
-
-    def test_overnight_without_overlap(self):
-        assert find_overlapping_periods([_period("23:00", "02:00")],
-                                        [_period("10:00", "12:00")]) is None
-
-    def test_empty_lists(self):
-        assert find_overlapping_periods([], []) is None
-
-
-class TestBuildPeriodList:
-    def test_drops_disabled_slots(self, readable):
-        periods = readable._build_period_list(
-            [("01:00", "05:00"), ("00:00", "00:00")], 90,
-        )
-        assert periods == [{"beginTime": "01:00", "endTime": "05:00", "chargeLimit": 90}]
-
-    def test_all_disabled_gives_empty_list(self, readable):
-        periods = readable._build_period_list(
-            [("00:00", "00:00"), ("12:00", "12:00")], 90,
-        )
-        assert periods == []
-
-    def test_missing_times_are_skipped(self, readable):
-        assert readable._build_period_list([(None, "05:00"), ("01:00", None)], 90) == []
-
-    def test_charge_limit_clamped_to_minimum(self, readable):
-        # The number entity allows 0-100 but the periodic API rejects <10 (6001).
-        periods = readable._build_period_list([("17:00", "21:00")], 5)
-        assert periods[0]["chargeLimit"] == 10
-
-    def test_charge_limit_clamped_to_maximum(self, readable):
-        periods = readable._build_period_list([("01:00", "05:00")], 150)
-        assert periods[0]["chargeLimit"] == 100
-
-    def test_invalid_charge_limit_falls_back_to_minimum(self, readable):
-        periods = readable._build_period_list([("01:00", "05:00")], None)
-        assert periods[0]["chargeLimit"] == 10
-
-    def test_charge_power_included_when_known(self, readable):
-        periods = readable._build_period_list([("01:00", "05:00")], 90, 5000)
-        assert periods[0]["chargePower"] == 5000
-
-    def test_charge_power_omitted_when_unknown(self, readable):
-        periods = readable._build_period_list([("01:00", "05:00")], 90)
-        assert "chargePower" not in periods[0]
-
-
-class TestProbe:
-    async def test_payload_marks_supported(self, make_coordinator, mock_api):
-        coordinator = make_coordinator()
-        mock_api.getTimeChargeBySn.return_value = {
-            "chargeTimeList": [{"beginTime": "01:00", "chargePower": 5000}],
-            "dischargeTimeList": [],
-        }
-
-        assert await coordinator.async_probe_periodic_readable(SERIAL) is True
-        assert coordinator._periodic_readable[SERIAL] is True
-        # chargePower is remembered so our writes don't wipe the app's setting.
-        assert coordinator._periodic_power[SERIAL]["charge"] == 5000
-
-    async def test_none_marks_unsupported(self, make_coordinator, mock_api):
-        # The library returns None for 6017 "no operation permissions".
-        mock_api.getTimeChargeBySn.return_value = None
-        coordinator = make_coordinator()
-
-        assert await coordinator.async_probe_periodic_readable(SERIAL) is False
-        assert coordinator._periodic_readable[SERIAL] is False
-
-    async def test_transport_error_leaves_state_unknown(self, make_coordinator, mock_api):
-        mock_api.getTimeChargeBySn.side_effect = OSError("connection reset")
-        coordinator = make_coordinator()
-
-        assert await coordinator.async_probe_periodic_readable(SERIAL) is None
-        # Nothing cached, so the next write retries rather than giving up.
-        assert SERIAL not in coordinator._periodic_readable
-
-
-class TestDualWrite:
-    async def test_periodic_written_before_legacy(self, readable, mock_api):
-        order = []
-        mock_api.setTimeChargeBySn = AsyncMock(side_effect=lambda *a, **k: order.append("periodic"))
-        mock_api.updateChargeConfigInfo = AsyncMock(side_effect=lambda *a, **k: order.append("legacy"))
-
-        await readable.async_write_charge_config(SERIAL, times={"timeChaf1": "02:00"})
-
-        assert order == ["periodic", "legacy"]
-
-    async def test_periodic_payload_is_daily_with_no_weeks(self, readable, mock_api):
-        await readable.async_write_charge_config(SERIAL, times={"timeChaf1": "02:00"})
-
-        args, kwargs = mock_api.setTimeChargeBySn.await_args
-        serial, cycle_type, charge_list, discharge_list = args
-        assert serial == SERIAL
-        assert cycle_type == PERIODIC_DAILY == 0
-        assert charge_list == [{"beginTime": "02:00", "endTime": "05:00", "chargeLimit": 90}]
-        assert discharge_list == [{"beginTime": "17:00", "endTime": "21:00", "chargeLimit": 20}]
-        assert all("weeks" not in period for period in charge_list + discharge_list)
-        assert kwargs == {"gridChargeCycle": 1, "ctrDisCycle": 1}
-
-    async def test_both_lists_always_sent(self, readable, mock_api):
-        """A charge-only edit must still carry the current discharge periods."""
-        await readable.async_write_charge_config(SERIAL, bat_high_cap=80)
-
-        _, _, charge_list, discharge_list = mock_api.setTimeChargeBySn.await_args.args
-        assert charge_list and discharge_list
-
-    async def test_skipped_when_a_list_would_be_empty(
-        self, make_coordinator, mock_api, caplog
-    ):
-        """The live API rejects an empty list with 6001 "time list is null"."""
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: _schedule_data(
-            discharge_timeDisf1="00:00", discharge_timeDise1="00:00",
-        )}
-        coordinator._periodic_readable[SERIAL] = True
-
-        await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
-
-        mock_api.setTimeChargeBySn.assert_not_awaited()
-        mock_api.updateChargeConfigInfo.assert_awaited_once()
-        assert "the discharge list is empty" in caplog.text
-
-    async def test_skipped_when_charge_list_would_be_empty(
-        self, make_coordinator, mock_api, caplog
-    ):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: _schedule_data(
-            charge_timeChaf1="00:00", charge_timeChae1="00:00",
-        )}
-        coordinator._periodic_readable[SERIAL] = True
-
-        await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
-
-        mock_api.setTimeChargeBySn.assert_not_awaited()
-        assert "the charge list is empty" in caplog.text
-
-    async def test_legacy_argument_order_unchanged(self, readable, mock_api):
-        """The legacy call must keep passing end times before start times."""
-        await readable.async_write_charge_config(SERIAL, times={"timeChaf1": "02:00"})
-
-        args = mock_api.updateChargeConfigInfo.await_args.args
-        # (serial, batHighCap, gridCharge, timeChae1, timeChae2, timeChaf1, timeChaf2)
-        assert args == (SERIAL, 90, 1, "05:00", "00:00", "02:00", "00:00")
-
-    async def test_discharge_legacy_argument_order_unchanged(self, readable, mock_api):
-        await readable.async_write_discharge_config(SERIAL, ctr_dis=0)
-
-        args = mock_api.updateDisChargeConfigInfo.await_args.args
-        # (serial, batUseCap, ctrDis, timeDise1, timeDise2, timeDisf1, timeDisf2)
-        assert args == (SERIAL, 20, 0, "21:00", "00:00", "17:00", "00:00")
-
-    async def test_null_config_values_fall_back_to_defaults(self, make_coordinator, mock_api):
-        """The parsers store None when the API omits a field; don't send that on."""
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: _schedule_data(
-            gridCharge=None, ctrDis=None,
-            **{AlphaESSNames.batHighCap: None, AlphaESSNames.batUseCap: None},
-        )}
-        coordinator._periodic_readable[SERIAL] = True
-
-        await coordinator.async_write_charge_config(SERIAL, times={"timeChaf1": "02:00"})
-
-        kwargs = mock_api.setTimeChargeBySn.await_args.kwargs
-        assert kwargs == {"gridChargeCycle": 1, "ctrDisCycle": 1}
-        args = mock_api.updateChargeConfigInfo.await_args.args
-        assert args[1:3] == (90, 1)
-
-    async def test_disabled_switch_value_of_zero_is_preserved(self, readable, mock_api):
-        """0 is a valid gridCharge/ctrDis value and must not become the default 1."""
-        await readable.async_write_charge_config(SERIAL, grid_charge=0)
-
-        assert mock_api.setTimeChargeBySn.await_args.kwargs["gridChargeCycle"] == 0
-        assert mock_api.updateChargeConfigInfo.await_args.args[2] == 0
-
-    async def test_only_the_changed_side_writes_legacy(self, readable, mock_api):
-        await readable.async_write_charge_config(SERIAL, grid_charge=0)
-
-        mock_api.updateChargeConfigInfo.assert_awaited_once()
-        mock_api.updateDisChargeConfigInfo.assert_not_awaited()
-
-
-class TestWriteIsNeverGated:
-    """The periodic write must not depend on the read endpoint.
-
-    getTimeChargeBySn is separately permissioned and returns 6017 on exactly
-    the accounts that need the periodic write most, so gating on it would skip
-    the write for the users this is meant to fix (issues #267, #269).
+    ``charge``/``discharge`` seed only ``coordinator.data`` (the entity view);
+    the periodic store is the only schedule store the coordinator keeps.
     """
-
-    async def test_written_even_when_schedule_is_unreadable(self, unreadable, mock_api):
-        await unreadable.async_write_charge_config(SERIAL, times={"timeChaf1": "02:00"})
-
-        mock_api.setTimeChargeBySn.assert_awaited_once()
-        mock_api.updateChargeConfigInfo.assert_awaited_once()
-
-    async def test_written_even_when_read_state_is_unknown(self, make_coordinator, mock_api):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: _schedule_data()}
-
-        await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
-
-        mock_api.setTimeChargeBySn.assert_awaited_once()
-        mock_api.updateChargeConfigInfo.assert_awaited_once()
-
-    async def test_write_does_not_trigger_a_read(self, make_coordinator, mock_api):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: _schedule_data()}
-
-        await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
-
-        mock_api.getTimeChargeBySn.assert_not_awaited()
+    charge = deepcopy(charge or _legacy_charge())
+    discharge = deepcopy(discharge or _legacy_discharge())
+    coordinator.data = {SERIAL: _entity_data(charge, discharge, poinv=poinv)}
+    if periodic is not None:
+        coordinator._periodic_schedules[SERIAL] = deepcopy(periodic)
+    if readable is not None:
+        coordinator._periodic_readable[SERIAL] = readable
+    return coordinator
 
 
-class TestFailureHandling:
-    async def test_periodic_failure_falls_through_to_legacy(
-        self, readable, mock_api, caplog
-    ):
-        """A failed periodic write must not abandon the legacy one."""
-        mock_api.setTimeChargeBySn.side_effect = OSError("api down")
+def _periodic_payload(mock_api) -> dict:
+    return mock_api.setTimeChargeBySn.await_args.kwargs
 
-        await readable.async_write_charge_config(SERIAL, grid_charge=1)
 
-        mock_api.updateChargeConfigInfo.assert_awaited_once()
-        assert "Periodic schedule write failed" in caplog.text
-
-    async def test_fails_only_when_both_writes_fail(self, readable, mock_api):
-        mock_api.setTimeChargeBySn.side_effect = OSError("api down")
-        mock_api.updateChargeConfigInfo.side_effect = OSError("api down")
-
-        with pytest.raises(OSError):
-            await readable.async_write_charge_config(SERIAL, grid_charge=1)
-
-    async def test_legacy_failure_swallowed_after_periodic_success(
-        self, readable, mock_api, caplog
-    ):
-        """The periodic request went through — don't fail the whole write."""
-        mock_api.updateChargeConfigInfo.side_effect = OSError("api down")
-
-        await readable.async_write_charge_config(SERIAL, grid_charge=1)
-
-        mock_api.setTimeChargeBySn.assert_awaited_once()
-        assert "periodic schedule request went through" in caplog.text
-
-    async def test_overlap_skips_periodic_and_falls_back_to_legacy(
-        self, make_coordinator, mock_api, caplog
-    ):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: _schedule_data(
-            charge_timeChaf1="01:00", charge_timeChae1="18:00",  # overlaps discharge
-        )}
-        coordinator._periodic_readable[SERIAL] = True
-
-        await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
-
-        mock_api.setTimeChargeBySn.assert_not_awaited()
-        mock_api.updateChargeConfigInfo.assert_awaited_once()
-        assert "overlaps discharge period" in caplog.text
-
-    async def test_cancellation_during_periodic_write_is_not_swallowed(
-        self, readable, mock_api
-    ):
-        """Shutdown must cancel the write, not fall through to the legacy call."""
-        mock_api.setTimeChargeBySn.side_effect = asyncio.CancelledError()
-
-        with pytest.raises(asyncio.CancelledError):
-            await readable.async_write_charge_config(SERIAL, grid_charge=1)
-
-        mock_api.updateChargeConfigInfo.assert_not_awaited()
-
-    async def test_cancellation_during_legacy_write_is_not_swallowed(
-        self, readable, mock_api
-    ):
-        """Shutdown must cancel the write, not be logged as a legacy failure."""
-        mock_api.updateChargeConfigInfo.side_effect = asyncio.CancelledError()
-
-        with pytest.raises(asyncio.CancelledError):
-            await readable.async_write_charge_config(SERIAL, grid_charge=1)
-
-    async def test_cancellation_during_probe_is_not_swallowed(
+class TestPeriodicOnlyStore:
+    async def test_hidden_legacy_ghost_is_never_posted_periodically(
         self, make_coordinator, mock_api
     ):
-        mock_api.getTimeChargeBySn.side_effect = asyncio.CancelledError()
-        coordinator = make_coordinator()
+        """The exact #269 ghost cannot reach a POST: the retired legacy stores
+        are never read at all, so a stale window in entity data stays inert."""
+        periodic = _daily_schedule(
+            charge=[_period("03:00", "04:00", limit=88, power=1800)]
+        )
+        ghost = _legacy_charge(begin1=GHOST_BEGIN, end1=GHOST_END)
+        coordinator = _seed(
+            make_coordinator(), periodic=periodic, charge=ghost, readable=True
+        )
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
 
-        with pytest.raises(asyncio.CancelledError):
-            await coordinator.async_probe_periodic_readable(SERIAL)
+        await coordinator.async_write_discharge_config(
+            SERIAL, times={"timeDise1": "22:00"}
+        )
 
-    async def test_overlap_still_surfaces_legacy_errors(self, make_coordinator, mock_api):
-        """Skipping periodic makes legacy primary again, errors included."""
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: _schedule_data(
-            charge_timeChaf1="01:00", charge_timeChae1="18:00",
-        )}
-        coordinator._periodic_readable[SERIAL] = True
-        mock_api.updateChargeConfigInfo.side_effect = OSError("api down")
+        payload = _periodic_payload(mock_api)
+        assert payload["chargeTimeList"] == periodic["chargeTimeList"]
+        assert all(
+            (period["beginTime"], period["endTime"])
+            != (GHOST_BEGIN, GHOST_END)
+            for key in ("chargeTimeList", "dischargeTimeList")
+            for period in payload[key]
+        )
+        mock_api.getChargeConfigInfo.assert_not_awaited()
+        mock_api.getDisChargeConfigInfo.assert_not_awaited()
 
-        with pytest.raises(OSError):
-            await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
+    async def test_weekly_three_period_resource_round_trips_untouched_fields(
+        self, make_coordinator, mock_api
+    ):
+        periodic = _weekly_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        await coordinator.async_write_charge_config(
+            SERIAL, times={"timeChae1": "02:30"}
+        )
+
+        payload = _periodic_payload(mock_api)
+        assert payload["executeCycleType"] == 1
+        assert len(payload["chargeTimeList"]) == 3
+        assert len(payload["dischargeTimeList"]) == 3
+        assert payload["chargeTimeList"][0] == {
+            **periodic["chargeTimeList"][0],
+            "endTime": "02:30",
+        }
+        assert payload["chargeTimeList"][1:] == periodic["chargeTimeList"][1:]
+        assert payload["dischargeTimeList"] == periodic["dischargeTimeList"]
+        assert [p["chargePower"] for p in payload["chargeTimeList"]] == [
+            1100,
+            2200,
+            3300,
+        ]
+        assert all(period["weeks"] for period in payload["chargeTimeList"])
+        mock_api.getChargeConfigInfo.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
 
 
-class TestPeriodicScheduleReadDiagnostic:
-    def test_reports_periodic_when_supported(self, readable):
-        assert readable.get_periodic_read_state(SERIAL) == PERIODIC_READ_OK
+class TestQuickButtonSafety:
+    """The duration buttons patch only slot 1 and never guess at overlap."""
 
-    def test_reports_legacy_when_not_entitled(self, unreadable):
-        assert unreadable.get_periodic_read_state(SERIAL) == PERIODIC_READ_UNAVAILABLE
+    async def test_discharge_button_preserves_second_periodic_period(
+        self, make_coordinator, mock_api
+    ):
+        """#269 class: a one-shot button must not delete an app period."""
+        periodic = _daily_schedule(
+            discharge=[
+                _period("02:00", "05:00", limit=20, power=2500),
+                _period("13:00", "16:00", limit=25, power=1500),
+            ]
+        )
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
 
-    def test_reports_unknown_before_the_probe_answers(self, make_coordinator):
-        assert make_coordinator().get_periodic_read_state(SERIAL) == PERIODIC_READ_UNKNOWN
+        await coordinator.update_discharge("batUseCap", SERIAL, 15)
 
-    def test_published_into_coordinator_data(self, readable):
-        readable._update_diagnostics()
-        assert readable.data[SERIAL][AlphaESSNames.PeriodicScheduleRead] == PERIODIC_READ_OK
+        payload = _periodic_payload(mock_api)
+        assert len(payload["dischargeTimeList"]) == 2
+        assert payload["dischargeTimeList"][1] == periodic["dischargeTimeList"][1]
+        # Period 1 is retargeted; its power and cutoff carry over unchanged.
+        assert payload["dischargeTimeList"][0]["chargePower"] == 2500
+        assert payload["dischargeTimeList"][0]["chargeLimit"] == 20
+        assert payload["chargeTimeList"] == periodic["chargeTimeList"]
 
-    async def test_unknown_support_is_retried(self, make_coordinator, mock_api):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: _schedule_data()}
-        mock_api.getTimeChargeBySn.return_value = {"chargeTimeList": [], "dischargeTimeList": []}
+    async def test_discharge_button_uses_the_legacy_backup_on_6017(
+        self, make_coordinator, mock_api
+    ):
+        """A definitive 6017 activates the legacy backup: the button writes
+        the two-slot discharge store, touching only slot 1."""
+        coordinator = _seed(make_coordinator(), periodic=None, readable=False)
+        mock_api.getDisChargeConfigInfo.return_value = _legacy_discharge(
+            begin2="23:00", end2="23:45"
+        )
+
+        await coordinator.update_discharge("batUseCap", SERIAL, 15)
+
+        kwargs = mock_api.updateDisChargeConfigInfo.await_args.kwargs
+        assert kwargs["ctrDis"] == 1
+        assert kwargs["timeDisf2"] == "23:00"
+        assert kwargs["timeDise2"] == "23:45"
+        mock_api.getTimeChargeBySn.assert_not_awaited()
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+
+    async def test_charge_button_preserves_second_periodic_period(
+        self, make_coordinator, mock_api
+    ):
+        """The charge button too patches only slot 1 of the periodic store."""
+        periodic = _daily_schedule(
+            charge=[
+                _period("01:00", "05:00", limit=90, power=3000),
+                _period("23:00", "23:45", limit=95, power=1000),
+            ]
+        )
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        await coordinator.update_charge("batHighCap", SERIAL, 15)
+
+        payload = _periodic_payload(mock_api)
+        assert len(payload["chargeTimeList"]) == 2
+        assert payload["chargeTimeList"][1] == periodic["chargeTimeList"][1]
+        assert payload["chargeTimeList"][0]["chargePower"] == 3000
+        assert payload["chargeTimeList"][0]["chargeLimit"] == 90
+        mock_api.getChargeConfigInfo.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_button_refuses_weekly_period_that_does_not_run_today(
+        self, make_coordinator, mock_api
+    ):
+        """Retargeting a period bound to other weekdays would be accepted by
+        the API, do nothing now, and reschedule those weekdays instead."""
+        today = dt_util.now().isoweekday()
+        periodic = _weekly_schedule()
+        periodic["dischargeTimeList"][0]["weeks"] = [
+            day for day in range(1, 8) if day != today
+        ][:2]
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        with pytest.raises(ScheduleWriteError, match="does not run today"):
+            await coordinator.update_discharge("batUseCap", SERIAL, 15)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateDisChargeConfigInfo.assert_not_awaited()
+
+    async def test_button_retargets_weekly_period_that_runs_today(
+        self, make_coordinator, mock_api
+    ):
+        today = dt_util.now().isoweekday()
+        periodic = _weekly_schedule()
+        periodic["dischargeTimeList"][0]["weeks"] = [today]
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        await coordinator.update_discharge("batUseCap", SERIAL, 15)
+
+        payload = _periodic_payload(mock_api)
+        assert payload["dischargeTimeList"][0]["weeks"] == [today]
+        assert payload["dischargeTimeList"][0]["chargePower"] == 1400
+
+    async def test_button_error_on_missing_first_period_names_a_remedy(
+        self, make_coordinator, mock_api
+    ):
+        """The empty-side failure must not talk about drafts to a button user."""
+        periodic = _daily_schedule(discharge=[])
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        with pytest.raises(
+            ScheduleWriteError, match="quick discharge button"
+        ) as excinfo:
+            await coordinator.update_discharge("batUseCap", SERIAL, 15)
+
+        assert "AlphaESS app" in str(excinfo.value)
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateDisChargeConfigInfo.assert_not_awaited()
+
+    async def test_overlapping_windows_are_posted_for_the_api_to_judge(
+        self, make_coordinator, mock_api
+    ):
+        """#269 (benbrown249): no local overlap guess may gate the POST."""
+        periodic = _daily_schedule()  # existing discharge 17:00-21:00
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        await coordinator.async_write_charge_config(
+            SERIAL, times={"timeChaf1": "17:30", "timeChae1": "18:30"}
+        )
+
+        payload = _periodic_payload(mock_api)
+        assert payload["chargeTimeList"][0]["beginTime"] == "17:30"
+        assert payload["chargeTimeList"][0]["endTime"] == "18:30"
+        assert payload["dischargeTimeList"][0]["beginTime"] == "17:00"
+
+    async def test_api_overlap_rejection_is_surfaced_not_predicted(
+        self, make_coordinator, mock_api
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+        mock_api.setTimeChargeBySn.side_effect = _api_error(
+            PERIODIC_OVERLAP, "Set failed"
+        )
+
+        with pytest.raises(ScheduleWriteError, match="was not updated"):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "17:30", "timeChae1": "18:30"}
+            )
+
+        mock_api.setTimeChargeBySn.assert_awaited_once()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+
+class TestDraftTransaction:
+    async def test_sequential_entity_edits_make_one_post_on_apply(
+        self, make_coordinator, mock_api
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+
+        coordinator.stage_schedule_change(
+            SERIAL, discharge={"timeDisf2": "22:00"}
+        )
+        coordinator.stage_schedule_change(
+            SERIAL, discharge={"timeDise2": "22:15"}
+        )
+        coordinator.stage_schedule_change(
+            SERIAL, discharge={"chargePower2": 1750.0}
+        )
+
+        mock_api.getTimeChargeBySn.assert_not_awaited()
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateDisChargeConfigInfo.assert_not_awaited()
+        assert coordinator.has_schedule_draft(SERIAL)
+
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+        await coordinator.async_apply_schedule_draft(SERIAL)
+
+        mock_api.setTimeChargeBySn.assert_awaited_once()
+        # Discharge has no legacy store any more; nothing else is called.
+        mock_api.getDisChargeConfigInfo.assert_not_awaited()
+        mock_api.updateDisChargeConfigInfo.assert_not_awaited()
+        periods = _periodic_payload(mock_api)["dischargeTimeList"]
+        assert periods[0] == periodic["dischargeTimeList"][0]
+        assert periods[1] == {
+            "beginTime": "22:00",
+            "endTime": "22:15",
+            "chargeLimit": 20,
+            "chargePower": 1750,
+        }
+        assert type(periods[1]["chargePower"]) is int
+        assert not coordinator.has_schedule_draft(SERIAL)
+
+    async def test_periodic_conflict_blocks_every_post_and_keeps_draft(
+        self, make_coordinator, mock_api
+    ):
+        original = _daily_schedule()
+        changed_remotely = _daily_schedule(
+            discharge=[_period("16:00", "20:00", limit=20, power=2500)]
+        )
+        coordinator = _seed(make_coordinator(), periodic=original, readable=True)
+        coordinator.stage_schedule_change(
+            SERIAL, charge={"timeChae1": "04:30"}
+        )
+        mock_api.getTimeChargeBySn.return_value = changed_remotely
+
+        with pytest.raises(ScheduleConflictError, match="periodic schedule changed"):
+            await coordinator.async_apply_schedule_draft(SERIAL)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+        assert coordinator.has_schedule_draft(SERIAL)
+
+    async def test_stage_uses_the_legacy_backup_on_6017(
+        self, make_coordinator, mock_api
+    ):
+        """A definitive 6017 activates the legacy backup: staging works from
+        the complete polled two-slot view, without any API call."""
+        coordinator = _seed(make_coordinator(), periodic=None, readable=False)
+
+        assert coordinator.can_stage_schedule(SERIAL) is True
+        coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
+
+        assert coordinator.has_schedule_draft(SERIAL)
+        assert coordinator._schedule_drafts[SERIAL]["charge"]["timeChaf1"] == "02:00"
+        mock_api.getChargeConfigInfo.assert_not_awaited()
+        mock_api.getTimeChargeBySn.assert_not_awaited()
+
+    async def test_stage_refused_when_periodic_writes_are_denied(
+        self, make_coordinator, mock_api
+    ):
+        """Write-denied is not backup mode: the periodic store still governs
+        the inverter, so editing a store it ignores would only mislead."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator._periodic_write_denied.add(SERIAL)
+
+        assert coordinator.can_stage_schedule(SERIAL) is False
+        with pytest.raises(ScheduleWriteError, match="Schedule control requires"):
+            coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
+
+        assert not coordinator.has_schedule_draft(SERIAL)
+        mock_api.getChargeConfigInfo.assert_not_awaited()
+
+    async def test_stage_fails_closed_while_readability_is_unknown(
+        self, make_coordinator, mock_api
+    ):
+        """An undecided periodic probe must not admit edits it cannot apply."""
+        coordinator = _seed(make_coordinator(), periodic=None, readable=None)
+
+        assert coordinator.can_stage_schedule(SERIAL) is False
+        with pytest.raises(
+            ScheduleWriteError, match="periodic schedule can be read"
+        ):
+            coordinator.stage_schedule_change(
+                SERIAL, discharge={"timeDisf1": "01:00"}
+            )
+
+        assert not coordinator.has_schedule_draft(SERIAL)
+
+
+class TestValidationBeforeWrite:
+    async def test_unknown_transient_periodic_read_blocks_the_post(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = _seed(make_coordinator(), periodic=None, readable=None)
+        mock_api.getTimeChargeBySn.side_effect = OSError("connection reset")
+
+        with pytest.raises(ScheduleWriteError, match="could not be read safely"):
+            await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_power_write_on_backup_system_fails_closed(
+        self, make_coordinator, mock_api
+    ):
+        """The legacy backup has no power field; a power write on a 6017
+        system must fail before any request rather than be silently dropped."""
+        coordinator = _seed(make_coordinator(), periodic=None, readable=False)
+
+        with pytest.raises(ScheduleWriteError, match="power"):
+            await coordinator.async_write_charge_config(
+                SERIAL, powers={"chargePower1": 1800}
+            )
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.getChargeConfigInfo.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_cached_periodic_write_denial_blocks_without_a_read(
+        self, make_coordinator, mock_api
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator._periodic_write_denied.add(SERIAL)
+
+        with pytest.raises(ScheduleWriteError, match="Schedule control requires"):
+            await coordinator.async_write_charge_config(
+                SERIAL, powers={"chargePower1": 1800}
+            )
+
+        assert coordinator.is_periodic_schedule_readable(SERIAL) is False
+        mock_api.getTimeChargeBySn.assert_not_awaited()
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            None,
+            {
+                "executeCycleType": 0,
+                "chargeTimeList": [],
+                # Missing dischargeTimeList is a malformed full resource.
+            },
+        ],
+        ids=["empty", "malformed"],
+    )
+    async def test_known_readable_bad_refresh_blocks_the_post(
+        self, make_coordinator, mock_api, payload
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = payload
+
+        with pytest.raises(ScheduleWriteError, match="periodic schedule"):
+            await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_missing_power_blocks_all_posts(self, make_coordinator, mock_api):
+        periodic = _daily_schedule()
+        del periodic["chargeTimeList"][0]["chargePower"]
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        with pytest.raises(ScheduleWriteError, match="chargePower"):
+            await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    @pytest.mark.parametrize("power", [1200.5, float("nan"), float("inf"), True])
+    async def test_invalid_power_type_blocks_all_posts(
+        self, make_coordinator, mock_api, power
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        with pytest.raises(ScheduleWriteError, match="chargePower"):
+            await coordinator.async_write_charge_config(
+                SERIAL, powers={"chargePower1": power}
+            )
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_empty_opposite_list_blocks_all_posts(
+        self, make_coordinator, mock_api
+    ):
+        periodic = _daily_schedule(charge=[])
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        with pytest.raises(ScheduleWriteError, match="chargeTimeList would be empty"):
+            await coordinator.async_write_discharge_config(SERIAL, ctr_dis=1)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateDisChargeConfigInfo.assert_not_awaited()
+
+    async def test_noop_write_makes_no_post(self, make_coordinator, mock_api):
+        """Proposed == current is a success without consuming a write."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        await coordinator.async_write_charge_config(
+            SERIAL, times={"timeChae1": "05:00"}
+        )
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+
+class TestEndpointOutcomes:
+    async def test_read_6017_activates_the_legacy_backup_and_is_cached(
+        self, make_coordinator, mock_api
+    ):
+        """6017 is cached as permanent and selects the legacy backup: the
+        same write transaction falls through to the two-slot store, and no
+        later write probes the periodic API again."""
+        coordinator = _seed(make_coordinator(), periodic=None, readable=None)
+        mock_api.getTimeChargeBySn.side_effect = _api_error(
+            PERIODIC_NOT_ENTITLED, "No operation permissions"
+        )
+        mock_api.getChargeConfigInfo.return_value = _legacy_charge()
+
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+        mock_api.getChargeConfigInfo.return_value = _legacy_charge(enabled=0)
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
+
+        # The permanent refusal is cached: only the first write probed.
+        mock_api.getTimeChargeBySn.assert_awaited_once_with(SERIAL)
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        assert mock_api.updateChargeConfigInfo.await_count == 2
+        assert coordinator._periodic_readable[SERIAL] is False
+
+    async def test_generic_6008_is_surfaced_with_its_meaning_logged(
+        self, make_coordinator, mock_api, caplog
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+        mock_api.setTimeChargeBySn.side_effect = _api_error(
+            PERIODIC_OVERLAP, "Set failed"
+        )
+
+        with pytest.raises(ScheduleWriteError, match="was not updated"):
+            await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+        assert coordinator._periodic_schedules[SERIAL] == periodic
+        assert "generic set-failed" in caplog.text
+        assert "one possible cause" in caplog.text
+
+    async def test_discharge_write_is_periodic_only_and_cannot_10001(
+        self, make_coordinator, mock_api
+    ):
+        """dragon2611's 10001 came from the retired updateDisChargeConfigInfo.
+        A discharge write now touches only the periodic store, so that failure
+        mode no longer exists — and a stale poll cannot reset the view."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+        mock_api.updateDisChargeConfigInfo.side_effect = AssertionError(
+            "retired endpoint must never be called"
+        )
+        mock_api.getDisChargeConfigInfo.side_effect = AssertionError(
+            "retired endpoint must never be called"
+        )
+
+        await coordinator.async_write_discharge_config(
+            SERIAL, times={"timeDise1": "22:00"}
+        )
+
+        mock_api.setTimeChargeBySn.assert_awaited_once()
+        assert coordinator._periodic_schedules[SERIAL]["dischargeTimeList"][0][
+            "endTime"
+        ] == "22:00"
+
+        # A stale legacy-shaped poll snapshot must not reset the app-facing
+        # periodic view used by the entities.
+        stale_data = _entity_data(_legacy_charge(), _legacy_discharge())
+        coordinator._overlay_schedule_view(SERIAL, stale_data)
+        assert stale_data["discharge_timeDise1"] == "22:00"
+
+
+class TestRefresh:
+    async def test_known_readable_periodic_schedule_is_refreshed(
+        self, make_coordinator, mock_api
+    ):
+        original = _daily_schedule()
+        changed = _daily_schedule(
+            charge=[_period("02:00", "06:00", limit=92, power=1750)]
+        )
+        coordinator = _seed(make_coordinator(), periodic=original, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(changed)
 
         await coordinator._async_resolve_unknown_periodic_read()
 
         mock_api.getTimeChargeBySn.assert_awaited_once_with(SERIAL)
-        assert coordinator.get_periodic_read_state(SERIAL) == PERIODIC_READ_OK
+        assert coordinator._periodic_schedules[SERIAL] == changed
+        assert coordinator.data[SERIAL]["charge_timeChaf1"] == "02:00"
+        assert coordinator.data[SERIAL]["charge_timeChae1"] == "06:00"
 
-    async def test_known_support_is_not_reprobed(self, readable, mock_api):
-        await readable._async_resolve_unknown_periodic_read()
+    async def test_reset_clears_both_backup_stores_on_6017(
+        self, make_coordinator, mock_api
+    ):
+        """The reset exists only for backup mode, where it zeroes both
+        two-slot stores; the periodic store cannot be cleared."""
+        coordinator = _seed(make_coordinator(), periodic=None, readable=False)
+        mock_api.getChargeConfigInfo.return_value = _legacy_charge()
+        mock_api.getDisChargeConfigInfo.return_value = _legacy_discharge()
 
-        mock_api.getTimeChargeBySn.assert_not_awaited()
+        assert coordinator.can_reset_schedule(SERIAL) is True
+        await coordinator.reset_config(SERIAL)
 
+        charge = mock_api.updateChargeConfigInfo.await_args.kwargs
+        discharge = mock_api.updateDisChargeConfigInfo.await_args.kwargs
+        assert charge["timeChaf1"] == charge["timeChae1"] == "00:00"
+        assert charge["timeChaf2"] == charge["timeChae2"] == "00:00"
+        assert discharge["timeDisf1"] == discharge["timeDise1"] == "00:00"
+        assert discharge["timeDisf2"] == discharge["timeDise2"] == "00:00"
+        mock_api.setTimeChargeBySn.assert_not_awaited()
 
-class TestButtonAndResetPaths:
-    async def test_reset_cannot_clear_the_periodic_schedule(self, readable, mock_api):
-        """Reset zeroes every slot, which leaves no periods to send.
+    async def test_reset_refused_on_periodic_systems(
+        self, make_coordinator, mock_api
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
 
-        setTimeChargeBySn has no representation for "no periods", so a reset
-        only reaches the legacy endpoints. Clearing a periodic schedule has to
-        be done from the AlphaESS app.
-        """
-        await readable.reset_config(SERIAL)
+        assert coordinator.can_reset_schedule(SERIAL) is False
+        with pytest.raises(ScheduleWriteError, match="clear"):
+            await coordinator.reset_config(SERIAL)
 
         mock_api.setTimeChargeBySn.assert_not_awaited()
-        mock_api.updateChargeConfigInfo.assert_awaited_once()
-        mock_api.updateDisChargeConfigInfo.assert_awaited_once()
-
-    async def test_update_charge_writes_both_apis(self, readable, mock_api):
-        await readable.update_charge("batHighCap", SERIAL, 60)
-
-        mock_api.setTimeChargeBySn.assert_awaited_once()
-        mock_api.updateChargeConfigInfo.assert_awaited_once()
-
-    async def test_update_discharge_writes_both_apis(self, readable, mock_api):
-        await readable.update_discharge("batUseCap", SERIAL, 30)
-
-        mock_api.setTimeChargeBySn.assert_awaited_once()
-        mock_api.updateDisChargeConfigInfo.assert_awaited_once()
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+        mock_api.updateDisChargeConfigInfo.assert_not_awaited()
