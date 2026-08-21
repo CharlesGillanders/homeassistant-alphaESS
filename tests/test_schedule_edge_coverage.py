@@ -15,6 +15,8 @@ from custom_components.alphaess.coordinator import (
     PERIODIC_READ_UNAVAILABLE,
     AlphaESSDataUpdateCoordinator,
     ScheduleConflictError,
+    SchedulePartialWriteError,
+    SchedulePartialWriteUnknownError,
     ScheduleWriteError,
     ScheduleWriteUnknownError,
     _format_periods,
@@ -37,6 +39,9 @@ from .test_periodic_schedule import (
     SERIAL,
     _api_error,
     _daily_schedule,
+    _entity_data,
+    _legacy_charge,
+    _legacy_discharge,
     _period,
     _seed,
 )
@@ -1186,3 +1191,320 @@ class TestControlAvailability:
 
         assert SERIAL not in coordinator.data
         assert all(not control.available for control in controls)
+
+
+class TestLegacyBackupWrites:
+    """In backup mode the two stores are independent resources, so a two-sided
+    write can half-land. Every one of those outcomes has to be reported."""
+
+    def _seed_backup(self, coordinator, mock_api, *, charge=None, discharge=None):
+        charge = deepcopy(charge or _legacy_charge())
+        discharge = deepcopy(discharge or _legacy_discharge())
+        coordinator.data = {SERIAL: _entity_data(charge, discharge)}
+        coordinator._periodic_readable[SERIAL] = False
+        coordinator._legacy_schedules[SERIAL] = {
+            "charge": deepcopy(charge),
+            "discharge": deepcopy(discharge),
+        }
+        mock_api.getChargeConfigInfo.return_value = deepcopy(charge)
+        mock_api.getDisChargeConfigInfo.return_value = deepcopy(discharge)
+        return coordinator
+
+    async def test_an_unreadable_side_blocks_the_write(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        mock_api.getChargeConfigInfo.side_effect = OSError("boom")
+
+        with pytest.raises(ScheduleWriteError, match="nothing was changed"):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_a_side_the_api_did_not_return_blocks_the_write(
+        self, make_coordinator, mock_api
+    ):
+        """A replacement built from a payload that is not there would reset
+        whatever it could not see."""
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        mock_api.getChargeConfigInfo.return_value = None
+
+        with pytest.raises(
+            ScheduleWriteError, match="full current configuration could not be read"
+        ):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_a_side_missing_fields_names_them(self, make_coordinator, mock_api):
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        partial = _legacy_charge()
+        del partial["timeChae2"]
+        mock_api.getChargeConfigInfo.return_value = partial
+
+        with pytest.raises(ScheduleWriteError, match="timeChae2"):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_a_side_that_already_matches_is_not_rewritten(
+        self, make_coordinator, mock_api
+    ):
+        """Reset zeroes both stores; a store already at those values costs no
+        write, and a request never sent is a request that cannot fail."""
+        zeroed = _legacy_charge(begin1="00:00", end1="00:00")
+        coordinator = self._seed_backup(make_coordinator(), mock_api, charge=zeroed)
+
+        await coordinator.reset_config(SERIAL)
+
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+        mock_api.updateDisChargeConfigInfo.assert_awaited_once()
+
+    async def test_a_backup_store_that_moved_is_a_conflict(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
+        # Somebody edited the same store in the AlphaESS app in the meantime.
+        mock_api.getChargeConfigInfo.return_value = _legacy_charge(begin1="09:00")
+
+        with pytest.raises(ScheduleConflictError, match="changed after this draft"):
+            await coordinator.async_apply_schedule_draft(SERIAL)
+
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+        assert coordinator.has_schedule_draft(SERIAL)
+
+    async def test_a_half_landed_write_names_what_applied(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
+        coordinator.stage_schedule_change(SERIAL, discharge={"timeDisf1": "18:00"})
+        mock_api.updateDisChargeConfigInfo.side_effect = _api_error(6008, "Set failed")
+
+        with pytest.raises(SchedulePartialWriteError, match="charge"):
+            await coordinator.async_apply_schedule_draft(SERIAL)
+
+        mock_api.updateChargeConfigInfo.assert_awaited_once()
+        # The draft survives for a retry, rebased on what the API took.
+        assert coordinator.has_schedule_draft(SERIAL)
+        assert (
+            coordinator._schedule_draft_base_legacy[SERIAL]["charge"]["timeChaf1"]
+            == "02:00"
+        )
+
+    async def test_a_half_landed_write_with_a_lost_response_says_so(
+        self, make_coordinator, mock_api
+    ):
+        """A timeout is not a rejection: the store may already hold the change."""
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        mock_api.updateDisChargeConfigInfo.side_effect = TimeoutError("no response")
+
+        with pytest.raises(SchedulePartialWriteUnknownError, match="unknown outcome"):
+            await coordinator.reset_config(SERIAL)
+
+    async def test_a_rejected_single_write_reports_that_nothing_landed(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        mock_api.updateChargeConfigInfo.side_effect = _api_error(6008, "Set failed")
+
+        with pytest.raises(ScheduleWriteError, match="No AlphaESS schedule store"):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+    async def test_a_lost_single_write_reports_an_unknown_outcome(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        mock_api.updateChargeConfigInfo.side_effect = TimeoutError("no response")
+
+        with pytest.raises(ScheduleWriteUnknownError, match="known to have accepted"):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+    async def test_a_draft_opened_on_the_backup_is_refused_once_periodic_returns(
+        self, make_coordinator, mock_api
+    ):
+        """AlphaESS granting the permission mid-draft changes which resource
+        the staged values describe."""
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
+
+        periodic = _daily_schedule(charge=[_period("01:00", "05:00")])
+        coordinator._periodic_readable[SERIAL] = True
+        coordinator._periodic_schedules[SERIAL] = deepcopy(periodic)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        with pytest.raises(ScheduleConflictError, match="became available"):
+            await coordinator.async_apply_schedule_draft(SERIAL)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+
+
+class TestRemainingWriteGuards:
+    """The refusals and bookkeeping that only show up in narrow situations."""
+
+    def _seed_backup(self, coordinator, mock_api, *, charge=None, discharge=None):
+        charge = deepcopy(charge or _legacy_charge())
+        discharge = deepcopy(discharge or _legacy_discharge())
+        coordinator.data = {SERIAL: _entity_data(charge, discharge)}
+        coordinator._periodic_readable[SERIAL] = False
+        coordinator._legacy_schedules[SERIAL] = {
+            "charge": deepcopy(charge),
+            "discharge": deepcopy(discharge),
+        }
+        mock_api.getChargeConfigInfo.return_value = deepcopy(charge)
+        mock_api.getDisChargeConfigInfo.return_value = deepcopy(discharge)
+        return coordinator
+
+    async def test_pruning_drops_an_idle_write_lock(self, make_coordinator):
+        """A held lock must survive pruning: popping it would let a second
+        lock be created beside the one a transaction is still holding."""
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: {}, "AL_OTHER": {}}
+        idle = asyncio.Lock()
+        held = asyncio.Lock()
+        coordinator._schedule_locks[SERIAL] = idle
+        coordinator._schedule_locks["AL_OTHER"] = held
+
+        async with held:
+            coordinator._prune_unbound_systems(set())
+
+        assert SERIAL not in coordinator._schedule_locks
+        assert coordinator._schedule_locks["AL_OTHER"] is held
+
+    def test_staging_needs_a_known_inverter(self, make_coordinator):
+        coordinator = make_coordinator()
+        coordinator.data = {}
+
+        assert coordinator.can_stage_schedule(SERIAL) is False
+
+    def test_power_cannot_be_staged_in_backup_mode(self, make_coordinator, mock_api):
+        """The legacy stores have no power field, so a staged power could only
+        be silently dropped at Apply."""
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+
+        with pytest.raises(ScheduleWriteError, match="no power field"):
+            coordinator.stage_schedule_change(SERIAL, charge={"chargePower1": 2500})
+
+        assert not coordinator.has_schedule_draft(SERIAL)
+
+    def test_a_legacy_poll_that_started_before_a_write_is_ignored(
+        self, make_coordinator, mock_api
+    ):
+        """An in-flight poll carries pre-write values; caching them would
+        undo the write in the entity view."""
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        stale = _entity_data(
+            _legacy_charge(begin1="23:00"), _legacy_discharge()
+        )
+        coordinator._schedule_write_revisions[SERIAL] = 4
+
+        coordinator._cache_legacy_state(SERIAL, stale, expected_revision=3)
+
+        assert (
+            coordinator._legacy_schedules[SERIAL]["charge"]["timeChaf1"] == "01:00"
+        )
+
+    async def test_a_cancelled_legacy_read_is_not_reported_as_a_write_failure(
+        self, make_coordinator, mock_api
+    ):
+        """Shutdown cancelling the task is not the API refusing the read."""
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        mock_api.getChargeConfigInfo.side_effect = asyncio.CancelledError()
+
+        with pytest.raises(asyncio.CancelledError):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+    async def test_a_cancelled_legacy_write_propagates(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        mock_api.updateChargeConfigInfo.side_effect = asyncio.CancelledError()
+
+        with pytest.raises(asyncio.CancelledError):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+    async def test_an_edit_during_apply_rebases_the_backup_draft(
+        self, make_coordinator, mock_api
+    ):
+        """The newer edit is kept, and its conflict base becomes what this
+        transaction just committed."""
+        coordinator = self._seed_backup(make_coordinator(), mock_api)
+        coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
+
+        def _edit_mid_write(**_kwargs):
+            coordinator.stage_schedule_change(SERIAL, charge={"timeChae1": "06:00"})
+            return {}
+
+        mock_api.updateChargeConfigInfo.side_effect = _edit_mid_write
+
+        await coordinator.async_apply_schedule_draft(SERIAL)
+
+        assert coordinator.has_schedule_draft(SERIAL)
+        assert SERIAL not in coordinator._schedule_draft_base_periodic
+        assert (
+            coordinator._schedule_draft_base_legacy[SERIAL]["charge"]["timeChaf1"]
+            == "02:00"
+        )
+
+    async def test_the_charge_service_will_not_disable_the_last_timer(
+        self, make_coordinator, mock_api
+    ):
+        """0/0 is indistinguishable from a self-consumption mode afterwards."""
+        coordinator = self._seed_backup(
+            make_coordinator(), mock_api, discharge=_legacy_discharge(enabled=0)
+        )
+
+        with pytest.raises(ScheduleWriteError, match="last enabled timer"):
+            await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+
+        mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_the_discharge_service_will_not_disable_the_last_timer(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_backup(
+            make_coordinator(), mock_api, charge=_legacy_charge(enabled=0)
+        )
+
+        with pytest.raises(ScheduleWriteError, match="last enabled timer"):
+            await coordinator.async_write_discharge_config(SERIAL, ctr_dis=0)
+
+        mock_api.updateDisChargeConfigInfo.assert_not_awaited()
+
+    def test_a_quick_button_will_not_create_a_period_without_a_cutoff(
+        self, make_coordinator
+    ):
+        """With no period to copy a cutoff from, inventing one would write a
+        SOC limit nobody chose."""
+        coordinator = make_coordinator()
+        schedule = _daily_schedule(
+            charge=[], discharge=[_period("17:00", "21:00", limit=20, power=2500)]
+        )
+
+        with pytest.raises(ScheduleWriteError, match="without a cutoff SOC"):
+            coordinator._patch_periodic_schedule(
+                SERIAL,
+                schedule,
+                charge={
+                    "timeChaf1": "01:00",
+                    "timeChae1": "02:00",
+                    "chargePower1": 2000,
+                },
+                discharge=None,
+                now_window=True,
+            )

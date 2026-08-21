@@ -1326,3 +1326,34 @@ class TestFastApiLane:
         coordinator.throttle_multiplier = 10.0
         coordinator._fast_api_lane = False
         assert coordinator._call_interval() == 10.0
+
+
+class TestAltPollKeepsTheBackupSnapshot:
+    """Alt mode polls on a different path; backup-mode systems still need a
+    complete legacy snapshot cached from it, or nothing can be staged."""
+
+    async def test_full_alt_poll_caches_the_legacy_stores(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = make_coordinator(alt=True)
+        _configure_success_api(mock_api)
+        # A definitive 6017 on the periodic read: this system runs on backup.
+        coordinator._periodic_readable[SERIAL] = False
+        mock_api.getChargeConfigInfo.return_value = {
+            "batHighCap": 90, "gridCharge": 1,
+            "timeChaf1": "01:00", "timeChae1": "05:00",
+            "timeChaf2": "00:00", "timeChae2": "00:00",
+        }
+        mock_api.getDisChargeConfigInfo.return_value = {
+            "batUseCap": 10, "ctrDis": 1,
+            "timeDisf1": "18:00", "timeDise1": "22:00",
+            "timeDisf2": "00:00", "timeDise2": "00:00",
+        }
+
+        await coordinator._async_update_data()
+
+        cached = coordinator._legacy_schedules.get(SERIAL, {})
+        assert cached["charge"]["timeChaf1"] == "01:00"
+        assert cached["discharge"]["timeDise1"] == "22:00"
+        assert coordinator.can_stage_schedule(SERIAL) is True
+        mock_api.getTimeChargeBySn.assert_not_awaited()

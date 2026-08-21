@@ -699,6 +699,28 @@ class TestTimeBasedControlBinarySensor:
         assert entity.available is False
         assert entity.is_on is None
 
+    def test_unavailable_when_the_inverter_is_missing_from_the_poll(
+        self, make_coordinator
+    ):
+        coordinator = make_coordinator()
+        coordinator.data = {}
+
+        entity = self._make(coordinator)
+        assert entity.available is False
+
+    def test_registry_identity(self, make_coordinator):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _complete_schedule_data()}
+        description = INVERTER_BINARY_SENSORS[0]
+
+        entity = self._make(coordinator)
+
+        assert entity.unique_id == f"test_entry_{SERIAL} - {description.name}"
+        assert entity.name == description.name
+        assert entity.suggested_object_id == f"{SERIAL} {description.name}"
+        assert entity.entity_category == description.entity_category
+        assert entity.icon == description.icon
+
         coordinator.last_update_success = False
         assert entity.available is False
 

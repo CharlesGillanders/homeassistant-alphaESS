@@ -24,6 +24,7 @@ from custom_components.alphaess.const import (
     SUBENTRY_TYPE_INVERTER,
 )
 from custom_components.alphaess.coordinator import (
+    SchedulePartialWriteError,
     ScheduleWriteUnknownError,
 )
 from custom_components.alphaess.enums import AlphaESSNames
@@ -481,6 +482,110 @@ class TestButtonPress:
         mock_api.setTimeChargeBySn.assert_not_awaited()
         mock_api.getTimeChargeBySn.assert_not_awaited()
         assert SERIAL in coordinator.last_charge_update
+
+    async def test_an_already_translated_ev_error_is_not_rewrapped(
+        self, make_coordinator, mock_hass
+    ):
+        """control_ev can raise HomeAssistantError itself; wrapping it again
+        would bury the message it already chose."""
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: {AlphaESSNames.evchargerstatusraw: 2}}
+        coordinator.control_ev = AsyncMock(
+            side_effect=HomeAssistantError("charger control is unavailable")
+        )
+        button = self._make_ev_button(
+            coordinator, mock_hass, AlphaESSNames.startcharging, notifications_off=False
+        )
+
+        with pytest.raises(HomeAssistantError, match="charger control is unavailable"):
+            await button.async_press()
+        mock_hass.services.async_call.assert_awaited()
+
+    async def test_reset_clears_both_legacy_stores(
+        self, make_coordinator, mock_hass
+    ):
+        coordinator = make_coordinator()
+        _seed_periodic_schedule(coordinator)
+        coordinator.reset_config = AsyncMock()
+        button = self._make_battery_button(
+            coordinator, mock_hass, AlphaESSNames.ButtonRechargeConfig,
+            notifications_off=False,
+        )
+
+        await button.async_press()
+
+        coordinator.reset_config.assert_awaited_once_with(SERIAL)
+        # Both sides share the reset cooldown, so neither duration button can
+        # follow it straight away.
+        assert SERIAL in coordinator.last_charge_update
+        assert SERIAL in coordinator.last_discharge_update
+        assert "reset" in mock_hass.services.async_call.await_args.args[2]["message"].lower()
+
+    @pytest.mark.parametrize(
+        ("error", "expected"),
+        [
+            (ScheduleWriteUnknownError("response lost"), "unknown outcome"),
+            (SchedulePartialWriteError("charge applied"), "partly applied"),
+        ],
+    )
+    async def test_reset_reports_an_uncertain_outcome(
+        self, make_coordinator, mock_hass, error, expected
+    ):
+        """Neither outcome is proof nothing changed, so the cooldown stands and
+        the press still fails visibly."""
+        coordinator = make_coordinator()
+        _seed_periodic_schedule(coordinator)
+        coordinator.reset_config = AsyncMock(side_effect=error)
+        button = self._make_battery_button(
+            coordinator, mock_hass, AlphaESSNames.ButtonRechargeConfig,
+            notifications_off=False,
+        )
+
+        with pytest.raises(type(error)):
+            await button.async_press()
+
+        assert SERIAL in coordinator.last_charge_update
+        assert SERIAL in coordinator.last_discharge_update
+        message = mock_hass.services.async_call.await_args.args[2]["message"]
+        assert expected in message
+
+    async def test_a_refused_reset_gives_the_cooldown_back(
+        self, make_coordinator, mock_hass
+    ):
+        """A reset that was refused outright changed nothing, so it must not
+        lock the button out for the next thirty seconds."""
+        coordinator = make_coordinator()
+        _seed_periodic_schedule(coordinator)
+        coordinator.reset_config = AsyncMock(side_effect=HomeAssistantError("refused"))
+        button = self._make_battery_button(
+            coordinator, mock_hass, AlphaESSNames.ButtonRechargeConfig,
+            notifications_off=False,
+        )
+
+        with pytest.raises(HomeAssistantError, match="refused"):
+            await button.async_press()
+
+        assert coordinator.last_charge_update.get(SERIAL) is None
+        assert coordinator.last_discharge_update.get(SERIAL) is None
+        assert "could not fully reset" in (
+            mock_hass.services.async_call.await_args.args[2]["message"]
+        )
+
+    async def test_reset_is_rate_limited(self, make_coordinator, mock_hass):
+        coordinator = make_coordinator()
+        _seed_periodic_schedule(coordinator)
+        coordinator.reset_config = AsyncMock()
+        coordinator.last_charge_update[SERIAL] = time_mod.monotonic()
+        button = self._make_battery_button(
+            coordinator, mock_hass, AlphaESSNames.ButtonRechargeConfig,
+            notifications_off=False,
+        )
+
+        with pytest.raises(HomeAssistantError, match="rate limited"):
+            await button.async_press()
+
+        coordinator.reset_config.assert_not_awaited()
+        assert "Please wait" in mock_hass.services.async_call.await_args.args[2]["message"]
 
     async def test_discharge_rate_limited(self, make_coordinator, mock_hass, mock_api):
         coordinator = make_coordinator()
@@ -1153,6 +1258,21 @@ class TestAlphaEVNumber:
         # A raw library error reaches the frontend as "Unknown error"; the
         # entity must translate it and keep the return code visible.
         with pytest.raises(HomeAssistantError, match="6008"):
+            await entity.async_set_native_value(10.0)
+
+    async def test_an_already_translated_error_passes_through_unchanged(
+        self, make_coordinator, mock_api
+    ):
+        """The coordinator can raise HomeAssistantError itself; re-wrapping it
+        would bury the message it already chose."""
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: {}}
+        entity = self._make(coordinator)
+        coordinator.set_ev_charger_current = AsyncMock(
+            side_effect=HomeAssistantError("charger control is unavailable")
+        )
+
+        with pytest.raises(HomeAssistantError, match="charger control is unavailable"):
             await entity.async_set_native_value(10.0)
 
     async def test_transport_failure_on_set_value_is_translated(
