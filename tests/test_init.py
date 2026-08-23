@@ -362,6 +362,7 @@ class TestServices:
     async def test_battery_charge_service(self, mock_hass, make_coordinator, mock_api):
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {}}
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
         periodic = _periodic_schedule()
         mock_api.getTimeChargeBySn.return_value = periodic
         entry = FakeEntry()
@@ -395,6 +396,7 @@ class TestServices:
     async def test_battery_discharge_service(self, mock_hass, make_coordinator, mock_api):
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {}}
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
         periodic = _periodic_schedule()
         mock_api.getTimeChargeBySn.return_value = periodic
         entry = FakeEntry()

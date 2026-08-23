@@ -9,7 +9,10 @@ setbatterycharge:
     period in the same schedule, so a one-sided call cannot initialise a
     completely empty schedule: create one period of each type in the
     AlphaESS app first, or stage both sides with the schedule entities and
-    Apply.
+    Apply. On periodic systems the Scheduled Charging and
+    Scheduled Discharging switches must both have been set once before any
+    call is accepted: AlphaESS never reports those two flags, and sending a
+    guess could switch the inverter to self-consumption.
   fields:
     serial:
       name: Serial
@@ -103,7 +106,10 @@ setbatterydischarge:
     discharge period in the same schedule, so a one-sided call cannot
     initialise a completely empty schedule: create one period of each type
     in the AlphaESS app first, or stage both sides with the schedule
-    entities and Apply.
+    entities and Apply. On periodic systems the Scheduled Charging and
+    Scheduled Discharging switches must both have been set once before any
+    call is accepted: AlphaESS never reports those two flags, and sending a
+    guess could switch the inverter to self-consumption.
   fields:
     serial:
       name: Serial

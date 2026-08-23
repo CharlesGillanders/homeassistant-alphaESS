@@ -245,8 +245,12 @@ What this setup depends on:
 - **Each Apply is one full transaction** (fresh read, then one write), and moving
   a window costs two because Predbat disables the charge flag first. Weigh that
   against the request limits described below.
-- **A self-consumption working mode locks everything above**, so Predbat's writes
-  fail until the mode is changed in the AlphaESS app.
+- **Set both enable switches once before letting Predbat write.** The periodic
+  API cannot report whether scheduled charging and discharging are on, so until
+  Scheduled Charging and Scheduled Discharging have an answer every write is
+  refused — see *The enable flags are write-only* below. Recording both as off
+  additionally locks the time-based controls, since that is how the API is told
+  to run self-consumption.
 
 If you drive the services from Predbat instead, note two things about its
 service templates: falsy values are dropped before the call, so `enabled: false`
@@ -277,20 +281,46 @@ mode such as **Self Consumption (Plus)** — live probing showed those modes
 flip both enable flags to `0` while keeping the configured windows stored —
 and is unavailable while no schedule store is readable.
 
-While a self-consumption mode is active, **everything time-based locks**:
-the time entities, cutoff SOC and power numbers, the enable switches, the
-duration buttons, Reset, Apply/Discard, and the
-`setbatterycharge`/`setbatterydischarge` services are all unavailable or
-refused with a message naming the remedy. Field testing showed the working
-mode is app-authority only — writing an enable flag through the OpenAPI does
-not leave a self-consumption mode, so offering the switches would only write
-flags the inverter ignores and corrupt the mode indicator. Change the
-working mode in the AlphaESS app; the integration notices on the next poll
-and unlocks everything automatically. For the same reason, HA refuses to
-turn off the *last* enabled timer: the resulting flag state is
-indistinguishable from a self-consumption mode, so disabling the final timer
-also belongs in the app. A draft stranded by an app-side mode change is kept
-and becomes applicable again once a time-based mode is active.
+### The enable flags are write-only
+
+`gridChargeCycle` and `ctrDisCycle` decide whether scheduled charging and
+discharging run. On the periodic store they are **write-only**: probing on
+issue #267 showed `getTimeChargeBySn` answers `0` for both however the inverter
+is actually set, while `setTimeChargeBySn` acts on what it is sent.
+
+| sent | effect on the inverter |
+| --- | --- |
+| `1 / 0` | schedule active, scheduled discharging off |
+| `1 / 1` | both schedules enabled |
+| `0 / 1` | scheduled discharging only |
+| `0 / 0` | **switches the inverter to self-consumption** |
+
+Two consequences follow, and the integration is built around them.
+
+**The read is never echoed back.** A replacement built from the read would post
+`0/0` on every write and quietly switch the inverter out of timed control.
+Snapshots therefore drop both flags, and every write sends a value that came
+from the user instead.
+
+**The switches are the record.** *Scheduled Charging* and *Scheduled
+Discharging* are the only place that answer can live, so their published state
+is restored across restarts and handed back to the coordinator. Until both have
+an answer they read **unknown**, and a schedule write is refused with a message
+naming them rather than guessing which working mode you wanted. Editing and
+staging still work; only the write needs the answer.
+
+Once both are recorded, a request to set them to `0/0` is a real one — it is how
+the API is told to run self-consumption — so it locks the time-based controls:
+time entities, cutoff SOC and power numbers, duration buttons, Reset,
+Apply/Discard, and any service call carrying a window, cutoff or power. The two
+switches stay available so the inverter can be brought back to a timed mode from
+Home Assistant, and turning one on there is sent immediately rather than staged,
+since Apply is unavailable in that state. Home Assistant still refuses to author
+`0/0` by turning off the *last* enabled timer from a service.
+
+In legacy backup mode `gridCharge` and `ctrDis` are ordinary read-write fields
+and none of the above applies: they are read from the store, reported as-is, and
+a mode change made in the AlphaESS app is picked up on the next poll.
 
 The diagnostic sensor `Periodic Schedule Read` reports:
 

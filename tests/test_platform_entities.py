@@ -1,9 +1,13 @@
 """Tests for binary_sensor, switch and time platforms."""
+from copy import deepcopy
 from datetime import time as dt_time
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from alphaess.alphaess import AlphaESSApiError
 from homeassistant.config_entries import ConfigSubentry
+from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.alphaess.binary_sensor import (
     AlphaEVReadinessBinarySensor,
@@ -59,7 +63,8 @@ def _complete_schedule_data() -> dict:
 def _seed_periodic(coordinator) -> None:
     """Give schedule controls their only live store: the periodic API."""
     coordinator._periodic_readable[SERIAL] = True
-    coordinator._periodic_schedules[SERIAL] = {
+    coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
+    coordinator._periodic_schedules[SERIAL] = coordinator._normalise_periodic_schedule({
         "executeCycleType": 0,
         "gridChargeCycle": 1,
         "ctrDisCycle": 1,
@@ -79,7 +84,7 @@ def _seed_periodic(coordinator) -> None:
                 "chargePower": 2500,
             }
         ],
-    }
+    })
 
 
 def _inverter_subentry(serial=SERIAL, model="SMILE5-INV"):
@@ -674,21 +679,31 @@ class TestTimeBasedControlBinarySensor:
         entity = self._make(coordinator)
         assert entity.is_on is True
 
-    def test_follows_periodic_cycle_flags(self, make_coordinator):
+    def test_follows_the_recorded_periodic_intent(self, make_coordinator):
+        """getTimeChargeBySn answers 0 for both flags whatever the inverter is
+        doing, so on the primary store the only answer available is the one
+        Home Assistant was given."""
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
         _seed_periodic(coordinator)
-        schedule = coordinator._periodic_schedules[SERIAL]
-        schedule["gridChargeCycle"] = 0
-        schedule["ctrDisCycle"] = 0
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=0, ctr_dis=0)
         coordinator._overlay_schedule_view(SERIAL, coordinator.data[SERIAL])
 
         entity = self._make(coordinator)
         assert entity.is_on is False
 
-        schedule["ctrDisCycle"] = 1
+        coordinator.set_periodic_enable_intent(SERIAL, ctr_dis=1)
         coordinator._overlay_schedule_view(SERIAL, coordinator.data[SERIAL])
         assert entity.is_on is True
+
+    def test_unknown_until_home_assistant_has_been_told(self, make_coordinator):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
+        _seed_periodic(coordinator)
+        coordinator._periodic_enable_intent.pop(SERIAL, None)
+        coordinator._overlay_schedule_view(SERIAL, coordinator.data[SERIAL])
+
+        assert self._make(coordinator).is_on is None
 
     def test_unavailable_without_a_schedule_store(self, make_coordinator):
         """Unknown mode has nothing truthful to report."""
@@ -754,10 +769,10 @@ class TestSelfConsumptionLockout:
             )
         assert not coordinator.has_schedule_draft(SERIAL)
 
-    def test_switch_staging_is_refused_too(self, make_coordinator):
-        """Field-tested: writing an enable flag does not leave a
-        self-consumption mode, so even the switches are locked — the working
-        mode is app-authority only."""
+    def test_an_enable_flag_still_cannot_be_staged(self, make_coordinator):
+        """A draft is the wrong shape for the escape hatch: Apply is locked
+        too, so a staged enable would sit there unsendable. The switch sends
+        it immediately instead — see TestUnlockingFromTheSwitch."""
         from custom_components.alphaess.coordinator import ScheduleWriteError
 
         coordinator = self._seed_self_consumption(make_coordinator())
@@ -793,15 +808,23 @@ class TestSelfConsumptionLockout:
         with pytest.raises(ScheduleWriteError, match="last enabled timer"):
             coordinator.stage_schedule_change(SERIAL, charge={"gridCharge": 0})
 
-    async def test_services_are_locked_too(self, make_coordinator, mock_api):
+    async def test_a_write_that_carries_more_than_an_enable_is_refused(
+        self, make_coordinator, mock_api
+    ):
+        """Windows, cutoffs and powers still cannot be written into a store
+        whose working mode cannot be read."""
         from custom_components.alphaess.coordinator import ScheduleWriteError
 
         coordinator = self._seed_self_consumption(make_coordinator())
 
-        with pytest.raises(ScheduleWriteError, match="self-consumption"):
-            await coordinator.async_write_charge_config(SERIAL, grid_charge=1)
-        with pytest.raises(ScheduleWriteError, match="self-consumption"):
-            await coordinator.async_write_discharge_config(SERIAL, ctr_dis=1)
+        with pytest.raises(ScheduleWriteError, match="both timers are switched"):
+            await coordinator.async_write_charge_config(
+                SERIAL, grid_charge=1, times={"timeChaf1": "02:00"}
+            )
+        with pytest.raises(ScheduleWriteError, match="both timers are switched"):
+            await coordinator.async_write_discharge_config(SERIAL, bat_use_cap=15)
+        with pytest.raises(ScheduleWriteError, match="both timers are switched"):
+            await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
 
         mock_api.setTimeChargeBySn.assert_not_awaited()
         mock_api.updateChargeConfigInfo.assert_not_awaited()
@@ -896,7 +919,10 @@ class TestSelfConsumptionLockout:
 
         assert time_entity.available is False
         assert soc_entity.available is False
-        assert switch.available is False  # app-authority: no way back from HA
+        # The switches stay live: they are the only way back to a timed mode
+        # without opening the AlphaESS app.
+        assert switch.available is True
+        assert coordinator.can_unlock_time_controls(SERIAL) is True
 
         # Re-enabling in the app unlocks everything: mimic a full poll,
         # which refreshes the legacy cache before overlaying.
@@ -907,18 +933,185 @@ class TestSelfConsumptionLockout:
         assert soc_entity.available is True
         assert switch.available is True
 
-    def test_periodic_mode_locks_the_same_way(self, make_coordinator):
+    def test_periodic_mode_locks_only_on_a_recorded_choice(self, make_coordinator):
+        """Asking for both timers off is a real request on the primary store —
+        it is how the API is told to run self-consumption — so it locks. What
+        the endpoint echoes back is not, and must not."""
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
         _seed_periodic(coordinator)
-        schedule = coordinator._periodic_schedules[SERIAL]
-        schedule["gridChargeCycle"] = 0
-        schedule["ctrDisCycle"] = 0
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=0, ctr_dis=0)
         coordinator._overlay_schedule_view(SERIAL, coordinator.data[SERIAL])
 
         assert coordinator.is_time_based_control_active(SERIAL) is False
         assert coordinator.can_modify_time_controls(SERIAL) is False
-        assert coordinator.can_stage_schedule(SERIAL) is True  # switches live
+        assert coordinator.can_stage_schedule(SERIAL) is True
+        assert coordinator.can_unlock_time_controls(SERIAL) is True
+
+    def test_periodic_mode_does_not_lock_on_an_unanswered_question(
+        self, make_coordinator
+    ):
+        """Before anything has been recorded there is no basis to lock: the
+        endpoint's 0/0 says nothing about the inverter."""
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
+        _seed_periodic(coordinator)
+        coordinator._periodic_enable_intent.pop(SERIAL, None)
+        coordinator._overlay_schedule_view(SERIAL, coordinator.data[SERIAL])
+
+        assert coordinator.is_time_based_control_active(SERIAL) is None
+        assert coordinator.can_modify_time_controls(SERIAL) is True
+
+
+class TestSwitchStateSurvivesRestart:
+    """The switches carry the only record of the enable flags, so the state
+    they publish has to come back with them."""
+
+    def _switch(self, coordinator, coordinator_key="gridCharge"):
+        description = next(
+            d for d in CHARGE_DISCHARGE_SWITCHES
+            if d.coordinator_key == coordinator_key
+        )
+        switch = AlphaSwitch(coordinator, SERIAL, FakeEntry(), description)
+        switch.async_write_ha_state = MagicMock()
+        return switch
+
+    @pytest.mark.parametrize(
+        ("state", "expected"), [("on", 1), ("off", 0)],
+    )
+    async def test_the_last_published_state_becomes_the_recorded_answer(
+        self, make_coordinator, state, expected
+    ):
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _complete_schedule_data()}
+        _seed_periodic(coordinator)
+        coordinator._periodic_enable_intent.pop(SERIAL, None)
+
+        for key, restored in (("gridCharge", state), ("ctrDis", "on")):
+            switch = self._switch(coordinator, key)
+            switch.async_get_last_state = AsyncMock(
+                return_value=SimpleNamespace(state=restored)
+            )
+            await switch.async_added_to_hass()
+
+        assert coordinator._periodic_enable_intent[SERIAL] == {
+            "gridChargeCycle": expected,
+            "ctrDisCycle": 1,
+        }
+
+    @pytest.mark.parametrize("restored", [None, SimpleNamespace(state="unknown")])
+    async def test_nothing_usable_leaves_the_question_open(
+        self, make_coordinator, restored
+    ):
+        """A first install, or a state that was never published, must not be
+        read as an answer — writes refuse instead."""
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: _complete_schedule_data()}
+        _seed_periodic(coordinator)
+        coordinator._periodic_enable_intent.pop(SERIAL, None)
+
+        switch = self._switch(coordinator)
+        switch.async_get_last_state = AsyncMock(return_value=restored)
+        await switch.async_added_to_hass()
+
+        assert SERIAL not in coordinator._periodic_enable_intent
+
+
+class TestUnlockingFromTheSwitch:
+    """Both flags at 0 is either self-consumption or simply both timers off,
+    and the OpenAPI cannot tell them apart. Switching one back on is the one
+    write that is safe under either reading, so it stays possible."""
+
+    def _seed_locked(self, coordinator, mock_api):
+        coordinator.data = {SERIAL: _complete_schedule_data()}
+        _seed_periodic(coordinator)
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=0, ctr_dis=0)
+        coordinator._overlay_schedule_view(SERIAL, coordinator.data[SERIAL])
+        mock_api.getTimeChargeBySn.return_value = deepcopy(
+            coordinator._periodic_schedules[SERIAL]
+        )
+        return coordinator
+
+    def _switch(self, coordinator, coordinator_key="gridCharge"):
+        description = next(
+            d for d in CHARGE_DISCHARGE_SWITCHES
+            if d.coordinator_key == coordinator_key
+        )
+        switch = AlphaSwitch(coordinator, SERIAL, FakeEntry(), description)
+        switch.async_write_ha_state = MagicMock()
+        return switch
+
+    async def test_turning_a_timer_on_writes_immediately_and_unlocks(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_locked(make_coordinator(), mock_api)
+        before = deepcopy(coordinator._periodic_schedules[SERIAL])
+        switch = self._switch(coordinator)
+
+        await switch.async_turn_on()
+
+        payload = mock_api.setTimeChargeBySn.await_args.kwargs
+        assert payload["gridChargeCycle"] == 1
+        # Nothing but the flag moves: the periods are sent back untouched.
+        assert payload["chargeTimeList"] == before["chargeTimeList"]
+        assert payload["dischargeTimeList"] == before["dischargeTimeList"]
+        # It is an immediate action, so there is no draft waiting on an Apply
+        # button that would itself have been unavailable.
+        assert not coordinator.has_schedule_draft(SERIAL)
+        assert coordinator.is_time_based_control_active(SERIAL) is True
+        assert coordinator.can_modify_time_controls(SERIAL) is True
+
+    async def test_the_discharge_switch_unlocks_the_same_way(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_locked(make_coordinator(), mock_api)
+        switch = self._switch(coordinator, "ctrDis")
+
+        await switch.async_turn_on()
+
+        assert mock_api.setTimeChargeBySn.await_args.kwargs["ctrDisCycle"] == 1
+        assert coordinator.is_time_based_control_active(SERIAL) is True
+
+    async def test_turning_one_off_from_here_is_still_refused(
+        self, make_coordinator, mock_api
+    ):
+        """Both are already off; the only reading under which this means
+        anything is the one HA cannot verify."""
+        coordinator = self._seed_locked(make_coordinator(), mock_api)
+        switch = self._switch(coordinator)
+
+        with pytest.raises(HomeAssistantError, match="already off"):
+            await switch.async_turn_off()
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        assert switch.is_on is False
+
+    async def test_a_rejected_unlock_puts_the_switch_back(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._seed_locked(make_coordinator(), mock_api)
+        mock_api.setTimeChargeBySn.side_effect = AlphaESSApiError(
+            code=6008, description="Set failed"
+        )
+        switch = self._switch(coordinator)
+
+        with pytest.raises(HomeAssistantError):
+            await switch.async_turn_on()
+
+        assert switch.is_on is False
+        assert coordinator.is_time_based_control_active(SERIAL) is False
+
+    def test_an_unreadable_store_leaves_the_switch_unavailable(
+        self, make_coordinator
+    ):
+        """No usable snapshot is a different failure: there is nothing to
+        raise a flag on, so the switch stays gone rather than offering a
+        write that cannot be built."""
+        coordinator = make_coordinator()
+        coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
+
+        assert coordinator.can_unlock_time_controls(SERIAL) is False
+        assert self._switch(coordinator).available is False
 
 
 class TestUnsetSlotDisplay:

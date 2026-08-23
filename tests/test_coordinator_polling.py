@@ -250,6 +250,7 @@ class TestChargeDischargeCommands:
         coordinator = make_coordinator()
         coordinator.set_number_setting(SERIAL, "batUseCap", 15)
         coordinator.data = {SERIAL: {}}
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
         periodic = _periodic_schedule()
         mock_api.getTimeChargeBySn.return_value = periodic
 
@@ -294,6 +295,7 @@ class TestChargeDischargeCommands:
         coordinator = make_coordinator()
         coordinator.set_number_setting(SERIAL, "batHighCap", 85)
         coordinator.data = {SERIAL: {}}
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
         periodic = _periodic_schedule()
         mock_api.getTimeChargeBySn.return_value = periodic
 
@@ -335,6 +337,7 @@ class TestChargeDischargeCommands:
     async def test_update_charge_serial_missing(self, make_coordinator, mock_api):
         coordinator = make_coordinator()
         coordinator.data = {}
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
         mock_api.getTimeChargeBySn.return_value = _periodic_schedule()
 
         await coordinator.update_charge("batHighCap", SERIAL, 60)

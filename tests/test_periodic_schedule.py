@@ -160,6 +160,19 @@ def _schedule_data() -> dict:
     return _entity_data(_legacy_charge(), _legacy_discharge())
 
 
+def _cached(schedule: dict) -> dict:
+    """Return the form a read leaves in the cache.
+
+    gridChargeCycle/ctrDisCycle are write-only (the endpoint answers 0 for both
+    however the inverter is set), so the snapshot never carries them.
+    """
+    return {
+        key: deepcopy(value)
+        for key, value in schedule.items()
+        if key not in ("gridChargeCycle", "ctrDisCycle")
+    }
+
+
 def _seed(
     coordinator,
     *,
@@ -178,7 +191,23 @@ def _seed(
     discharge = deepcopy(discharge or _legacy_discharge())
     coordinator.data = {SERIAL: _entity_data(charge, discharge, poinv=poinv)}
     if periodic is not None:
-        coordinator._periodic_schedules[SERIAL] = deepcopy(periodic)
+        # The cache always holds the normalised resource, exactly as a real read
+        # leaves it: gridChargeCycle/ctrDisCycle are write-only and stripped.
+        coordinator._periodic_schedules[SERIAL] = (
+            coordinator._normalise_periodic_schedule(deepcopy(periodic))
+        )
+        # The flags a test puts in the payload express what the user last asked
+        # for, which is the only place that answer can come from now.
+        coordinator.set_periodic_enable_intent(
+            SERIAL,
+            grid_charge=periodic.get("gridChargeCycle", 1),
+            ctr_dis=periodic.get("ctrDisCycle", 1),
+        )
+        # ...and has already sent it once, so a write that changes nothing
+        # still has nothing to say.
+        coordinator._periodic_enable_sent[SERIAL] = dict(
+            coordinator._periodic_enable_intent[SERIAL]
+        )
     if readable is not None:
         coordinator._periodic_readable[SERIAL] = readable
     return coordinator
@@ -675,7 +704,7 @@ class TestEndpointOutcomes:
             await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
 
         mock_api.updateChargeConfigInfo.assert_not_awaited()
-        assert coordinator._periodic_schedules[SERIAL] == periodic
+        assert coordinator._periodic_schedules[SERIAL] == _cached(periodic)
         assert "generic set-failed" in caplog.text
         assert "one possible cause" in caplog.text
 
@@ -725,7 +754,7 @@ class TestRefresh:
         await coordinator._async_resolve_unknown_periodic_read()
 
         mock_api.getTimeChargeBySn.assert_awaited_once_with(SERIAL)
-        assert coordinator._periodic_schedules[SERIAL] == changed
+        assert coordinator._periodic_schedules[SERIAL] == _cached(changed)
         assert coordinator.data[SERIAL]["charge_timeChaf1"] == "02:00"
         assert coordinator.data[SERIAL]["charge_timeChae1"] == "06:00"
 
@@ -763,3 +792,110 @@ class TestRefresh:
         mock_api.setTimeChargeBySn.assert_not_awaited()
         mock_api.updateChargeConfigInfo.assert_not_awaited()
         mock_api.updateDisChargeConfigInfo.assert_not_awaited()
+
+
+class TestWriteOnlyEnableFlags:
+    """gridChargeCycle/ctrDisCycle are write-only. getTimeChargeBySn answers 0
+    for both whatever the inverter is doing, and setTimeChargeBySn acts on
+    them — 0/0 switches the inverter to self-consumption. Echoing the read back
+    therefore turns timed control off on every write (#267)."""
+
+    def test_the_read_never_becomes_part_of_the_snapshot(self, make_coordinator):
+        coordinator = make_coordinator()
+        payload = _daily_schedule()
+        payload["gridChargeCycle"] = 0
+        payload["ctrDisCycle"] = 0
+
+        normalised = coordinator._normalise_periodic_schedule(payload)
+
+        assert "gridChargeCycle" not in normalised
+        assert "ctrDisCycle" not in normalised
+
+    async def test_a_write_sends_what_was_asked_for_not_what_was_read(
+        self, make_coordinator, mock_api
+    ):
+        """The regression: a system reporting 0/0 while running a schedule must
+        not have those zeros posted back at it."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=0)
+        answered = deepcopy(periodic)
+        answered["gridChargeCycle"] = 0
+        answered["ctrDisCycle"] = 0
+        mock_api.getTimeChargeBySn.return_value = answered
+
+        await coordinator.async_write_charge_config(
+            SERIAL, times={"timeChaf1": "02:00"}
+        )
+
+        payload = _periodic_payload(mock_api)
+        assert payload["gridChargeCycle"] == 1
+        assert payload["ctrDisCycle"] == 0
+
+    async def test_a_switch_change_wins_over_the_stored_answer(
+        self, make_coordinator, mock_api
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=0, ctr_dis=0)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        await coordinator.async_write_discharge_config(SERIAL, ctr_dis=1)
+
+        payload = _periodic_payload(mock_api)
+        assert payload["gridChargeCycle"] == 0
+        assert payload["ctrDisCycle"] == 1
+        # And it becomes the answer the next write starts from.
+        assert coordinator._periodic_enable_intent[SERIAL] == {
+            "gridChargeCycle": 0,
+            "ctrDisCycle": 1,
+        }
+
+    async def test_a_write_is_refused_while_the_answer_is_unknown(
+        self, make_coordinator, mock_api
+    ):
+        """Nothing in the API can supply it, so guessing would mean choosing
+        the inverter's working mode on the user's behalf."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator._periodic_enable_intent.pop(SERIAL, None)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        with pytest.raises(ScheduleWriteError, match="does not know whether"):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+
+    async def test_one_sided_knowledge_is_still_not_an_answer(
+        self, make_coordinator, mock_api
+    ):
+        """Both parameters go in every request, so half a record cannot fill
+        one in."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator._periodic_enable_intent[SERIAL] = {"gridChargeCycle": 1}
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        with pytest.raises(ScheduleWriteError, match="does not know whether"):
+            await coordinator.async_write_discharge_config(
+                SERIAL, times={"timeDisf1": "18:00"}
+            )
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+
+    async def test_a_flag_only_change_still_reaches_the_api(
+        self, make_coordinator, mock_api
+    ):
+        """The periods are identical, but the flags are the whole point of the
+        request and the endpoint cannot be asked about them separately."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+
+        payload = _periodic_payload(mock_api)
+        assert payload["gridChargeCycle"] == 0
+        assert payload["chargeTimeList"] == _cached(periodic)["chargeTimeList"]

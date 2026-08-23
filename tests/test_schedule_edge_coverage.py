@@ -38,6 +38,7 @@ from .conftest import FakeEntry
 from .test_periodic_schedule import (
     SERIAL,
     _api_error,
+    _cached,
     _daily_schedule,
     _entity_data,
     _legacy_charge,
@@ -249,7 +250,7 @@ class TestDraftEdges:
 
         coordinator.discard_schedule_draft(SERIAL)
 
-        assert coordinator._periodic_schedules[SERIAL] == changed_remotely
+        assert coordinator._periodic_schedules[SERIAL] == _cached(changed_remotely)
         assert coordinator.data[SERIAL]["charge_timeChae1"] == "04:30"
         mock_api.setTimeChargeBySn.assert_not_awaited()
 
@@ -534,7 +535,7 @@ class TestIdempotentDraftRetry:
         )
 
         mock_api.setTimeChargeBySn.assert_not_awaited()
-        assert coordinator._periodic_schedules[SERIAL] == accepted
+        assert coordinator._periodic_schedules[SERIAL] == _cached(accepted)
 
     async def test_unknown_outcome_apply_keeps_draft_until_base_is_refreshed(
         self, make_coordinator, mock_api
@@ -576,7 +577,7 @@ class TestIdempotentDraftRetry:
 
         mock_api.setTimeChargeBySn.assert_not_awaited()
         assert not coordinator.has_schedule_draft(SERIAL)
-        assert coordinator._periodic_schedules[SERIAL] == accepted
+        assert coordinator._periodic_schedules[SERIAL] == _cached(accepted)
 
 
 class TestTimedButtonUncertainOutcome:
