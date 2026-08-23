@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -103,6 +104,10 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
 
     async def _set_value(self, value: int) -> None:
         """Stage the updated flag for the atomic Apply Schedule action."""
+        if self._coordinator.can_unlock_time_controls(self._serial):
+            await self._async_write_unlock(value)
+            return
+
         previous_state = self._optimistic_state
         self._optimistic_state = bool(value)
         self.async_write_ha_state()
@@ -127,6 +132,41 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
         # The coordinator overlays the draft on subsequent polls so the value
         # stays visible until it is applied or discarded.
 
+    async def _async_write_unlock(self, value: int) -> None:
+        """Send an enable immediately while the schedule surface is locked.
+
+        Nothing else can be staged or applied in that state, so a draft here
+        would only wait behind an Apply button that is itself unavailable.
+        """
+        if value != 1:
+            raise HomeAssistantError(
+                f"Both timers for {self._serial} are already off. Switching one "
+                "back on is the only schedule change Home Assistant can make "
+                "while the inverter reports no timed control; the working mode "
+                "can only be changed in the AlphaESS app"
+            )
+
+        previous_state = self._optimistic_state
+        self._optimistic_state = True
+        self.async_write_ha_state()
+        try:
+            if self._coordinator_key == "gridCharge":
+                await self._coordinator.async_write_charge_config(
+                    self._serial, grid_charge=1,
+                )
+            else:
+                await self._coordinator.async_write_discharge_config(
+                    self._serial, ctr_dis=1,
+                )
+        except Exception:
+            _LOGGER.exception(
+                "Failed to re-enable %s for %s, reverting",
+                self._coordinator_key, self._serial,
+            )
+            self._optimistic_state = previous_state
+            self.async_write_ha_state()
+            raise
+
     @property
     def available(self) -> bool:
         """Switch controls require the cloud API, a usable schedule store,
@@ -142,9 +182,11 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
             or self._serial not in self._coordinator.data
         ):
             return False
-        return (
-            self._coordinator.cloud_available
-            and self._coordinator.can_modify_time_controls(self._serial)
+        return self._coordinator.cloud_available and (
+            self._coordinator.can_modify_time_controls(self._serial)
+            # The one exception to the lockout: with both timers off, these
+            # switches are the only way back to a timed mode from here.
+            or self._coordinator.can_unlock_time_controls(self._serial)
         )
 
     @property

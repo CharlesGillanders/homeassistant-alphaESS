@@ -61,6 +61,21 @@ PERIODIC_NOT_ENTITLED = 6017
 PERIODIC_OVERLAP = 6008
 
 
+def _is_enable_only(
+    flag: int | None,
+    limit: float | None,
+    times: dict[str, str] | None,
+    powers: dict[str, float] | None,
+) -> bool:
+    """Return whether a write does nothing but switch a timer on.
+
+    The one change permitted while no timed control is reported: it cannot
+    move a window, a cutoff or a power, so it is safe to send against a store
+    whose working mode cannot be read.
+    """
+    return flag == 1 and not limit and not times and not powers
+
+
 class ScheduleWriteError(HomeAssistantError):
     """Raised when a full-replacement schedule cannot be applied safely."""
 
@@ -1240,15 +1255,17 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             )
         active = self.is_time_based_control_active(serial)
         if active is False:
-            # A self-consumption working mode is running. Field testing
-            # showed the enable flags are accepted but ignored there, so
-            # nothing — switches included — may be edited; the mode can only
-            # be changed in the AlphaESS app.
+            # Either a self-consumption working mode is running or both
+            # timers are simply switched off, and the OpenAPI cannot tell
+            # those apart. Nothing may be staged for a store in that state;
+            # switching a timer back on is an immediate action instead, since
+            # Apply is unavailable here too.
             raise ScheduleWriteError(
-                "Time-based control is disabled: the inverter is in a "
-                "self-consumption working mode, which can only be changed in "
-                "the AlphaESS app. Controls unlock automatically once a "
-                "time-based mode is active"
+                "Time-based control is disabled: the inverter reports no timed "
+                "control, either because a self-consumption working mode is "
+                "running or because both timers are switched off. Turn "
+                "Scheduled Charging or Scheduled Discharging on to re-enable a "
+                "timer; a working mode can only be changed in the AlphaESS app"
             )
         if active is True:
             # Refuse to author the 0/0 flag state: it is indistinguishable
@@ -1379,6 +1396,22 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             and self.is_time_based_control_active(serial) is not False
         )
 
+    def can_unlock_time_controls(self, serial: str) -> bool:
+        """Return whether a timer can still be switched back on from here.
+
+        Both enable flags reading 0 means either a self-consumption working
+        mode or simply that both timers are off, and the OpenAPI cannot tell
+        those apart. Locking everything on that reading left the second case
+        with no way out: the switches that would turn a timer back on were
+        part of what locked. Raising a flag is the one write that is safe
+        either way - a self-consumption inverter ignores it and the next poll
+        locks again - so it stays available while everything else does not.
+        """
+        return (
+            self.can_stage_schedule(serial)
+            and self.is_time_based_control_active(serial) is False
+        )
+
     def can_reset_schedule(self, serial: str) -> bool:
         """Return whether Reset Charge/Discharge can possibly succeed.
 
@@ -1487,11 +1520,13 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         timeChaf2/timeChae2); anything omitted keeps its current value.
         """
         active = self.is_time_based_control_active(serial)
-        if active is False:
+        if active is False and not _is_enable_only(grid_charge, bat_high_cap, times, powers):
             raise ScheduleWriteError(
                 "Time-based control is disabled: the inverter is in a "
-                "self-consumption working mode, which can only be changed in "
-                "the AlphaESS app; nothing was written"
+                "self-consumption working mode, or both timers are switched "
+                "off. Only switching a timer back on can be written from here; "
+                "the working mode itself can only be changed in the AlphaESS "
+                "app. Nothing was written"
             )
         if grid_charge == 0 and active is True:
             flags = self._committed_enable_flags(serial)
@@ -1523,11 +1558,13 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         timeDisf2/timeDise2); anything omitted keeps its current value.
         """
         active = self.is_time_based_control_active(serial)
-        if active is False:
+        if active is False and not _is_enable_only(ctr_dis, bat_use_cap, times, powers):
             raise ScheduleWriteError(
                 "Time-based control is disabled: the inverter is in a "
-                "self-consumption working mode, which can only be changed in "
-                "the AlphaESS app; nothing was written"
+                "self-consumption working mode, or both timers are switched "
+                "off. Only switching a timer back on can be written from here; "
+                "the working mode itself can only be changed in the AlphaESS "
+                "app. Nothing was written"
             )
         if ctr_dis == 0 and active is True:
             flags = self._committed_enable_flags(serial)
