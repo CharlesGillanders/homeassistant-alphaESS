@@ -115,7 +115,10 @@ def _periodic_schedule() -> dict:
 def _seed_periodic_schedule(coordinator) -> None:
     coordinator.data = {SERIAL: _complete_schedule_data()}
     coordinator._periodic_readable[SERIAL] = True
-    coordinator._periodic_schedules[SERIAL] = _periodic_schedule()
+    coordinator._periodic_schedules[SERIAL] = (
+        coordinator._normalise_periodic_schedule(_periodic_schedule())
+    )
+    coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
     coordinator._publish_schedule_view(SERIAL)
 
 

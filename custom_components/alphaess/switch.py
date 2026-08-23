@@ -4,6 +4,7 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -60,8 +61,15 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             )
 
 
-class AlphaSwitch(CoordinatorEntity, SwitchEntity):
-    """Switch entity for grid charge / discharge time control."""
+class AlphaSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
+    """Switch entity for grid charge / discharge time control.
+
+    On the periodic store these two switches are the only record of whether
+    scheduled charging and discharging should be on: getTimeChargeBySn answers
+    0 for both however the inverter is set, so the state published here is
+    restored on startup and handed back to the coordinator, which needs it to
+    build any write at all.
+    """
 
     def __init__(self, coordinator, serial, config, description, device_info=None):
         super().__init__(coordinator)
@@ -93,6 +101,24 @@ class AlphaSwitch(CoordinatorEntity, SwitchEntity):
         """Clear optimistic state when coordinator provides fresh data."""
         self._optimistic_state = None
         super()._handle_coordinator_update()
+
+    async def async_added_to_hass(self) -> None:
+        """Hand the last published state back as the recorded answer."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is None or last_state.state not in ("on", "off"):
+            return
+        value = 1 if last_state.state == "on" else 0
+        if self._coordinator_key == "gridCharge":
+            self._coordinator.set_periodic_enable_intent(
+                self._serial, grid_charge=value,
+            )
+        else:
+            self._coordinator.set_periodic_enable_intent(self._serial, ctr_dis=value)
+        _LOGGER.debug(
+            "Restored %s=%s for %s from the last published state",
+            self._coordinator_key, value, self._serial,
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on (enable) the setting."""

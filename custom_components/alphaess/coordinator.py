@@ -510,6 +510,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # Missing = not yet determined, True/False = known answer.
         self._periodic_readable: dict[str, bool] = {}
 
+        # gridChargeCycle/ctrDisCycle are write-only. getTimeChargeBySn answers
+        # 0 for both whatever the inverter is doing, while setTimeChargeBySn
+        # acts on them: 0/0 switches the inverter to self-consumption (probed
+        # on #267). So the read cannot be echoed back, and the only record of
+        # what was asked for is the one kept here — fed by the two switches and
+        # confirmed by each successful write.
+        self._periodic_enable_intent: dict[str, dict[str, int]] = {}
+        self._periodic_enable_sent: dict[str, dict[str, int]] = {}
+
         # Entity changes are drafts. A user can edit start/end/limits/switches
         # without emitting a series of unsafe intermediate full replacements,
         # then commit once with the Apply Schedule button.
@@ -679,6 +688,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 self._schedule_draft_base_legacy,
                 self._schedule_draft_revisions,
                 self._schedule_write_revisions,
+                self._periodic_enable_intent,
+                self._periodic_enable_sent,
                 self.number_settings,
                 self._inverter_error_count,
                 self.last_charge_update,
@@ -1040,12 +1051,13 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         if payload.get("executeCycleType") not in (0, 1):
             raise ScheduleWriteError("The periodic schedule omitted a valid executeCycleType")
 
+        # gridChargeCycle/ctrDisCycle are deliberately dropped: the endpoint
+        # answers 0 for both regardless of the inverter's actual mode, so
+        # keeping them would mean echoing 0/0 back on the next write and
+        # switching the inverter to self-consumption. See _resolve_periodic_enable.
         result: dict[str, Any] = {
             "executeCycleType": int(payload["executeCycleType"]),
         }
-        for key in ("gridChargeCycle", "ctrDisCycle"):
-            if payload.get(key) is not None:
-                result[key] = int(payload[key])
 
         writable_fields = (
             "beginTime", "endTime", "weeks", "chargePower", "chargeLimit",
@@ -1084,7 +1096,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                     charge_periods[0].get("chargeLimit") if charge_periods
                     else self.get_number_setting(serial, "batHighCap", 90)
                 ),
-                "gridCharge": schedule.get("gridChargeCycle", 1),
+                "gridCharge": (self._periodic_enable_intent.get(serial) or {}).get(
+                    "gridChargeCycle"
+                ),
                 "timeChaf1": "00:00", "timeChae1": "00:00",
                 "timeChaf2": "00:00", "timeChae2": "00:00",
                 "chargePower1": None, "chargePower2": None,
@@ -1097,7 +1111,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                     discharge_periods[0].get("chargeLimit") if discharge_periods
                     else self.get_number_setting(serial, "batUseCap", 10)
                 ),
-                "ctrDis": schedule.get("ctrDisCycle", 1),
+                "ctrDis": (self._periodic_enable_intent.get(serial) or {}).get(
+                    "ctrDisCycle"
+                ),
                 "timeDisf1": "00:00", "timeDise1": "00:00",
                 "timeDisf2": "00:00", "timeDise2": "00:00",
                 "chargePower1": None, "chargePower2": None,
@@ -1189,8 +1205,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # Whether any time-based control is enabled in the governing store.
         # A non-timed mode such as Self Consumption Plus flips both enable
         # flags to 0 while keeping the configured windows stored.
+        grid_flag, dis_flag = charge["gridCharge"], discharge["ctrDis"]
         data[AlphaESSNames.TimeBasedControl] = (
-            int(charge["gridCharge"]) == 1 or int(discharge["ctrDis"]) == 1
+            None
+            if grid_flag is None and dis_flag is None
+            else int(grid_flag or 0) == 1 or int(dis_flag or 0) == 1
         )
 
     def _overlay_schedule_view(self, serial: str, data: dict[str, Any]) -> None:
@@ -1355,15 +1374,52 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             return False
         return self._legacy_state_from_data(self.data.get(serial) or {}) is not None
 
+    def set_periodic_enable_intent(
+        self, serial: str, *, grid_charge: int | None = None, ctr_dis: int | None = None
+    ) -> None:
+        """Record what the enable switches were last known to be set to.
+
+        Restored by the switch entities at startup: the API cannot report these,
+        so a value Home Assistant has never been told is a value it must not
+        invent.
+        """
+        intent = dict(self._periodic_enable_intent.get(serial) or {})
+        if grid_charge is not None:
+            intent["gridChargeCycle"] = int(grid_charge)
+        if ctr_dis is not None:
+            intent["ctrDisCycle"] = int(ctr_dis)
+        if intent:
+            # One switch may restore before the other; a half-filled record is
+            # still refused by _resolve_periodic_enable until it is complete.
+            self._periodic_enable_intent[serial] = intent
+
+    def _resolve_periodic_enable(
+        self,
+        serial: str,
+        charge: dict[str, Any] | None,
+        discharge: dict[str, Any] | None,
+    ) -> dict[str, int] | None:
+        """Return the enable pair to send, or None when it is not known.
+
+        This write wins over the stored intent; with neither, there is nothing
+        truthful to send and the caller must refuse rather than guess.
+        """
+        stored = self._periodic_enable_intent.get(serial) or {}
+        grid = (charge or {}).get("gridCharge", stored.get("gridChargeCycle"))
+        dis = (discharge or {}).get("ctrDis", stored.get("ctrDisCycle"))
+        if grid is None or dis is None:
+            return None
+        return {"gridChargeCycle": int(grid), "ctrDisCycle": int(dis)}
+
     def _committed_enable_flags(self, serial: str) -> tuple[int, int] | None:
         """Return the committed (gridCharge, ctrDis) flags of the governing
         store, or None while no store snapshot is available."""
         if self.is_periodic_schedule_readable(serial):
-            schedule = self._periodic_schedules[serial]
-            return (
-                int(schedule.get("gridChargeCycle", 1)),
-                int(schedule.get("ctrDisCycle", 1)),
-            )
+            intent = self._periodic_enable_intent.get(serial) or {}
+            grid, dis = intent.get("gridChargeCycle"), intent.get("ctrDisCycle")
+            if grid is None or dis is None:
+                return None
+            return (int(grid), int(dis))
         if self.is_legacy_backup_active(serial):
             cached = self._legacy_schedules.get(serial, {})
             if all(side in cached for side in ("charge", "discharge")):
@@ -1700,9 +1756,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             if not changes:
                 continue
 
-            cycle_field = spec["cycle_field"]
-            if cycle_field in changes:
-                proposed[spec["cycle"]] = int(changes[cycle_field])
+            # gridCharge/ctrDis are not part of the periodic resource; they
+            # are resolved separately and sent as their own parameters.
 
             list_key = spec["list"]
             original = proposed[list_key]
@@ -1821,9 +1876,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             if not periods:
                 raise ScheduleWriteError(
                     "setTimeChargeBySn requires at least one charge period and one "
-                    f"discharge period; {list_key} would be empty. Add a period to "
-                    "each side in the AlphaESS app, or stage both sides with the "
-                    "schedule entities and apply them together"
+                    f"discharge period; {list_key} would be empty (it answers 6001 "
+                    "for an empty list and 10001 for a missing one). To run one side "
+                    "only, give the other side a period and turn its switch off. Add "
+                    "a period to each side in the AlphaESS app, or stage both sides "
+                    "with the schedule entities and apply them together"
                 )
             for position, period in enumerate(periods, start=1):
                 # Name the offending period: it may be one the app created and
@@ -2007,7 +2064,21 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             now_window=now_window,
         )
 
-        if periodic_proposed == periodic_current:
+        enable = self._resolve_periodic_enable(serial, charge, discharge)
+        if enable is None:
+            raise ScheduleWriteError(
+                "Home Assistant does not know whether scheduled charging and "
+                "discharging should be enabled: getTimeChargeBySn reports 0 for "
+                "both whatever the inverter is doing, and sending that back would "
+                "switch it to self-consumption. Set the Scheduled Charging and "
+                "Scheduled Discharging switches once so there is something "
+                "truthful to send; nothing was written"
+            )
+
+        if (
+            periodic_proposed == periodic_current
+            and enable == self._periodic_enable_sent.get(serial)
+        ):
             _LOGGER.debug(
                 "Periodic schedule for %s already matches the requested values",
                 serial,
@@ -2016,18 +2087,13 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             return
 
         try:
-            kwargs = {
-                key: periodic_proposed[key]
-                for key in ("gridChargeCycle", "ctrDisCycle")
-                if key in periodic_proposed
-            }
             await self._call_cloud_api(
                 self.api.setTimeChargeBySn,
                 sysSn=serial,
                 executeCycleType=periodic_proposed["executeCycleType"],
                 chargeTimeList=periodic_proposed["chargeTimeList"],
                 dischargeTimeList=periodic_proposed["dischargeTimeList"],
-                **kwargs,
+                **enable,
             )
         except asyncio.CancelledError:
             raise
@@ -2067,6 +2133,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             ) from err
 
         self._periodic_schedules[serial] = deepcopy(periodic_proposed)
+        self._periodic_enable_intent[serial] = dict(enable)
+        self._periodic_enable_sent[serial] = dict(enable)
         _LOGGER.info(
             "Wrote periodic schedule for %s - charge: %s, discharge: %s",
             serial,
