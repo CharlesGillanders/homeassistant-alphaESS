@@ -1286,16 +1286,25 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 "Scheduled Charging or Scheduled Discharging on to re-enable a "
                 "timer; a working mode can only be changed in the AlphaESS app"
             )
-        if active is True:
-            # Refuse to author the 0/0 flag state: it is indistinguishable
-            # from a self-consumption mode afterwards, and leaving it is
-            # app-only anyway. Disable the last timer from the app instead.
-            flags = self._committed_enable_flags(serial) or (1, 1)
+        flags = self._committed_enable_flags(serial)
+        if active is True and flags is not None:
+            # Refuse to author the 0/0 flag state: on the legacy store it is
+            # indistinguishable from a self-consumption mode afterwards, and
+            # on the periodic store it is the request that switches the
+            # inverter into one. Only guard when both committed flags are
+            # actually known - guessing at the other side would be inventing
+            # the very answer this store cannot supply.
             grid_flag, dis_flag = flags
             draft = self._schedule_drafts.get(serial)
             if draft is not None:
-                grid_flag = int(draft["charge"].get("gridCharge", grid_flag))
-                dis_flag = int(draft["discharge"].get("ctrDis", dis_flag))
+                # A staged half can be None (nothing recorded for that side
+                # yet), which is not a value to fall back from.
+                staged_grid = draft["charge"].get("gridCharge")
+                staged_dis = draft["discharge"].get("ctrDis")
+                if staged_grid is not None:
+                    grid_flag = int(staged_grid)
+                if staged_dis is not None:
+                    dis_flag = int(staged_dis)
             if charge and "gridCharge" in charge:
                 grid_flag = int(charge["gridCharge"])
             if discharge and "ctrDis" in discharge:

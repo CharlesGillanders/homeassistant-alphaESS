@@ -885,6 +885,40 @@ class TestWriteOnlyEnableFlags:
 
         mock_api.setTimeChargeBySn.assert_not_awaited()
 
+    def test_half_a_restored_answer_does_not_break_the_switches(
+        self, make_coordinator
+    ):
+        """Reported on #267: one switch restores its state and the other has
+        none, so the entity view holds a None the last-timer guard tried to
+        cast. Nothing here is knowable enough to guard on, and guessing at the
+        missing side would invent the answer this store cannot give."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=deepcopy(periodic), readable=True)
+        coordinator._periodic_enable_intent[SERIAL] = {"ctrDisCycle": 1}
+        coordinator._overlay_schedule_view(SERIAL, coordinator.data[SERIAL])
+
+        assert coordinator._committed_enable_flags(SERIAL) is None
+
+        coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
+        coordinator.stage_schedule_change(SERIAL, charge={"gridCharge": 1})
+
+        assert coordinator._schedule_drafts[SERIAL]["charge"]["gridCharge"] == 1
+
+    async def test_an_incomplete_answer_still_refuses_the_write(
+        self, make_coordinator, mock_api
+    ):
+        """Skipping the guard does not let a half-known pair reach the API."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=deepcopy(periodic), readable=True)
+        coordinator._periodic_enable_intent[SERIAL] = {"ctrDisCycle": 1}
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
+        with pytest.raises(ScheduleWriteError, match="does not know whether"):
+            await coordinator.async_apply_schedule_draft(SERIAL)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+
     async def test_a_flag_only_change_still_reaches_the_api(
         self, make_coordinator, mock_api
     ):
