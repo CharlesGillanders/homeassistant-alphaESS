@@ -159,7 +159,10 @@ them:
 Do not mix them on one inverter. A service write replaces the remote schedule,
 so a draft staged before it fails its next Apply as a conflict.
 
-Default entity IDs are `<domain>.<serial in lower case>_<name>`:
+Default entity IDs are `<domain>.<serial in lower case>_<name>`. Installs that
+predate the serial-prefixed rename keep their original IDs, which carry the
+device name as well (`sensor.home_alpha_ess_energy_statistics_<serial>_...`) —
+check the entity list rather than assuming the short form:
 
 | Purpose | Entity |
 | --- | --- |
@@ -340,9 +343,13 @@ erase weekly settings, extra periods, or power values that it cannot see.
 ### AlphaESS API limitations
 
 - The periodic API requires at least one complete charge period **and** one
-  complete discharge period. The integration never inserts a fake
-  `00:00-00:00` period. If either list would be empty, Apply fails rather than
-  replacing an app-managed schedule with incomplete data.
+  complete discharge period: an empty list answers `6001` and a missing one
+  `10001`. The integration never inserts a fake `00:00-00:00` period. If either
+  list would be empty, Apply fails rather than replacing an app-managed schedule
+  with incomplete data. AlphaESS itself will happily *store* an empty list, so a
+  system with no discharge periods cannot be written to from Home Assistant at
+  all until one exists — add a period to that side in the app, or give it one and
+  turn its switch off, which is how the API is told to run a single side.
 - Both a start and end time must be set before adding a new period. Existing
   weekly periods can be edited while retaining their weekdays, but the entity UI
   cannot add a new weekly period because it has no weekday selector.

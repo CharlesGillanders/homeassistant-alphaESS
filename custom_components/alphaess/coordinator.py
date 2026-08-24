@@ -1743,8 +1743,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             "charge": {
                 "changes": charge,
                 "list": "chargeTimeList",
-                "cycle": "gridChargeCycle",
-                "cycle_field": "gridCharge",
                 "limit": "batHighCap",
                 "start": "timeChaf",
                 "end": "timeChae",
@@ -1752,8 +1750,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             "discharge": {
                 "changes": discharge,
                 "list": "dischargeTimeList",
-                "cycle": "ctrDisCycle",
-                "cycle_field": "ctrDis",
                 "limit": "batUseCap",
                 "start": "timeDisf",
                 "end": "timeDise",
