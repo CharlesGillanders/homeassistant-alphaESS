@@ -363,6 +363,26 @@ fast lane is still active, which is what to check when something else is sharing
 the same API account. Serials are replaced with `inverter_1`, `inverter_2` and so
 on, and credentials, keys and addresses are redacted.
 
+For anything the download cannot show — what happened, in what order — turn on
+debug logging:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.alphaess: debug
+    alphaess: debug
+```
+
+Every OpenAPI request and **its full response** is then written out, along with
+each staged field, each write and the enable pair sent with it, and a line
+whenever the schedule surface locks or unlocks and what decided it. That is the
+same information a hand-signed API request would give you, without signing one.
+Very large responses are capped rather than dropped. Requests carry no
+credentials — those live in the headers, which are not logged — but the log does
+contain your serial number, so trim it before posting if you would rather not
+share it.
+
 ### AlphaESS API limitations
 
 - The periodic API requires at least one complete charge period **and** one

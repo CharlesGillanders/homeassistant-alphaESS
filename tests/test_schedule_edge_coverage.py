@@ -6,6 +6,7 @@ from copy import deepcopy
 from unittest.mock import AsyncMock
 
 import pytest
+from alphaess.alphaess import AlphaESSApiError
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 
 from custom_components.alphaess.button import AlphaESSBatteryButton
@@ -1509,3 +1510,138 @@ class TestRemainingWriteGuards:
                 discharge=None,
                 now_window=True,
             )
+
+
+class TestApiTracing:
+    """With debug logging on, the log should contain what a hand-signed request
+    would have told you - that is what it took to work out #267."""
+
+    async def test_a_call_and_its_answer_are_both_written_out(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = make_coordinator()
+        schedule = _daily_schedule()
+        mock_api.getTimeChargeBySn.return_value = schedule
+
+        with caplog.at_level(logging.DEBUG, logger="custom_components.alphaess.coordinator"):
+            await coordinator._call_cloud_api(mock_api.getTimeChargeBySn, SERIAL)
+
+        trace = [r.getMessage() for r in caplog.records if "API " in r.getMessage()]
+        assert trace, caplog.text
+        assert SERIAL in trace[0]
+        assert "chargeTimeList" in trace[0]
+
+    async def test_keyword_arguments_are_shown_as_written(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = make_coordinator()
+
+        with caplog.at_level(logging.DEBUG, logger="custom_components.alphaess.coordinator"):
+            await coordinator._call_cloud_api(
+                mock_api.setTimeChargeBySn,
+                sysSn=SERIAL,
+                executeCycleType=0,
+                chargeTimeList=[],
+                dischargeTimeList=[],
+                gridChargeCycle=1,
+                ctrDisCycle=0,
+            )
+
+        # The pair that decides the working mode has to be in the log.
+        assert "gridChargeCycle=1" in caplog.text
+        assert "ctrDisCycle=0" in caplog.text
+
+    async def test_a_rejection_is_traced_with_its_return_code(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = make_coordinator()
+        mock_api.getTimeChargeBySn.side_effect = _api_error(6017)
+
+        with caplog.at_level(logging.DEBUG, logger="custom_components.alphaess.coordinator"):
+            with pytest.raises(AlphaESSApiError):
+                await coordinator._call_cloud_api(mock_api.getTimeChargeBySn, SERIAL)
+
+        assert "6017" in caplog.text
+
+    async def test_a_transport_failure_is_traced_too(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = make_coordinator()
+        mock_api.getTimeChargeBySn.side_effect = TimeoutError("no response")
+
+        with caplog.at_level(logging.DEBUG, logger="custom_components.alphaess.coordinator"):
+            with pytest.raises(TimeoutError):
+                await coordinator._call_cloud_api(mock_api.getTimeChargeBySn, SERIAL)
+
+        assert "TimeoutError" in caplog.text
+
+    async def test_a_retry_after_a_rate_limit_is_traced(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = make_coordinator()
+        mock_api.getTimeChargeBySn.side_effect = [_api_error(6053), {"ok": True}]
+
+        with caplog.at_level(logging.DEBUG, logger="custom_components.alphaess.coordinator"):
+            result = await coordinator._call_cloud_api(
+                mock_api.getTimeChargeBySn, SERIAL,
+            )
+
+        assert result == {"ok": True}
+        assert "retried after 6053" in caplog.text
+
+    def test_a_huge_response_is_capped_rather_than_dropped(self, make_coordinator):
+        """getOneDayPowerBySn runs to thousands of samples; the log stays
+        usable without losing the fact that an answer arrived."""
+        coordinator = make_coordinator()
+        rendered = coordinator._describe_response([{"cbat": 55}] * 5000)
+
+        assert rendered.endswith("chars]")
+        assert len(rendered) < 4200
+
+    async def test_nothing_is_rendered_when_tracing_is_off(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = make_coordinator()
+        mock_api.getTimeChargeBySn.return_value = _daily_schedule()
+
+        with caplog.at_level(logging.INFO, logger="custom_components.alphaess.coordinator"):
+            await coordinator._call_cloud_api(mock_api.getTimeChargeBySn, SERIAL)
+
+        assert "API " not in caplog.text
+
+
+class TestScheduleSurfaceLogging:
+    """A user reports that the controls went away; the log should say when and
+    on the strength of what."""
+
+    async def test_a_lock_is_announced_with_its_reason(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = _seed(
+            make_coordinator(), periodic=_daily_schedule(), readable=True,
+        )
+        coordinator._publish_schedule_view(SERIAL)  # first pass: debug only
+
+        with caplog.at_level(logging.INFO, logger="custom_components.alphaess.coordinator"):
+            coordinator.set_periodic_enable_intent(
+                SERIAL, grid_charge=0, ctr_dis=0,
+            )
+            coordinator._publish_schedule_view(SERIAL)
+
+        assert "is locked" in caplog.text
+        assert "periodic read readable" in caplog.text
+        assert "timed control inactive" in caplog.text
+
+    async def test_the_same_state_is_not_repeated_every_poll(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = _seed(
+            make_coordinator(), periodic=_daily_schedule(), readable=True,
+        )
+        coordinator._publish_schedule_view(SERIAL)
+
+        with caplog.at_level(logging.INFO, logger="custom_components.alphaess.coordinator"):
+            for _ in range(5):
+                coordinator._publish_schedule_view(SERIAL)
+
+        assert "Schedule surface" not in caplog.text

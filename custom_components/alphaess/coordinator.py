@@ -24,6 +24,7 @@ from .const import (
     DOMAIN,
     FAST_API_CALL_INTERVAL_SECONDS,
     LOWER_INVERTER_API_CALL_LIST,
+    MAX_LOGGED_RESPONSE_CHARS,
     MIN_API_CALL_INTERVAL_SECONDS,
     RATE_LIMIT_CODE,
     SCAN_INTERVAL,
@@ -519,6 +520,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         self._periodic_enable_intent: dict[str, dict[str, int]] = {}
         self._periodic_enable_sent: dict[str, dict[str, int]] = {}
 
+        # Last logged schedule surface state per serial, so a lock or unlock is
+        # reported once with its reason rather than on every poll.
+        self._schedule_state_logged: dict[str, tuple] = {}
+
         # Entity changes are drafts. A user can edit start/end/limits/switches
         # without emitting a series of unsafe intermediate full replacements,
         # then commit once with the Apply Schedule button.
@@ -574,17 +579,51 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             )
         return self.throttle_multiplier
 
+    @staticmethod
+    def _describe_call(method, args, kwargs) -> str:
+        """Render one call the way it would be written by hand."""
+        shown = [repr(arg) for arg in args]
+        shown += [f"{key}={value!r}" for key, value in kwargs.items()]
+        return f"{getattr(method, '__name__', method)}({', '.join(shown)})"
+
+    @staticmethod
+    def _describe_response(value: Any) -> str:
+        """Render a response, capping the ones that run to thousands of lines."""
+        text = repr(value)
+        if len(text) <= MAX_LOGGED_RESPONSE_CHARS:
+            return text
+        return f"{text[:MAX_LOGGED_RESPONSE_CHARS]}... [{len(text)} chars]"
+
     async def _call_cloud_api(self, method, *args, **kwargs) -> Any:
-        """Call one OpenAPI endpoint after the currently required interval."""
+        """Call one OpenAPI endpoint after the currently required interval.
+
+        With debug logging on, every request and every response is written out.
+        Establishing what this API actually returns has needed hand-signed
+        requests more than once (#267); it should come out of a log instead.
+        """
+        tracing = _LOGGER.isEnabledFor(logging.DEBUG)
+        call = self._describe_call(method, args, kwargs) if tracing else ""
+        waited = 0.0
         async with self._api_request_lock:
             if self._last_api_request_completed is not None:
                 remaining = self._call_interval() - (
                     time_mod.monotonic() - self._last_api_request_completed
                 )
                 if remaining > 0:
+                    waited = remaining
                     await asyncio.sleep(remaining)
+            # Only read the clock when the answer will be used: tests and
+            # production alike should not pay for tracing that is switched off.
+            started = time_mod.monotonic() if tracing else 0.0
             try:
-                return await method(*args, **kwargs)
+                result = await method(*args, **kwargs)
+                if tracing:
+                    _LOGGER.debug(
+                        "API %s -> %s (%.2fs, waited %.2fs)",
+                        call, self._describe_response(result),
+                        time_mod.monotonic() - started, waited,
+                    )
+                return result
             except AlphaESSApiError as err:
                 if err.code == RATE_LIMIT_CODE and self._fast_api_lane:
                     # The fast lane overshot this server's limits. Fall back
@@ -596,7 +635,27 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         "dropping to %ss spacing", self.throttle_multiplier,
                     )
                     await asyncio.sleep(self.throttle_multiplier)
-                    return await method(*args, **kwargs)
+                    retried = await method(*args, **kwargs)
+                    if tracing:
+                        _LOGGER.debug(
+                            "API %s retried after 6053 -> %s",
+                            call, self._describe_response(retried),
+                        )
+                    return retried
+                if tracing:
+                    _LOGGER.debug(
+                        "API %s -> %s (%.2fs, waited %.2fs)",
+                        call, describe_api_error(err),
+                        time_mod.monotonic() - started, waited,
+                    )
+                raise
+            except Exception as err:
+                if tracing:
+                    _LOGGER.debug(
+                        "API %s raised %s: %s (%.2fs, waited %.2fs)",
+                        call, type(err).__name__, err,
+                        time_mod.monotonic() - started, waited,
+                    )
                 raise
             finally:
                 # A rejected or indeterminate request still consumed an API
@@ -1227,11 +1286,44 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 committed[0] == 1 or committed[1] == 1
             )
 
+    def _note_schedule_surface(self, serial: str) -> None:
+        """Log a lock or unlock once, with what decided it.
+
+        A user reports "the controls went away"; this is the line that says
+        when, and on the strength of what.
+        """
+        state = (
+            self.get_periodic_read_state(serial),
+            self.is_time_based_control_active(serial),
+            self.can_modify_time_controls(serial),
+        )
+        if self._schedule_state_logged.get(serial) == state:
+            return
+        first_time = serial not in self._schedule_state_logged
+        self._schedule_state_logged[serial] = state
+        read_state, active, modifiable = state
+        message = (
+            "Schedule surface for %s is %s: periodic read %s, timed control %s, "
+            "recorded enable flags %s"
+        )
+        args = (
+            serial,
+            "editable" if modifiable else "locked",
+            read_state,
+            {True: "active", False: "inactive", None: "unknown"}[active],
+            self._periodic_enable_intent.get(serial) or "none recorded",
+        )
+        if first_time:
+            _LOGGER.debug(message, *args)
+        else:
+            _LOGGER.info(message, *args)
+
     def _publish_schedule_view(self, serial: str) -> None:
         """Publish a schedule view change to all coordinator entities."""
         if serial not in self.data:
             return
         self._overlay_schedule_view(serial, self.data[serial])
+        self._note_schedule_surface(serial)
         self.async_set_updated_data({key: dict(value) for key, value in self.data.items()})
 
     def stage_schedule_change(
@@ -1329,6 +1421,10 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
 
         for side, changes in (("charge", charge), ("discharge", discharge)):
             if changes:
+                _LOGGER.debug(
+                    "Staged %s for %s: %s (draft now %s)",
+                    side, serial, changes, self._schedule_drafts[serial][side],
+                )
                 self._schedule_drafts[serial][side].update(changes)
                 self._schedule_draft_dirty[serial][side].update(changes)
         self._schedule_draft_revisions[serial] = (
@@ -2141,8 +2237,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         self._periodic_enable_intent[serial] = dict(enable)
         self._periodic_enable_sent[serial] = dict(enable)
         _LOGGER.info(
-            "Wrote periodic schedule for %s - charge: %s, discharge: %s",
+            "Wrote periodic schedule for %s - enable %s, charge: %s, discharge: %s",
             serial,
+            enable,
             periodic_proposed["chargeTimeList"],
             periodic_proposed["dischargeTimeList"],
         )
