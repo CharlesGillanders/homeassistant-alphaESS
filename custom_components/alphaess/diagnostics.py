@@ -45,6 +45,15 @@ async def async_get_config_entry_diagnostics(
         for idx, serial in enumerate(coordinator.data or {})
     }
 
+    # The state behind the schedule surface: which store governs, why the
+    # controls are in the state they are, and what the stores actually hold.
+    # None of it identifies anyone, and it is what a report needs to be
+    # answerable without a round trip.
+    schedule = {
+        f"inverter_{idx + 1}": coordinator.schedule_diagnostics(serial)
+        for idx, serial in enumerate(coordinator.data or {})
+    }
+
     return {
         "entry": {
             "data": async_redact_data(dict(entry.data), TO_REDACT_CONFIG),
@@ -62,6 +71,8 @@ async def async_get_config_entry_diagnostics(
             "model_list": coordinator.model_list,
             "has_throttle": coordinator.has_throttle,
             "periodic_schedule_read": periodic_schedule_read,
+            "api": coordinator.api_diagnostics(),
         },
+        "schedule": schedule,
         "data": inverters,
     }

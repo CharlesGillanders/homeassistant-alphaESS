@@ -340,6 +340,29 @@ until a full periodic read succeeds. The integration never builds a
 replacement schedule from anything but a fresh read, because doing so could
 erase weekly settings, extra periods, or power values that it cannot see.
 
+### Reporting a schedule problem
+
+**Settings → Devices & Services → AlphaESS → ⋮ → Download diagnostics** answers
+most of what a report needs, without anyone having to sign API requests by hand.
+Alongside the usual entry and entity data, the `schedule` section carries, per
+inverter:
+
+- `governing_store` and `periodic_read` — which surface the system is on;
+- `capabilities` — the exact flags behind every unavailable control, so a locked
+  UI explains itself;
+- `enable_intent` / `enable_last_sent` — the write-only pair, which nothing else
+  can report;
+- `periodic_snapshot` and `legacy_snapshot` — what each store actually held,
+  including an empty period list or a stale window the app no longer shows;
+- `draft` — what is staged, which fields are dirty, and whether an Apply is in
+  flight;
+- cooldowns and consecutive poll errors.
+
+The `coordinator.api` section reports the current call spacing and whether the
+fast lane is still active, which is what to check when something else is sharing
+the same API account. Serials are replaced with `inverter_1`, `inverter_2` and so
+on, and credentials, keys and addresses are redacted.
+
 ### AlphaESS API limitations
 
 - The periodic API requires at least one complete charge period **and** one

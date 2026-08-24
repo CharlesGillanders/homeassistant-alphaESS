@@ -2593,6 +2593,71 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 self.get_periodic_read_state(serial)
             )
 
+    def schedule_diagnostics(self, serial: str) -> dict[str, Any]:
+        """Return everything needed to explain a schedule state from a report.
+
+        Every field here answers a question that has cost a round trip with a
+        tester: which store governs, why the controls are locked, what the two
+        write-only enable flags were last set to, and what the stores actually
+        held at the time. It must never raise - a diagnostics download is often
+        the only thing a user can still produce.
+        """
+        draft = self._schedule_drafts.get(serial)
+        dirty = self._schedule_draft_dirty.get(serial) or {}
+        now = time_mod.monotonic()
+
+        def _cooldown(store: dict[str, float]) -> float | None:
+            started = store.get(serial)
+            return None if started is None else round(now - started, 1)
+
+        if self.is_periodic_schedule_readable(serial):
+            governing_store = "periodic"
+        elif self.is_legacy_backup_active(serial):
+            governing_store = "legacy-backup"
+        else:
+            governing_store = "none"
+
+        return {
+            "governing_store": governing_store,
+            "periodic_read": self.get_periodic_read_state(serial),
+            "periodic_write_denied": serial in self._periodic_write_denied,
+            "capabilities": {
+                "time_based_control_active": self.is_time_based_control_active(serial),
+                "can_stage_schedule": self.can_stage_schedule(serial),
+                "can_modify_time_controls": self.can_modify_time_controls(serial),
+                "can_unlock_time_controls": self.can_unlock_time_controls(serial),
+                "can_reset_schedule": self.can_reset_schedule(serial),
+            },
+            # Write-only on the periodic API: the read reports 0 for both
+            # whatever the inverter is set to, so this record is the only
+            # answer there is, and an absent one blocks every write.
+            "enable_intent": self._periodic_enable_intent.get(serial),
+            "enable_last_sent": self._periodic_enable_sent.get(serial),
+            "periodic_snapshot": self._periodic_schedules.get(serial),
+            "legacy_snapshot": self._legacy_schedules.get(serial),
+            "draft": None if draft is None else {
+                "dirty": {side: sorted(fields) for side, fields in dirty.items()},
+                "revision": self._schedule_draft_revisions.get(serial, 0),
+                "apply_in_progress": serial in self._schedule_apply_in_progress,
+                "staged": draft,
+            },
+            "number_settings": self.number_settings.get(serial),
+            "seconds_since_last_charge_write": _cooldown(self.last_charge_update),
+            "seconds_since_last_discharge_write": _cooldown(self.last_discharge_update),
+            "consecutive_poll_errors": self._inverter_error_count.get(serial, 0),
+        }
+
+    def api_diagnostics(self) -> dict[str, Any]:
+        """Return how the client is currently pacing and answering."""
+        return {
+            "fast_api_lane": self._fast_api_lane,
+            "call_interval_seconds": self._call_interval(),
+            "throttle_multiplier": self.throttle_multiplier,
+            "last_poll_type": self._last_poll_type,
+            "last_full_poll": self._last_full_poll_utc or "never",
+            "poll_tick_count": self._poll_tick_count,
+        }
+
     def get_periodic_read_state(self, serial: str) -> str:
         """Return whether the periodic schedule can be read on this account.
 
