@@ -394,8 +394,12 @@ share it.
   all until one exists — add a period to that side in the app, or give it one and
   turn its switch off, which is how the API is told to run a single side.
 - Both a start and end time must be set before adding a new period. Existing
-  weekly periods can be edited while retaining their weekdays, but the entity UI
-  cannot add a new weekly period because it has no weekday selector.
+  weekly periods keep their weekdays when edited. The entity UI has no weekday
+  selector, so a period added to a weekly schedule runs on the same days as the
+  period it is added alongside — the newer AlphaESS app writes "every day" as a
+  weekly schedule covering all seven, so that is usually what you want. Change
+  the days in the app if it is not. A weekly schedule with no existing period on
+  that side has nothing to copy, and adding one there is refused.
 - Existing per-period power values are preserved. Adding a brand-new period
   requires an explicit positive power value for that slot; the inverter's nominal
   `poinv` rating is not a verified battery charge/discharge rate and is never used

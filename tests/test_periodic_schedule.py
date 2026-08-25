@@ -933,3 +933,116 @@ class TestWriteOnlyEnableFlags:
         payload = _periodic_payload(mock_api)
         assert payload["gridChargeCycle"] == 0
         assert payload["chargeTimeList"] == _cached(periodic)["chargeTimeList"]
+
+
+class TestTheRemedyActuallyWorks:
+    """Reported on #267 from a b4 diagnostics download: enable_intent null, a
+    switch staged, and every write refused - including the duration buttons -
+    with an error telling the user to set the switches, which was exactly what
+    they had just done."""
+
+    def _weekly(self):
+        return {
+            "executeCycleType": 1,
+            "chargeTimeList": [
+                _period("16:45", "17:00", limit=90, power=5000,
+                        weeks=[6, 5, 4, 3, 2, 1, 7])
+            ],
+            "dischargeTimeList": [
+                _period("11:45", "12:00", limit=25, power=5000,
+                        weeks=[6, 5, 4, 3, 2, 1, 7])
+            ],
+        }
+
+    def _unanswered(self, coordinator):
+        """A system upgraded from a build where the switches were unavailable,
+        so their restored state answered nothing."""
+        coordinator._periodic_enable_intent.pop(SERIAL, None)
+        coordinator._periodic_enable_sent.pop(SERIAL, None)
+        return coordinator
+
+    async def test_moving_both_switches_unblocks_the_duration_buttons(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._unanswered(
+            _seed(make_coordinator(), periodic=self._weekly(), readable=True)
+        )
+        mock_api.getTimeChargeBySn.return_value = deepcopy(self._weekly())
+
+        with pytest.raises(ScheduleWriteError, match="does not know whether"):
+            await coordinator.update_charge("batHighCap", SERIAL, 15)
+
+        # Doing what the error asks has to be enough.
+        coordinator.stage_schedule_change(SERIAL, charge={"gridCharge": 1})
+        coordinator.stage_schedule_change(SERIAL, discharge={"ctrDis": 0})
+        assert coordinator._periodic_enable_intent[SERIAL] == {
+            "gridChargeCycle": 1, "ctrDisCycle": 0,
+        }
+
+        await coordinator.update_charge("batHighCap", SERIAL, 15)
+        assert _periodic_payload(mock_api)["gridChargeCycle"] == 1
+
+    def test_a_staged_switch_is_unstaged_by_discard(self, make_coordinator):
+        """Recording the answer as it is staged must not survive a Discard, or
+        Discard would leave one edit behind."""
+        coordinator = _seed(
+            make_coordinator(), periodic=self._weekly(), readable=True,
+        )
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
+
+        coordinator.stage_schedule_change(SERIAL, discharge={"ctrDis": 0})
+        assert coordinator._periodic_enable_intent[SERIAL]["ctrDisCycle"] == 0
+
+        coordinator.discard_schedule_draft(SERIAL)
+
+        assert coordinator._periodic_enable_intent[SERIAL]["ctrDisCycle"] == 1
+
+    def test_discard_clears_an_answer_that_only_a_draft_supplied(
+        self, make_coordinator
+    ):
+        coordinator = self._unanswered(
+            _seed(make_coordinator(), periodic=self._weekly(), readable=True)
+        )
+
+        coordinator.stage_schedule_change(SERIAL, charge={"gridCharge": 1})
+        coordinator.discard_schedule_draft(SERIAL)
+
+        assert SERIAL not in coordinator._periodic_enable_intent
+
+    async def test_a_new_period_inherits_the_weekdays_of_its_siblings(
+        self, make_coordinator, mock_api
+    ):
+        """The new app writes "every day" as a weekly schedule covering all
+        seven, so refusing to add a period there blocked most systems on the
+        new backend."""
+        coordinator = _seed(
+            make_coordinator(), periodic=self._weekly(), readable=True,
+        )
+        mock_api.getTimeChargeBySn.return_value = deepcopy(self._weekly())
+
+        await coordinator.async_write_charge_config(
+            SERIAL,
+            times={"timeChaf2": "12:00", "timeChae2": "15:30"},
+            powers={"chargePower2": 14000},
+        )
+
+        added = _periodic_payload(mock_api)["chargeTimeList"][1]
+        assert added["beginTime"] == "12:00"
+        assert added["chargePower"] == 14000
+        # Same days as the period it was added alongside, not a guess.
+        assert added["weeks"] == [6, 5, 4, 3, 2, 1, 7]
+
+    async def test_a_daily_schedule_still_adds_without_weekdays(
+        self, make_coordinator, mock_api
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        await coordinator.async_write_charge_config(
+            SERIAL,
+            times={"timeChaf2": "12:00", "timeChae2": "15:30"},
+            powers={"chargePower2": 1200},
+        )
+
+        assert "weeks" not in _periodic_payload(mock_api)["chargeTimeList"][1]

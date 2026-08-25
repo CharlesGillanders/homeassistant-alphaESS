@@ -519,6 +519,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # confirmed by each successful write.
         self._periodic_enable_intent: dict[str, dict[str, int]] = {}
         self._periodic_enable_sent: dict[str, dict[str, int]] = {}
+        # What the record held when the open draft was started, so Discard can
+        # put a staged switch back the way it puts everything else back.
+        self._schedule_draft_base_intent: dict[str, dict[str, int] | None] = {}
 
         # Last logged schedule surface state per serial, so a lock or unlock is
         # reported once with its reason rather than on every poll.
@@ -747,6 +750,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 self._schedule_draft_base_legacy,
                 self._schedule_draft_revisions,
                 self._schedule_write_revisions,
+                self._schedule_draft_base_intent,
                 self._periodic_enable_intent,
                 self._periodic_enable_sent,
                 self.number_settings,
@@ -1410,6 +1414,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         if serial not in self._schedule_drafts:
             self._schedule_drafts[serial] = self._schedule_entity_state(serial)
             self._schedule_draft_dirty[serial] = {"charge": set(), "discharge": set()}
+            self._schedule_draft_base_intent[serial] = deepcopy(
+                self._periodic_enable_intent.get(serial)
+            )
             if readable is True:
                 self._schedule_draft_base_periodic[serial] = deepcopy(
                     self._periodic_schedules[serial]
@@ -1418,6 +1425,15 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 self._schedule_draft_base_legacy[serial] = deepcopy(
                     self._legacy_schedules[serial]
                 )
+
+        # Moving a switch answers the question the periodic API cannot: record
+        # it as soon as it is staged. Waiting for a successful write left the
+        # only documented remedy - "set the switches" - unable to do anything,
+        # because staging never reached the record the write consults (#267).
+        if charge and charge.get("gridCharge") is not None:
+            self.set_periodic_enable_intent(serial, grid_charge=charge["gridCharge"])
+        if discharge and discharge.get("ctrDis") is not None:
+            self.set_periodic_enable_intent(serial, ctr_dis=discharge["ctrDis"])
 
         for side, changes in (("charge", charge), ("discharge", discharge)):
             if changes:
@@ -1595,6 +1611,13 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         self._schedule_draft_dirty.pop(serial, None)
         self._schedule_draft_base_periodic.pop(serial, None)
         self._schedule_draft_base_legacy.pop(serial, None)
+        # A staged switch records its answer as it is staged, so discarding the
+        # draft has to unrecord it or Discard would leave one edit behind.
+        base_intent = self._schedule_draft_base_intent.pop(serial, None)
+        if base_intent is None:
+            self._periodic_enable_intent.pop(serial, None)
+        else:
+            self._periodic_enable_intent[serial] = base_intent
         self._publish_schedule_view(serial)
 
     async def async_apply_schedule_draft(self, serial: str) -> None:
@@ -1660,6 +1683,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                     )
             self._publish_schedule_view(serial)
             return
+        self._schedule_draft_base_intent.pop(serial, None)
         self._schedule_drafts.pop(serial, None)
         self._schedule_draft_dirty.pop(serial, None)
         self._schedule_draft_base_periodic.pop(serial, None)
@@ -1927,10 +1951,26 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         if power_key in changes:
                             period["chargePower"] = changes[power_key]
                     else:
+                        weeks = None
                         if cycle_type != PERIODIC_DAILY:
-                            raise ScheduleWriteError(
-                                f"Cannot add {side} period {index} to a weekly schedule "
-                                "because the two-slot entities cannot choose weekdays"
+                            # The two-slot entities cannot choose weekdays, but
+                            # the new app writes "every day" as a weekly schedule
+                            # covering all seven, so refusing outright blocks most
+                            # systems on the new backend (#267). Inherit the days
+                            # a sibling period already runs on instead: visible in
+                            # the app, and reversible there.
+                            sibling = original[0] if original else None
+                            weeks = (sibling or {}).get("weeks")
+                            if not weeks:
+                                raise ScheduleWriteError(
+                                    f"Cannot add {side} period {index} to a weekly "
+                                    "schedule with no existing period to take its "
+                                    "weekdays from; create it in the AlphaESS app"
+                                )
+                            _LOGGER.info(
+                                "New %s period %s on %s inherits weekdays %s from the "
+                                "existing period; change them in the AlphaESS app",
+                                side, index, serial, weeks,
                             )
                         power = changes.get(power_key)
                         if power is None:
@@ -1969,6 +2009,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                             "chargeLimit": limit,
                             "chargePower": power,
                         }
+                        if weeks is not None:
+                            period["weeks"] = deepcopy(weeks)
                     managed.append(period)
                 proposed[list_key] = managed + deepcopy(original[2:])
 

@@ -640,15 +640,7 @@ class TestNewPeriodValidation:
                 {
                     **_daily_schedule(),
                     "executeCycleType": 1,
-                    "chargeTimeList": [
-                        _period(
-                            "01:00",
-                            "05:00",
-                            limit=90,
-                            power=3000,
-                            weeks=[1, 2, 3, 4, 5],
-                        )
-                    ],
+                    "chargeTimeList": [],
                     "dischargeTimeList": [
                         _period(
                             "17:00",
@@ -660,11 +652,12 @@ class TestNewPeriodValidation:
                     ],
                 },
                 {
-                    "timeChaf2": "06:00",
-                    "timeChae2": "07:00",
-                    "chargePower2": 1200,
+                    "timeChaf1": "06:00",
+                    "timeChae1": "07:00",
+                    "chargePower1": 1200,
+                    "batHighCap": 90,
                 },
-                "Cannot add charge period 2 to a weekly schedule",
+                "no existing period to take its weekdays from",
             ),
             (
                 _daily_schedule(),
@@ -681,7 +674,7 @@ class TestNewPeriodValidation:
                 "explicit cutoff SOC",
             ),
         ],
-        ids=("incomplete-times", "weekly-new-slot", "missing-power", "missing-soc"),
+        ids=("incomplete-times", "weekly-no-sibling", "missing-power", "missing-soc"),
     )
     async def test_incomplete_new_period_blocks_every_write(
         self, make_coordinator, mock_api, periodic, changes, message

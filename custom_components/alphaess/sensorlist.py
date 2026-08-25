@@ -938,7 +938,11 @@ DISCHARGE_AND_CHARGE_NUMBERS: list[AlphaESSNumberDescription] = [
         native_unit_of_measurement=UnitOfPower.WATT,
         native_min_value=1,
         native_max_value=100000,
-        native_step=100,
+        # A step of 100 from a minimum of 1 only accepts 1, 101, 201 ... which
+        # is why a user asking for 14000 W ended up sending 14001 (#267). The
+        # API takes whole watts, and a 1 W period is a documented way to force
+        # grid-charge mode, so the minimum has to stay 1.
+        native_step=1,
     ),
     AlphaESSNumberDescription(
         key=AlphaESSNames.ChargePower2,
@@ -948,7 +952,11 @@ DISCHARGE_AND_CHARGE_NUMBERS: list[AlphaESSNumberDescription] = [
         native_unit_of_measurement=UnitOfPower.WATT,
         native_min_value=1,
         native_max_value=100000,
-        native_step=100,
+        # A step of 100 from a minimum of 1 only accepts 1, 101, 201 ... which
+        # is why a user asking for 14000 W ended up sending 14001 (#267). The
+        # API takes whole watts, and a 1 W period is a documented way to force
+        # grid-charge mode, so the minimum has to stay 1.
+        native_step=1,
     ),
     AlphaESSNumberDescription(
         key=AlphaESSNames.DischargePower1,
@@ -958,7 +966,11 @@ DISCHARGE_AND_CHARGE_NUMBERS: list[AlphaESSNumberDescription] = [
         native_unit_of_measurement=UnitOfPower.WATT,
         native_min_value=1,
         native_max_value=100000,
-        native_step=100,
+        # A step of 100 from a minimum of 1 only accepts 1, 101, 201 ... which
+        # is why a user asking for 14000 W ended up sending 14001 (#267). The
+        # API takes whole watts, and a 1 W period is a documented way to force
+        # grid-charge mode, so the minimum has to stay 1.
+        native_step=1,
     ),
     AlphaESSNumberDescription(
         key=AlphaESSNames.DischargePower2,
@@ -968,7 +980,11 @@ DISCHARGE_AND_CHARGE_NUMBERS: list[AlphaESSNumberDescription] = [
         native_unit_of_measurement=UnitOfPower.WATT,
         native_min_value=1,
         native_max_value=100000,
-        native_step=100,
+        # A step of 100 from a minimum of 1 only accepts 1, 101, 201 ... which
+        # is why a user asking for 14000 W ended up sending 14001 (#267). The
+        # API takes whole watts, and a 1 W period is a documented way to force
+        # grid-charge mode, so the minimum has to stay 1.
+        native_step=1,
     ),
 ]
 
