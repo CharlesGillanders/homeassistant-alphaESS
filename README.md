@@ -440,7 +440,14 @@ discarding the list shape.
 
 ### Currency and daily history sensors
 
-- Monetary sensors now use ISO 4217 currency codes when provided by the API, and fall back to Home Assistant's configured currency when not available.
+- Monetary sensors report an ISO 4217 currency code, which is what Home
+  Assistant's monetary device class accepts. AlphaESS answers `moneyType` with
+  either a code or the symbol and has changed which, so a symbol is resolved to
+  a code. Where a symbol names more than one currency (`$`, `¥`, `kr`) the
+  currency Home Assistant is configured for wins if it is one of them,
+  otherwise the most common is used. An unrecognised value falls back to the
+  configured currency rather than being guessed at. The `Currency Code`
+  diagnostic sensor reports the resolved code, not the raw value.
 - Diagnostic currency sensors are available for troubleshooting:
   - `Currency Code`
 - Daily history energy breakdown sensors are exposed:

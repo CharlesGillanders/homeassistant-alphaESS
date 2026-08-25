@@ -9,7 +9,7 @@ from custom_components.alphaess.const import (
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
-from custom_components.alphaess.sensor import _normalize_currency_unit
+from custom_components.alphaess.currency import normalize_currency_unit
 
 
 def _entry_with_subentries(subentries):
@@ -29,21 +29,38 @@ def _inverter_subentry(serial, ip="", model=""):
 
 class TestNormalizeCurrencyUnit:
     def test_none_falls_back(self):
-        assert _normalize_currency_unit(None, "EUR") == "EUR"
-        assert _normalize_currency_unit("", "EUR") == "EUR"
-        assert _normalize_currency_unit("  ", "EUR") == "EUR"
+        assert normalize_currency_unit(None, "EUR") == "EUR"
+        assert normalize_currency_unit("", "EUR") == "EUR"
+        assert normalize_currency_unit("  ", "EUR") == "EUR"
 
     def test_iso_code_passthrough(self):
-        assert _normalize_currency_unit("gbp", "EUR") == "GBP"
-        assert _normalize_currency_unit("USD", "EUR") == "USD"
+        assert normalize_currency_unit("gbp", "EUR") == "GBP"
+        assert normalize_currency_unit("USD", "EUR") == "USD"
 
     def test_symbol_mapping(self):
-        assert _normalize_currency_unit("€", "USD") == "EUR"
-        assert _normalize_currency_unit("£", "USD") == "GBP"
-        assert _normalize_currency_unit("$", "EUR") == "USD"
+        assert normalize_currency_unit("€", "USD") == "EUR"
+        assert normalize_currency_unit("£", "USD") == "GBP"
+        assert normalize_currency_unit("$", "EUR") == "USD"
 
     def test_unknown_symbol_falls_back(self):
-        assert _normalize_currency_unit("☃", "AUD") == "AUD"
+        assert normalize_currency_unit("☃", "AUD") == "AUD"
+
+    def test_an_ambiguous_symbol_prefers_the_configured_currency(self):
+        """AlphaESS sells into plenty of dollar and yen markets, and the symbol
+        alone cannot tell them apart. What Home Assistant is set to can."""
+        assert normalize_currency_unit("$", "AUD") == "AUD"
+        assert normalize_currency_unit("$", "nzd") == "NZD"
+        assert normalize_currency_unit("¥", "CNY") == "CNY"
+        assert normalize_currency_unit("kr", "NOK") == "NOK"
+
+    def test_an_ambiguous_symbol_falls_to_the_common_one(self):
+        assert normalize_currency_unit("$", "GBP") == "USD"
+        assert normalize_currency_unit("$", None) == "USD"
+        assert normalize_currency_unit("¥", "GBP") == "JPY"
+
+    def test_an_unambiguous_symbol_ignores_the_configured_currency(self):
+        assert normalize_currency_unit("€", "AUD") == "EUR"
+        assert normalize_currency_unit("A$", "USD") == "AUD"
 
 
 class TestBuildIpAddressMap:

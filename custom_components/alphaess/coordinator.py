@@ -31,6 +31,7 @@ from .const import (
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
+from .currency import normalize_currency_unit
 from .enums import AlphaESSNames
 
 _LOGGER = logging.getLogger(__name__)
@@ -277,7 +278,10 @@ class InverterDataParser:
             AlphaESSNames.TodayIncome: self.dp.safe_get(sum_data, "todayIncome"),
         }
 
-        resolved = currency or fallback_currency or "Unknown"
+        # moneyType is sometimes an ISO code and sometimes the symbol; the
+        # sensor named "Currency Code" should report a code either way, and so
+        # should the diagnostics download.
+        resolved = normalize_currency_unit(currency, fallback_currency) or "Unknown"
         data[AlphaESSNames.CurrencyCode] = resolved
         data["Currency"] = resolved
 
