@@ -44,6 +44,10 @@ MIN_API_CALL_INTERVAL_SECONDS = 10
 # up to five. Any 6053 drops the session back to the documented
 # MIN_API_CALL_INTERVAL_SECONDS and retries that one call once.
 FAST_API_CALL_INTERVAL_SECONDS = 1
+
+# Debug logging writes every API response out in full. getOneDayPowerBySn can
+# run to thousands of samples, so long ones are capped rather than dropped.
+MAX_LOGGED_RESPONSE_CHARS = 4000
 RATE_LIMIT_CODE = 6053
 MIN_FAST_SCAN_INTERVAL_SECONDS = MIN_API_CALL_INTERVAL_SECONDS
 MAX_FAST_SCAN_INTERVAL_SECONDS = 300

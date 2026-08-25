@@ -159,7 +159,10 @@ them:
 Do not mix them on one inverter. A service write replaces the remote schedule,
 so a draft staged before it fails its next Apply as a conflict.
 
-Default entity IDs are `<domain>.<serial in lower case>_<name>`:
+Default entity IDs are `<domain>.<serial in lower case>_<name>`. Installs that
+predate the serial-prefixed rename keep their original IDs, which carry the
+device name as well (`sensor.home_alpha_ess_energy_statistics_<serial>_...`) —
+check the entity list rather than assuming the short form:
 
 | Purpose | Entity |
 | --- | --- |
@@ -337,12 +340,59 @@ until a full periodic read succeeds. The integration never builds a
 replacement schedule from anything but a fresh read, because doing so could
 erase weekly settings, extra periods, or power values that it cannot see.
 
+### Reporting a schedule problem
+
+**Settings → Devices & Services → AlphaESS → ⋮ → Download diagnostics** answers
+most of what a report needs, without anyone having to sign API requests by hand.
+Alongside the usual entry and entity data, the `schedule` section carries, per
+inverter:
+
+- `governing_store` and `periodic_read` — which surface the system is on;
+- `capabilities` — the exact flags behind every unavailable control, so a locked
+  UI explains itself;
+- `enable_intent` / `enable_last_sent` — the write-only pair, which nothing else
+  can report;
+- `periodic_snapshot` and `legacy_snapshot` — what each store actually held,
+  including an empty period list or a stale window the app no longer shows;
+- `draft` — what is staged, which fields are dirty, and whether an Apply is in
+  flight;
+- cooldowns and consecutive poll errors.
+
+The `coordinator.api` section reports the current call spacing and whether the
+fast lane is still active, which is what to check when something else is sharing
+the same API account. Serials are replaced with `inverter_1`, `inverter_2` and so
+on, and credentials, keys and addresses are redacted.
+
+For anything the download cannot show — what happened, in what order — turn on
+debug logging:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.alphaess: debug
+    alphaess: debug
+```
+
+Every OpenAPI request and **its full response** is then written out, along with
+each staged field, each write and the enable pair sent with it, and a line
+whenever the schedule surface locks or unlocks and what decided it. That is the
+same information a hand-signed API request would give you, without signing one.
+Very large responses are capped rather than dropped. Requests carry no
+credentials — those live in the headers, which are not logged — but the log does
+contain your serial number, so trim it before posting if you would rather not
+share it.
+
 ### AlphaESS API limitations
 
 - The periodic API requires at least one complete charge period **and** one
-  complete discharge period. The integration never inserts a fake
-  `00:00-00:00` period. If either list would be empty, Apply fails rather than
-  replacing an app-managed schedule with incomplete data.
+  complete discharge period: an empty list answers `6001` and a missing one
+  `10001`. The integration never inserts a fake `00:00-00:00` period. If either
+  list would be empty, Apply fails rather than replacing an app-managed schedule
+  with incomplete data. AlphaESS itself will happily *store* an empty list, so a
+  system with no discharge periods cannot be written to from Home Assistant at
+  all until one exists — add a period to that side in the app, or give it one and
+  turn its switch off, which is how the API is told to run a single side.
 - Both a start and end time must be set before adding a new period. Existing
   weekly periods can be edited while retaining their weekdays, but the entity UI
   cannot add a new weekly period because it has no weekday selector.
