@@ -12,7 +12,7 @@ setbatterycharge:
     Apply. On periodic systems the Scheduled Charging and
     Scheduled Discharging switches must both have been set once before any
     call is accepted: AlphaESS never reports those two flags, and sending a
-    guess could switch the inverter to self-consumption.
+    guess would overwrite the user's schedule intent.
   fields:
     serial:
       name: Serial
@@ -109,7 +109,7 @@ setbatterydischarge:
     entities and Apply. On periodic systems the Scheduled Charging and
     Scheduled Discharging switches must both have been set once before any
     call is accepted: AlphaESS never reports those two flags, and sending a
-    guess could switch the inverter to self-consumption.
+    guess would overwrite the user's schedule intent.
   fields:
     serial:
       name: Serial

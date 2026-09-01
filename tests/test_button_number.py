@@ -700,11 +700,11 @@ class TestButtonPress:
 
         coordinator.cloud_available = False
         assert apply_button.available is False
-        assert discard_button.available is False
+        assert discard_button.available is True
         coordinator.cloud_available = True
         coordinator.last_update_success = False
         assert apply_button.available is False
-        assert discard_button.available is False
+        assert discard_button.available is True
 
     async def test_apply_button_delegates_and_propagates_failures(
         self, make_coordinator, mock_hass

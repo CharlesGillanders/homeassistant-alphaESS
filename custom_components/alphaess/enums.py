@@ -90,7 +90,7 @@ class AlphaESSNames(str, Enum):
     canstopcharging = "Can Stop Charging"
     GridChargeEnabled = "Grid Charge Enabled"
     DischargeTimeControlEnabled = "Discharge Time Control Enabled"
-    TimeBasedControl = "Time Based Control Active"
+    ScheduleFlagsEnabled = "Recorded Schedule Flags Enabled"
     TodayGeneration = "Today's Generation"
     TodayIncome = "Today's Income"
     DailyPvGeneration = "Daily PV Generation"

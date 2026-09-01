@@ -518,6 +518,8 @@ class TestDraftTransaction:
         coordinator._periodic_write_denied.add(SERIAL)
 
         assert coordinator.can_stage_schedule(SERIAL) is False
+        assert coordinator.recorded_schedule_flags_enabled(SERIAL) is True
+        assert coordinator.schedule_diagnostics(SERIAL)["governing_store"] == "periodic"
         with pytest.raises(ScheduleWriteError, match="Schedule control requires"):
             coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
 
@@ -796,9 +798,8 @@ class TestRefresh:
 
 class TestWriteOnlyEnableFlags:
     """gridChargeCycle/ctrDisCycle are write-only. getTimeChargeBySn answers 0
-    for both whatever the inverter is doing, and setTimeChargeBySn acts on
-    them — 0/0 switches the inverter to self-consumption. Echoing the read back
-    therefore turns timed control off on every write (#267)."""
+    for both whatever the inverter is doing, and setTimeChargeBySn accepts the
+    requested pair. Echoing the read would overwrite user intent (#267)."""
 
     def test_the_read_never_becomes_part_of_the_snapshot(self, make_coordinator):
         coordinator = make_coordinator()
@@ -897,7 +898,7 @@ class TestWriteOnlyEnableFlags:
         coordinator._periodic_enable_intent[SERIAL] = {"ctrDisCycle": 1}
         coordinator._overlay_schedule_view(SERIAL, coordinator.data[SERIAL])
 
-        assert coordinator._committed_enable_flags(SERIAL) is None
+        assert coordinator._recorded_enable_flags(SERIAL) is None
 
         coordinator.stage_schedule_change(SERIAL, charge={"timeChaf1": "02:00"})
         coordinator.stage_schedule_change(SERIAL, charge={"gridCharge": 1})
@@ -961,8 +962,9 @@ class TestTheRemedyActuallyWorks:
         coordinator._periodic_enable_sent.pop(SERIAL, None)
         return coordinator
 
-    async def test_moving_both_switches_unblocks_the_duration_buttons(
-        self, make_coordinator, mock_api
+    @pytest.mark.parametrize("first", ["charge", "discharge"])
+    async def test_applying_both_switches_establishes_the_write_only_pair(
+        self, make_coordinator, mock_api, first
     ):
         coordinator = self._unanswered(
             _seed(make_coordinator(), periodic=self._weekly(), readable=True)
@@ -972,26 +974,35 @@ class TestTheRemedyActuallyWorks:
         with pytest.raises(ScheduleWriteError, match="does not know whether"):
             await coordinator.update_charge("batHighCap", SERIAL, 15)
 
-        # Doing what the error asks has to be enough.
-        coordinator.stage_schedule_change(SERIAL, charge={"gridCharge": 1})
-        coordinator.stage_schedule_change(SERIAL, discharge={"ctrDis": 0})
+        # Doing what the error asks has to be enough, in either order. The
+        # answers remain draft values until AlphaESS accepts a write.
+        changes = {
+            "charge": {"gridCharge": 1},
+            "discharge": {"ctrDis": 0},
+        }
+        second = "discharge" if first == "charge" else "charge"
+        coordinator.stage_schedule_change(SERIAL, **{first: changes[first]})
+        coordinator.stage_schedule_change(SERIAL, **{second: changes[second]})
+        assert SERIAL not in coordinator._periodic_enable_intent
+        assert coordinator.recorded_schedule_flags_enabled(SERIAL) is None
+
+        await coordinator.async_apply_schedule_draft(SERIAL)
+
+        assert _periodic_payload(mock_api)["gridChargeCycle"] == 1
         assert coordinator._periodic_enable_intent[SERIAL] == {
             "gridChargeCycle": 1, "ctrDisCycle": 0,
         }
+        assert not coordinator.has_schedule_draft(SERIAL)
 
-        await coordinator.update_charge("batHighCap", SERIAL, 15)
-        assert _periodic_payload(mock_api)["gridChargeCycle"] == 1
-
-    def test_a_staged_switch_is_unstaged_by_discard(self, make_coordinator):
-        """Recording the answer as it is staged must not survive a Discard, or
-        Discard would leave one edit behind."""
+    def test_a_staged_switch_does_not_change_committed_intent(self, make_coordinator):
+        """A draft must not change the state attributed to the inverter."""
         coordinator = _seed(
             make_coordinator(), periodic=self._weekly(), readable=True,
         )
         coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
 
         coordinator.stage_schedule_change(SERIAL, discharge={"ctrDis": 0})
-        assert coordinator._periodic_enable_intent[SERIAL]["ctrDisCycle"] == 0
+        assert coordinator._periodic_enable_intent[SERIAL]["ctrDisCycle"] == 1
 
         coordinator.discard_schedule_draft(SERIAL)
 
@@ -1008,6 +1019,103 @@ class TestTheRemedyActuallyWorks:
         coordinator.discard_schedule_draft(SERIAL)
 
         assert SERIAL not in coordinator._periodic_enable_intent
+
+    async def test_quick_write_does_not_consume_a_staged_switch(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = _seed(
+            make_coordinator(), periodic=self._weekly(), readable=True,
+        )
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(self._weekly())
+        coordinator.stage_schedule_change(SERIAL, discharge={"ctrDis": 0})
+
+        await coordinator.update_charge("batHighCap", SERIAL, 15)
+        quick_payload = mock_api.setTimeChargeBySn.await_args_list[0].kwargs
+        assert quick_payload["gridChargeCycle"] == 1
+        assert quick_payload["ctrDisCycle"] == 1
+        assert coordinator._periodic_enable_intent[SERIAL] == {
+            "gridChargeCycle": 1, "ctrDisCycle": 1,
+        }
+        assert coordinator._schedule_draft_dirty[SERIAL] == {
+            "charge": set(), "discharge": {"ctrDis"},
+        }
+
+        committed = deepcopy(coordinator._periodic_schedules[SERIAL])
+        mock_api.getTimeChargeBySn.return_value = committed
+
+        await coordinator.async_apply_schedule_draft(SERIAL)
+
+        assert coordinator.has_schedule_draft(SERIAL) is False
+        apply_payload = mock_api.setTimeChargeBySn.await_args_list[1].kwargs
+        assert apply_payload["gridChargeCycle"] == 1
+        assert apply_payload["ctrDisCycle"] == 0
+        assert mock_api.setTimeChargeBySn.await_count == 2
+
+    async def test_quick_write_rebases_non_dirty_draft_fields(
+        self, make_coordinator, mock_api
+    ):
+        """A quick button's committed times must show through an open draft."""
+        coordinator = _seed(
+            make_coordinator(), periodic=self._weekly(), readable=True,
+        )
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(self._weekly())
+        coordinator.stage_schedule_change(SERIAL, discharge={"ctrDis": 0})
+
+        await coordinator.update_charge("batHighCap", SERIAL, 15)
+
+        committed = coordinator._state_from_periodic(
+            SERIAL, coordinator._periodic_schedules[SERIAL]
+        )
+        draft = coordinator._schedule_drafts[SERIAL]
+        assert draft["charge"]["timeChaf1"] == committed["charge"]["timeChaf1"]
+        assert draft["charge"]["timeChae1"] == committed["charge"]["timeChae1"]
+        assert coordinator.data[SERIAL]["charge_timeChaf1"] == (
+            committed["charge"]["timeChaf1"]
+        )
+        assert coordinator.data[SERIAL]["charge_timeChae1"] == (
+            committed["charge"]["timeChae1"]
+        )
+        assert draft["discharge"]["ctrDis"] == 0
+        assert coordinator._schedule_draft_dirty[SERIAL] == {
+            "charge": set(),
+            "discharge": {"ctrDis"},
+        }
+
+    async def test_quick_write_then_discard_keeps_the_committed_flags(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = _seed(
+            make_coordinator(), periodic=self._weekly(), readable=True,
+        )
+        coordinator.set_periodic_enable_intent(SERIAL, grid_charge=1, ctr_dis=1)
+        mock_api.getTimeChargeBySn.return_value = deepcopy(self._weekly())
+        coordinator.stage_schedule_change(SERIAL, discharge={"ctrDis": 0})
+
+        await coordinator.update_charge("batHighCap", SERIAL, 15)
+        coordinator.discard_schedule_draft(SERIAL)
+
+        assert coordinator._periodic_enable_intent[SERIAL] == {
+            "gridChargeCycle": 1, "ctrDisCycle": 1,
+        }
+        assert coordinator.recorded_schedule_flags_enabled(SERIAL) is True
+
+    async def test_quick_write_refuses_to_borrow_an_unknown_draft_pair(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._unanswered(
+            _seed(make_coordinator(), periodic=self._weekly(), readable=True)
+        )
+        mock_api.getTimeChargeBySn.return_value = deepcopy(self._weekly())
+        coordinator.stage_schedule_change(SERIAL, charge={"gridCharge": 1})
+        coordinator.stage_schedule_change(SERIAL, discharge={"ctrDis": 0})
+
+        with pytest.raises(ScheduleWriteError, match="does not know whether"):
+            await coordinator.update_charge("batHighCap", SERIAL, 15)
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+        assert coordinator.has_schedule_draft(SERIAL)
 
     async def test_a_new_period_inherits_the_weekdays_of_its_siblings(
         self, make_coordinator, mock_api

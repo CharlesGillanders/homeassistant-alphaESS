@@ -1066,15 +1066,13 @@ EV_DISCHARGE_AND_CHARGE_BUTTONS: list[AlphaESSButtonDescription] = [
 
 INVERTER_BINARY_SENSORS: list[AlphaESSBinarySensorDescription] = [
     AlphaESSBinarySensorDescription(
-        key=AlphaESSNames.TimeBasedControl,
-        name="Time Based Control Active",
+        key=AlphaESSNames.ScheduleFlagsEnabled,
+        name="Recorded Schedule Flags Enabled",
         icon="mdi:calendar-clock",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-    # On if either charge or discharge time control is enabled in whichever
-    # schedule store governs the system. Off means the inverter runs a
-    # non-timed mode such as Self Consumption Plus, which live probing
-    # showed flips both enable flags to 0 while keeping the windows stored.
+    # On if either charge or discharge flag in Home Assistant's last recorded
+    # pair is enabled. These flags are write intent, not an inverter-mode read.
 ]
 
 EV_CHARGER_BINARY_SENSORS: list[AlphaESSBinarySensorDescription] = [

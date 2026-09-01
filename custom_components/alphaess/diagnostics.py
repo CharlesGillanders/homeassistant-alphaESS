@@ -32,17 +32,24 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     coordinator: AlphaESSDataUpdateCoordinator = entry.runtime_data
+    # Normal polling replaces one inverter at a time before publishing the
+    # completed cycle. Use the coordinator's last complete snapshot so a
+    # multi-inverter download cannot mix two poll ticks.
+    data_snapshot = coordinator.diagnostics_data_snapshot()
+    schedule_snapshot = coordinator.diagnostics_schedule_snapshot()
 
     # Anonymise inverter serial numbers in the top-level keys
     inverters = {
         f"inverter_{idx + 1}": async_redact_data(values, TO_REDACT_DATA)
-        for idx, values in enumerate((coordinator.data or {}).values())
+        for idx, values in enumerate(data_snapshot.values())
     }
 
     # Keyed the same way so it lines up with the anonymised data above
     periodic_schedule_read = {
-        f"inverter_{idx + 1}": coordinator.get_periodic_read_state(serial)
-        for idx, serial in enumerate(coordinator.data or {})
+        f"inverter_{idx + 1}": (
+            schedule_snapshot.get(serial, {}).get("periodic_read", "unknown")
+        )
+        for idx, serial in enumerate(data_snapshot)
     }
 
     # The state behind the schedule surface: which store governs, why the
@@ -50,8 +57,15 @@ async def async_get_config_entry_diagnostics(
     # None of it identifies anyone, and it is what a report needs to be
     # answerable without a round trip.
     schedule = {
+        f"inverter_{idx + 1}": schedule_snapshot.get(serial, {})
+        for idx, serial in enumerate(data_snapshot)
+    }
+    # Drafts and in-flight Apply state can change between polls. Keep that
+    # useful transaction view separate instead of pretending it belongs to the
+    # atomic completed-poll snapshot above.
+    schedule_live = {
         f"inverter_{idx + 1}": coordinator.schedule_diagnostics(serial)
-        for idx, serial in enumerate(coordinator.data or {})
+        for idx, serial in enumerate(data_snapshot)
     }
 
     return {
@@ -71,8 +85,9 @@ async def async_get_config_entry_diagnostics(
             "model_list": coordinator.model_list,
             "has_throttle": coordinator.has_throttle,
             "periodic_schedule_read": periodic_schedule_read,
-            "api": coordinator.api_diagnostics(),
+            "api": coordinator.diagnostics_api_snapshot(),
         },
         "schedule": schedule,
+        "schedule_live": schedule_live,
         "data": inverters,
     }

@@ -255,8 +255,6 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
             return (
                 self._coordinator.cloud_available
                 and self._coordinator.is_periodic_schedule_readable(self._serial)
-                and self._coordinator.is_time_based_control_active(self._serial)
-                is not False
             )
         return (
             self._coordinator.cloud_available

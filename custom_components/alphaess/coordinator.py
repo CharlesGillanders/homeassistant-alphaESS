@@ -38,8 +38,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # --- Periodic (setTimeChargeBySn) schedule -----------------------------------
 # executeCycleType 0 = daily, 1 = weekly. Existing values are preserved. The
-# two-slot HA surface may add periods only to a daily schedule because it has no
-# weekday selector with which to define a new weekly period safely.
+# two-slot HA surface has no weekday selector. A new weekly period can therefore
+# only inherit the explicit weekdays of an existing period on the same side.
 PERIODIC_DAILY = 0
 
 # chargeLimit is documented as [10, 100]; anything outside returns 6001.
@@ -61,21 +61,6 @@ PERIODIC_NOT_ENTITLED = 6017
 # "Set failed". Overlap is one possible cause documented by the upstream
 # project, but the return code itself is generic.
 PERIODIC_OVERLAP = 6008
-
-
-def _is_enable_only(
-    flag: int | None,
-    limit: float | None,
-    times: dict[str, str] | None,
-    powers: dict[str, float] | None,
-) -> bool:
-    """Return whether a write does nothing but switch a timer on.
-
-    The one change permitted while no timed control is reported: it cannot
-    move a window, a cutoff or a power, so it is safe to send against a store
-    whose working mode cannot be read.
-    """
-    return flag == 1 and not limit and not times and not powers
 
 
 class ScheduleWriteError(HomeAssistantError):
@@ -448,6 +433,13 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         self.api = client
         self.hass = hass
         self.data: dict[str, dict[str, Any]] = {}
+        # A completed coordinator cycle is published atomically, but normal
+        # polling assembles the next cycle in ``self.data`` one inverter at a
+        # time. Diagnostics must use the last complete cycle rather than
+        # observing that in-progress mutation.
+        self._diagnostics_data_snapshot: dict[str, dict[str, Any]] | None = None
+        self._diagnostics_api_snapshot: dict[str, Any] | None = None
+        self._diagnostics_schedule_snapshot: dict[str, dict[str, Any]] | None = None
         self._prefetched_ess_list: list[dict[str, Any]] | None = None
         self.entry = entry
 
@@ -517,18 +509,14 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
 
         # gridChargeCycle/ctrDisCycle are write-only. getTimeChargeBySn answers
         # 0 for both whatever the inverter is doing, while setTimeChargeBySn
-        # acts on them: 0/0 switches the inverter to self-consumption (probed
-        # on #267). So the read cannot be echoed back, and the only record of
-        # what was asked for is the one kept here — fed by the two switches and
-        # confirmed by each successful write.
+        # accepts the explicit pair. The read cannot be echoed back, and the
+        # only record of what Home Assistant asked for is the one kept here,
+        # fed by the two switches and confirmed by each successful write.
         self._periodic_enable_intent: dict[str, dict[str, int]] = {}
         self._periodic_enable_sent: dict[str, dict[str, int]] = {}
-        # What the record held when the open draft was started, so Discard can
-        # put a staged switch back the way it puts everything else back.
-        self._schedule_draft_base_intent: dict[str, dict[str, int] | None] = {}
 
-        # Last logged schedule surface state per serial, so a lock or unlock is
-        # reported once with its reason rather than on every poll.
+        # Last logged schedule capability state per serial, so changes are
+        # reported once with their reason rather than on every poll.
         self._schedule_state_logged: dict[str, tuple] = {}
 
         # Entity changes are drafts. A user can edit start/end/limits/switches
@@ -573,9 +561,8 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         """Return the current spacing between OpenAPI calls.
 
         At the documented 10-second spacing a two-inverter full poll takes
-        minutes, which blocks HA startup and delays app-side changes (such
-        as a work-mode switch flipping Time Based Control) by up to five
-        minutes. The new server was live-probed accepting reads at
+        minutes, which blocks HA startup and delays app-side schedule changes
+        by up to five minutes. The new server was live-probed accepting reads at
         sub-second spacing without 6053, so everything runs at the fast pace
         and any 6053 drops the session straight back to the documented
         interval (with that one call retried once).
@@ -754,7 +741,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 self._schedule_draft_base_legacy,
                 self._schedule_draft_revisions,
                 self._schedule_write_revisions,
-                self._schedule_draft_base_intent,
                 self._periodic_enable_intent,
                 self._periodic_enable_sent,
                 self.number_settings,
@@ -875,12 +861,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         lists — so on periodic-governed systems this action raises and the
         Reset button reports unavailable instead.
         """
-        if self.is_time_based_control_active(serial) is False:
-            raise ScheduleWriteError(
-                "Time-based control is disabled: the inverter is in a "
-                "self-consumption working mode, which a reset cannot change; "
-                "switch the working mode in the AlphaESS app first"
-            )
         await self._safe_async_apply_schedule(
             serial,
             clear_all=True,
@@ -909,13 +889,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         on the periodic store deleted an app-configured second period — the
         same class of app-state stomp as issue #269.
         """
-        if self.is_time_based_control_active(serial) is False:
-            raise ScheduleWriteError(
-                "Time-based control is disabled: the inverter is in a "
-                "self-consumption working mode, which the quick discharge "
-                "button cannot change; switch the working mode in the "
-                "AlphaESS app first"
-            )
         start_time, end_time = self.time_helper.calculate_time_window(time_period)
 
         await self._safe_async_apply_schedule(
@@ -941,13 +914,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
 
         Only slot 1 is written; see update_discharge.
         """
-        if self.is_time_based_control_active(serial) is False:
-            raise ScheduleWriteError(
-                "Time-based control is disabled: the inverter is in a "
-                "self-consumption working mode, which the quick charge "
-                "button cannot change; switch the working mode in the "
-                "AlphaESS app first"
-            )
         start_time, end_time = self.time_helper.calculate_time_window(time_period)
 
         await self._safe_async_apply_schedule(
@@ -1119,9 +1085,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             raise ScheduleWriteError("The periodic schedule omitted a valid executeCycleType")
 
         # gridChargeCycle/ctrDisCycle are deliberately dropped: the endpoint
-        # answers 0 for both regardless of the inverter's actual mode, so
-        # keeping them would mean echoing 0/0 back on the next write and
-        # switching the inverter to self-consumption. See _resolve_periodic_enable.
+        # can answer 0 for both regardless of the inverter's actual mode.
+        # Echoing them would overwrite write-only intent with an untrustworthy
+        # read. See _resolve_periodic_enable.
         result: dict[str, Any] = {
             "executeCycleType": int(payload["executeCycleType"]),
         }
@@ -1196,16 +1162,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             state["discharge"][f"chargePower{index}"] = period.get("chargePower")
         return state
 
-    def _schedule_entity_state(self, serial: str) -> dict[str, dict[str, Any]]:
-        """Return the current entity view: an open draft, the periodic
-        snapshot (primary), or the legacy snapshot (backup mode)."""
-        if serial in self._schedule_drafts:
-            return deepcopy(self._schedule_drafts[serial])
-        if (
-            serial in self._periodic_schedules
-            and self._periodic_readable.get(serial) is True
-            and serial not in self._periodic_write_denied
-        ):
+    def _committed_schedule_entity_state(
+        self, serial: str
+    ) -> dict[str, dict[str, Any]]:
+        """Return the latest committed periodic or legacy schedule view."""
+        if self._has_periodic_schedule_snapshot(serial):
             self._periodic_overlaid_serials.add(serial)
             return self._state_from_periodic(serial, self._periodic_schedules[serial])
         if self.is_legacy_backup_active(serial):
@@ -1232,6 +1193,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             f"Cannot edit the schedule for {serial}: no schedule store is "
             "usable yet for this system"
         )
+
+    def _schedule_entity_state(self, serial: str) -> dict[str, dict[str, Any]]:
+        """Return an open draft or the latest committed schedule view."""
+        if serial in self._schedule_drafts:
+            return deepcopy(self._schedule_drafts[serial])
+        return self._committed_schedule_entity_state(serial)
 
     @staticmethod
     def _put_schedule_state(data: dict[str, Any], state: dict[str, dict[str, Any]]) -> None:
@@ -1269,11 +1236,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         data[AlphaESSNames.ChargeRange] = (
             f"{discharge['batUseCap']}% - {charge['batHighCap']}%"
         )
-        # Whether any time-based control is enabled in the governing store.
-        # A non-timed mode such as Self Consumption Plus flips both enable
-        # flags to 0 while keeping the configured windows stored.
+        # Whether either recorded schedule flag is enabled. This deliberately
+        # says nothing about the inverter's working mode: OpenAPI exposes no
+        # authoritative working-mode endpoint.
         grid_flag, dis_flag = charge["gridCharge"], discharge["ctrDis"]
-        data[AlphaESSNames.TimeBasedControl] = (
+        data[AlphaESSNames.ScheduleFlagsEnabled] = (
             None
             if grid_flag is None and dis_flag is None
             else int(grid_flag or 0) == 1 or int(dis_flag or 0) == 1
@@ -1286,39 +1253,38 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         except ScheduleWriteError:
             return
         self._put_schedule_state(data, state)
-        # The mode indicator must reflect the committed store, not a draft:
-        # a staged enable flag cannot change the working mode.
-        committed = self._committed_enable_flags(serial)
-        if committed is not None:
-            data[AlphaESSNames.TimeBasedControl] = (
-                committed[0] == 1 or committed[1] == 1
-            )
+        # This diagnostic reflects recorded remote intent, not an open draft
+        # and not the inverter's working mode.
+        committed = self._recorded_enable_flags(serial)
+        data[AlphaESSNames.ScheduleFlagsEnabled] = (
+            None
+            if committed is None
+            else committed[0] == 1 or committed[1] == 1
+        )
 
     def _note_schedule_surface(self, serial: str) -> None:
-        """Log a lock or unlock once, with what decided it.
+        """Log schedule-surface capability changes once.
 
         A user reports "the controls went away"; this is the line that says
         when, and on the strength of what.
         """
         state = (
             self.get_periodic_read_state(serial),
-            self.is_time_based_control_active(serial),
             self.can_modify_time_controls(serial),
         )
         if self._schedule_state_logged.get(serial) == state:
             return
         first_time = serial not in self._schedule_state_logged
         self._schedule_state_logged[serial] = state
-        read_state, active, modifiable = state
+        read_state, modifiable = state
         message = (
-            "Schedule surface for %s is %s: periodic read %s, timed control %s, "
-            "recorded enable flags %s"
+            "Schedule surface for %s is %s: periodic read %s, recorded enable "
+            "flags %s (working mode unavailable through OpenAPI)"
         )
         args = (
             serial,
             "editable" if modifiable else "locked",
             read_state,
-            {True: "active", False: "inactive", None: "unknown"}[active],
             self._periodic_enable_intent.get(serial) or "none recorded",
         )
         if first_time:
@@ -1372,55 +1338,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 "which AlphaESS has not enabled for this system; the legacy "
                 "backup endpoints have no power field"
             )
-        active = self.is_time_based_control_active(serial)
-        if active is False:
-            # Either a self-consumption working mode is running or both
-            # timers are simply switched off, and the OpenAPI cannot tell
-            # those apart. Nothing may be staged for a store in that state;
-            # switching a timer back on is an immediate action instead, since
-            # Apply is unavailable here too.
-            raise ScheduleWriteError(
-                "Time-based control is disabled: the inverter reports no timed "
-                "control, either because a self-consumption working mode is "
-                "running or because both timers are switched off. Turn "
-                "Scheduled Charging or Scheduled Discharging on to re-enable a "
-                "timer; a working mode can only be changed in the AlphaESS app"
-            )
-        flags = self._committed_enable_flags(serial)
-        if active is True and flags is not None:
-            # Refuse to author the 0/0 flag state: on the legacy store it is
-            # indistinguishable from a self-consumption mode afterwards, and
-            # on the periodic store it is the request that switches the
-            # inverter into one. Only guard when both committed flags are
-            # actually known - guessing at the other side would be inventing
-            # the very answer this store cannot supply.
-            grid_flag, dis_flag = flags
-            draft = self._schedule_drafts.get(serial)
-            if draft is not None:
-                # A staged half can be None (nothing recorded for that side
-                # yet), which is not a value to fall back from.
-                staged_grid = draft["charge"].get("gridCharge")
-                staged_dis = draft["discharge"].get("ctrDis")
-                if staged_grid is not None:
-                    grid_flag = int(staged_grid)
-                if staged_dis is not None:
-                    dis_flag = int(staged_dis)
-            if charge and "gridCharge" in charge:
-                grid_flag = int(charge["gridCharge"])
-            if discharge and "ctrDis" in discharge:
-                dis_flag = int(discharge["ctrDis"])
-            if grid_flag == 0 and dis_flag == 0:
-                raise ScheduleWriteError(
-                    "Turning off the last enabled timer would look identical "
-                    "to a self-consumption mode and lock every control; "
-                    "disable it from the AlphaESS app instead"
-                )
         if serial not in self._schedule_drafts:
             self._schedule_drafts[serial] = self._schedule_entity_state(serial)
             self._schedule_draft_dirty[serial] = {"charge": set(), "discharge": set()}
-            self._schedule_draft_base_intent[serial] = deepcopy(
-                self._periodic_enable_intent.get(serial)
-            )
             if readable is True:
                 self._schedule_draft_base_periodic[serial] = deepcopy(
                     self._periodic_schedules[serial]
@@ -1429,15 +1349,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 self._schedule_draft_base_legacy[serial] = deepcopy(
                     self._legacy_schedules[serial]
                 )
-
-        # Moving a switch answers the question the periodic API cannot: record
-        # it as soon as it is staged. Waiting for a successful write left the
-        # only documented remedy - "set the switches" - unable to do anything,
-        # because staging never reached the record the write consults (#267).
-        if charge and charge.get("gridCharge") is not None:
-            self.set_periodic_enable_intent(serial, grid_charge=charge["gridCharge"])
-        if discharge and discharge.get("ctrDis") is not None:
-            self.set_periodic_enable_intent(serial, ctr_dis=discharge["ctrDis"])
 
         for side, changes in (("charge", charge), ("discharge", discharge)):
             if changes:
@@ -1456,6 +1367,39 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         """Return whether this inverter has unapplied schedule changes."""
         return serial in self._schedule_drafts
 
+    def _rebase_open_schedule_draft(self, serial: str) -> None:
+        """Rebase an open draft onto the latest committed schedule.
+
+        Quick buttons and immediate services can write while entity edits are
+        still staged. Preserve fields the user actually changed, refresh every
+        other field from the transaction that just succeeded, and make the
+        next Apply compare against that latest committed store.
+        """
+        draft = self._schedule_drafts.get(serial)
+        if draft is None:
+            return
+        dirty = self._schedule_draft_dirty.get(serial) or {}
+        committed = self._committed_schedule_entity_state(serial)
+        for side in ("charge", "discharge"):
+            dirty_fields = dirty.get(side, set())
+            for field, value in committed[side].items():
+                if field not in dirty_fields:
+                    draft[side][field] = deepcopy(value)
+        if serial in self._periodic_schedules:
+            self._schedule_draft_base_periodic[serial] = deepcopy(
+                self._periodic_schedules[serial]
+            )
+        else:
+            self._schedule_draft_base_periodic.pop(serial, None)
+        if serial in self._legacy_schedules:
+            self._schedule_draft_base_legacy[serial] = deepcopy(
+                self._legacy_schedules[serial]
+            )
+        else:
+            self._schedule_draft_base_legacy.pop(serial, None)
+        if serial in self.data:
+            self._overlay_schedule_view(serial, self.data[serial])
+
     def is_schedule_field_staged(self, serial: str, coordinator_key: str) -> bool:
         """Return whether this schedule field was explicitly staged in the draft.
 
@@ -1471,12 +1415,18 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         """Return whether this inverter has a remote Apply transaction in flight."""
         return serial in self._schedule_apply_in_progress
 
+    def _has_periodic_schedule_snapshot(self, serial: str) -> bool:
+        """Return whether a complete periodic schedule has been read."""
+        return (
+            self._periodic_readable.get(serial) is True
+            and serial in self._periodic_schedules
+        )
+
     def is_periodic_schedule_readable(self, serial: str) -> bool:
         """Return whether per-period fields can be read and written safely."""
         return (
-            self._periodic_readable.get(serial) is True
+            self._has_periodic_schedule_snapshot(serial)
             and serial not in self._periodic_write_denied
-            and serial in self._periodic_schedules
         )
 
     def can_stage_schedule(self, serial: str) -> bool:
@@ -1530,16 +1480,18 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         truthful to send and the caller must refuse rather than guess.
         """
         stored = self._periodic_enable_intent.get(serial) or {}
+        # Only fields owned by this transaction may override the committed
+        # pair. In particular, quick buttons and immediate services must not
+        # consume unrelated values waiting in an open Apply/Discard draft.
         grid = (charge or {}).get("gridCharge", stored.get("gridChargeCycle"))
         dis = (discharge or {}).get("ctrDis", stored.get("ctrDisCycle"))
         if grid is None or dis is None:
             return None
         return {"gridChargeCycle": int(grid), "ctrDisCycle": int(dis)}
 
-    def _committed_enable_flags(self, serial: str) -> tuple[int, int] | None:
-        """Return the committed (gridCharge, ctrDis) flags of the governing
-        store, or None while no store snapshot is available."""
-        if self.is_periodic_schedule_readable(serial):
+    def _recorded_enable_flags(self, serial: str) -> tuple[int, int] | None:
+        """Return the recorded flags, without inferring inverter mode."""
+        if self._has_periodic_schedule_snapshot(serial):
             intent = self._periodic_enable_intent.get(serial) or {}
             grid, dis = intent.get("gridChargeCycle"), intent.get("ctrDisCycle")
             if grid is None or dis is None:
@@ -1554,44 +1506,31 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 )
         return None
 
-    def is_time_based_control_active(self, serial: str) -> bool | None:
-        """Return whether the inverter's timed working mode is active.
+    def recorded_schedule_flags_enabled(self, serial: str) -> bool | None:
+        """Return whether either recorded flag is on, not working mode."""
+        flags = self._recorded_enable_flags(serial)
+        return None if flags is None else flags[0] == 1 or flags[1] == 1
 
-        Based on the COMMITTED store state, not the draft view: field
-        testing showed the working mode is app-authority only — writing an
-        enable flag does not leave a self-consumption mode — so a staged
-        flag must never count as active. False means a mode such as Self
-        Consumption (Plus) is running and every schedule control locks;
-        polling unlocks them automatically when the app-side mode changes.
-        """
-        flags = self._committed_enable_flags(serial)
-        if flags is not None:
-            return flags[0] == 1 or flags[1] == 1
-        value = self.data.get(serial, {}).get(AlphaESSNames.TimeBasedControl)
-        return None if value is None else bool(value)
+    def recorded_schedule_flag(self, serial: str, key: str) -> int | None:
+        """Return one recorded enable flag for persisted entity attributes."""
+        if self._has_periodic_schedule_snapshot(serial):
+            intent_key = {
+                "gridCharge": "gridChargeCycle",
+                "ctrDis": "ctrDisCycle",
+            }.get(key)
+            value = (self._periodic_enable_intent.get(serial) or {}).get(intent_key)
+            return None if value is None else int(value)
+        if self.is_legacy_backup_active(serial):
+            side = {"gridCharge": "charge", "ctrDis": "discharge"}.get(key)
+            value = (self._legacy_schedules.get(serial, {}).get(side or "") or {}).get(
+                key
+            )
+            return None if value is None else int(value)
+        return None
 
     def can_modify_time_controls(self, serial: str) -> bool:
         """Return whether the timed-schedule editing surfaces should be live."""
-        return (
-            self.can_stage_schedule(serial)
-            and self.is_time_based_control_active(serial) is not False
-        )
-
-    def can_unlock_time_controls(self, serial: str) -> bool:
-        """Return whether a timer can still be switched back on from here.
-
-        Both enable flags reading 0 means either a self-consumption working
-        mode or simply that both timers are off, and the OpenAPI cannot tell
-        those apart. Locking everything on that reading left the second case
-        with no way out: the switches that would turn a timer back on were
-        part of what locked. Raising a flag is the one write that is safe
-        either way - a self-consumption inverter ignores it and the next poll
-        locks again - so it stays available while everything else does not.
-        """
-        return (
-            self.can_stage_schedule(serial)
-            and self.is_time_based_control_active(serial) is False
-        )
+        return self.can_stage_schedule(serial)
 
     def can_reset_schedule(self, serial: str) -> bool:
         """Return whether Reset Charge/Discharge can possibly succeed.
@@ -1615,13 +1554,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         self._schedule_draft_dirty.pop(serial, None)
         self._schedule_draft_base_periodic.pop(serial, None)
         self._schedule_draft_base_legacy.pop(serial, None)
-        # A staged switch records its answer as it is staged, so discarding the
-        # draft has to unrecord it or Discard would leave one edit behind.
-        base_intent = self._schedule_draft_base_intent.pop(serial, None)
-        if base_intent is None:
-            self._periodic_enable_intent.pop(serial, None)
-        else:
-            self._periodic_enable_intent[serial] = base_intent
         self._publish_schedule_view(serial)
 
     async def async_apply_schedule_draft(self, serial: str) -> None:
@@ -1630,16 +1562,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         dirty = self._schedule_draft_dirty.get(serial)
         if draft is None or dirty is None:
             raise ScheduleWriteError(f"There are no pending schedule changes for {serial}")
-        if self.is_time_based_control_active(serial) is False:
-            # The working mode changed to self-consumption after this draft
-            # was opened; applying it would write to a store the inverter
-            # is not following.
-            raise ScheduleWriteError(
-                "Time-based control is disabled: the inverter is in a "
-                "self-consumption working mode, which can only be changed in "
-                "the AlphaESS app. The pending draft stays available until a "
-                "time-based mode is active again"
-            )
         revision = self._schedule_draft_revisions.get(serial, 0)
         if serial in self._schedule_apply_in_progress:
             raise ScheduleWriteError(f"A schedule Apply is already in progress for {serial}")
@@ -1674,20 +1596,31 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             # Another edit (or Discard followed by a new edit) happened while
             # the API calls were awaiting responses. Keep that newer intent;
             # the next Apply starts from the state this transaction committed.
-            if serial in self._schedule_drafts:
-                if serial in self._periodic_schedules:
-                    self._schedule_draft_base_periodic[serial] = deepcopy(
-                        self._periodic_schedules[serial]
-                    )
-                else:
+            current_draft = self._schedule_drafts.get(serial)
+            if current_draft is draft:
+                # Remove fields this transaction committed unless their value
+                # changed again while the request awaited AlphaESS.
+                current_dirty = self._schedule_draft_dirty.get(serial) or {}
+                for side, applied in (
+                    ("charge", charge),
+                    ("discharge", discharge),
+                ):
+                    for field, value in (applied or {}).items():
+                        if current_draft[side].get(field) == value:
+                            current_dirty.get(side, set()).discard(field)
+                if not any(
+                    current_dirty.get(side) for side in ("charge", "discharge")
+                ):
+                    self._schedule_drafts.pop(serial, None)
+                    self._schedule_draft_dirty.pop(serial, None)
                     self._schedule_draft_base_periodic.pop(serial, None)
-                if serial in self._legacy_schedules:
-                    self._schedule_draft_base_legacy[serial] = deepcopy(
-                        self._legacy_schedules[serial]
-                    )
+                    self._schedule_draft_base_legacy.pop(serial, None)
+                    self._publish_schedule_view(serial)
+                    return
+            if serial in self._schedule_drafts:
+                self._rebase_open_schedule_draft(serial)
             self._publish_schedule_view(serial)
             return
-        self._schedule_draft_base_intent.pop(serial, None)
         self._schedule_drafts.pop(serial, None)
         self._schedule_draft_dirty.pop(serial, None)
         self._schedule_draft_base_periodic.pop(serial, None)
@@ -1708,23 +1641,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         `times` is keyed by the legacy API names (timeChaf1/timeChae1/
         timeChaf2/timeChae2); anything omitted keeps its current value.
         """
-        active = self.is_time_based_control_active(serial)
-        if active is False and not _is_enable_only(grid_charge, bat_high_cap, times, powers):
-            raise ScheduleWriteError(
-                "Time-based control is disabled: the inverter is in a "
-                "self-consumption working mode, or both timers are switched "
-                "off. Only switching a timer back on can be written from here; "
-                "the working mode itself can only be changed in the AlphaESS "
-                "app. Nothing was written"
-            )
-        if grid_charge == 0 and active is True:
-            flags = self._committed_enable_flags(serial)
-            if flags is not None and flags[1] == 0:
-                raise ScheduleWriteError(
-                    "Turning off the last enabled timer would look identical "
-                    "to a self-consumption mode; disable it from the AlphaESS "
-                    "app instead"
-                )
         overrides: dict[str, Any] = {**(times or {}), **(powers or {})}
         if bat_high_cap is not None:
             overrides["batHighCap"] = bat_high_cap
@@ -1746,23 +1662,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         `times` is keyed by the legacy API names (timeDisf1/timeDise1/
         timeDisf2/timeDise2); anything omitted keeps its current value.
         """
-        active = self.is_time_based_control_active(serial)
-        if active is False and not _is_enable_only(ctr_dis, bat_use_cap, times, powers):
-            raise ScheduleWriteError(
-                "Time-based control is disabled: the inverter is in a "
-                "self-consumption working mode, or both timers are switched "
-                "off. Only switching a timer back on can be written from here; "
-                "the working mode itself can only be changed in the AlphaESS "
-                "app. Nothing was written"
-            )
-        if ctr_dis == 0 and active is True:
-            flags = self._committed_enable_flags(serial)
-            if flags is not None and flags[0] == 0:
-                raise ScheduleWriteError(
-                    "Turning off the last enabled timer would look identical "
-                    "to a self-consumption mode; disable it from the AlphaESS "
-                    "app instead"
-                )
         overrides: dict[str, Any] = {**(times or {}), **(powers or {})}
         if bat_use_cap is not None:
             overrides["batUseCap"] = bat_use_cap
@@ -2107,6 +2006,11 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 clear_all=clear_all,
                 now_window=now_window,
             )
+            # Draft Apply owns its own revision-aware cleanup. Any other
+            # successful write is an out-of-band commit relative to an open
+            # draft, so advance that draft's conflict base now.
+            if serial not in self._schedule_apply_in_progress:
+                self._rebase_open_schedule_draft(serial)
 
     async def _safe_async_apply_schedule_locked(
         self,
@@ -2216,8 +2120,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             raise ScheduleWriteError(
                 "Home Assistant does not know whether scheduled charging and "
                 "discharging should be enabled: getTimeChargeBySn reports 0 for "
-                "both whatever the inverter is doing, and sending that back would "
-                "switch it to self-consumption. Set the Scheduled Charging and "
+                "both whatever the inverter is doing. Set the Scheduled Charging and "
                 "Scheduled Discharging switches once so there is something "
                 "truthful to send; nothing was written"
             )
@@ -2247,7 +2150,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         except AlphaESSApiError as err:
             if err.code == PERIODIC_NOT_ENTITLED:
                 self._periodic_write_denied.add(serial)
-                self._periodic_schedules.pop(serial, None)
                 _LOGGER.info(
                     "%s is not entitled to periodic schedule writes: %s",
                     serial, describe_api_error(err),
@@ -2740,7 +2642,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         """Return everything needed to explain a schedule state from a report.
 
         Every field here answers a question that has cost a round trip with a
-        tester: which store governs, why the controls are locked, what the two
+        tester: which store governs, why controls are unavailable, what the two
         write-only enable flags were last set to, and what the stores actually
         held at the time. It must never raise - a diagnostics download is often
         the only thing a user can still produce.
@@ -2753,7 +2655,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             started = store.get(serial)
             return None if started is None else round(now - started, 1)
 
-        if self.is_periodic_schedule_readable(serial):
+        if self._has_periodic_schedule_snapshot(serial):
             governing_store = "periodic"
         elif self.is_legacy_backup_active(serial):
             governing_store = "legacy-backup"
@@ -2765,10 +2667,12 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
             "periodic_read": self.get_periodic_read_state(serial),
             "periodic_write_denied": serial in self._periodic_write_denied,
             "capabilities": {
-                "time_based_control_active": self.is_time_based_control_active(serial),
+                "working_mode": "unavailable_through_openapi",
+                "recorded_schedule_flags_enabled": (
+                    self.recorded_schedule_flags_enabled(serial)
+                ),
                 "can_stage_schedule": self.can_stage_schedule(serial),
                 "can_modify_time_controls": self.can_modify_time_controls(serial),
-                "can_unlock_time_controls": self.can_unlock_time_controls(serial),
                 "can_reset_schedule": self.can_reset_schedule(serial),
             },
             # Write-only on the periodic API: the read reports 0 for both
@@ -2822,7 +2726,38 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         old/new data never see the same mutated reference.
         """
         self._update_diagnostics()
-        return {serial: dict(values) for serial, values in self.data.items()}
+        published = {serial: dict(values) for serial, values in self.data.items()}
+        self._diagnostics_data_snapshot = deepcopy(published)
+        self._diagnostics_api_snapshot = deepcopy(self.api_diagnostics())
+        self._diagnostics_schedule_snapshot = {
+            serial: deepcopy(self.schedule_diagnostics(serial))
+            for serial in published
+        }
+        return published
+
+    def diagnostics_data_snapshot(self) -> dict[str, dict[str, Any]]:
+        """Return one complete published cycle for a diagnostics download."""
+        source = (
+            self.data
+            if self._diagnostics_data_snapshot is None
+            else self._diagnostics_data_snapshot
+        )
+        return deepcopy(source or {})
+
+    def diagnostics_api_snapshot(self) -> dict[str, Any]:
+        """Return API pacing metadata from the same completed poll cycle."""
+        if self._diagnostics_api_snapshot is None:
+            return self.api_diagnostics()
+        return deepcopy(self._diagnostics_api_snapshot)
+
+    def diagnostics_schedule_snapshot(self) -> dict[str, dict[str, Any]]:
+        """Return schedule diagnostics from the same completed poll cycle."""
+        if self._diagnostics_schedule_snapshot is None:
+            return {
+                serial: deepcopy(self.schedule_diagnostics(serial))
+                for serial in self.data
+            }
+        return deepcopy(self._diagnostics_schedule_snapshot)
 
     async def _fetch_inverter_data(
         self,

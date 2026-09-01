@@ -235,6 +235,93 @@ class TestDraftEdges:
             coordinator._periodic_schedules[SERIAL]
         )
 
+    async def test_redundant_same_value_edit_during_apply_closes_the_draft(
+        self, make_coordinator, mock_api
+    ):
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator.stage_schedule_change(
+            SERIAL, charge={"timeChae1": "04:30"}
+        )
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        async def stage_same_value(**_kwargs):
+            coordinator.stage_schedule_change(
+                SERIAL, charge={"timeChae1": "04:30"}
+            )
+
+        mock_api.setTimeChargeBySn.side_effect = stage_same_value
+
+        await coordinator.async_apply_schedule_draft(SERIAL)
+
+        assert not coordinator.has_schedule_draft(SERIAL)
+        assert SERIAL not in coordinator._schedule_draft_dirty
+
+    async def test_switch_edit_during_apply_waits_for_the_next_transaction(
+        self, make_coordinator, mock_api
+    ):
+        """A switch moved during the fresh read must not leak into the POST
+        whose draft was snapshotted before that edit."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator.stage_schedule_change(
+            SERIAL, charge={"timeChae1": "04:30"}
+        )
+
+        async def stage_newer_switch(_serial):
+            coordinator.stage_schedule_change(
+                SERIAL, discharge={"ctrDis": 0}
+            )
+            return deepcopy(periodic)
+
+        mock_api.getTimeChargeBySn.side_effect = stage_newer_switch
+
+        await coordinator.async_apply_schedule_draft(SERIAL)
+
+        payload = mock_api.setTimeChargeBySn.await_args.kwargs
+        assert payload["ctrDisCycle"] == 1
+        assert coordinator._periodic_enable_intent[SERIAL]["ctrDisCycle"] == 1
+        assert coordinator._schedule_drafts[SERIAL]["discharge"]["ctrDis"] == 0
+        assert coordinator._schedule_draft_base_periodic[SERIAL] == (
+            coordinator._periodic_schedules[SERIAL]
+        )
+
+    async def test_discard_after_concurrent_edit_keeps_committed_switch_pair(
+        self, make_coordinator, mock_api
+    ):
+        """An applied flag must not revert when a newer unrelated edit keeps
+        the draft alive and is later discarded."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator.stage_schedule_change(SERIAL, discharge={"ctrDis": 0})
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+
+        async def stage_newer_time(**_kwargs):
+            coordinator.stage_schedule_change(
+                SERIAL, charge={"timeChae1": "04:45"}
+            )
+
+        mock_api.setTimeChargeBySn.side_effect = stage_newer_time
+
+        await coordinator.async_apply_schedule_draft(SERIAL)
+
+        assert coordinator._periodic_enable_intent[SERIAL] == {
+            "gridChargeCycle": 1,
+            "ctrDisCycle": 0,
+        }
+        assert coordinator._schedule_draft_dirty[SERIAL] == {
+            "charge": {"timeChae1"},
+            "discharge": set(),
+        }
+
+        coordinator.discard_schedule_draft(SERIAL)
+
+        assert coordinator._periodic_enable_intent[SERIAL] == {
+            "gridChargeCycle": 1,
+            "ctrDisCycle": 0,
+        }
+        assert coordinator.data[SERIAL]["ctrDis"] == 0
+
     async def test_periodic_conflict_is_cached_for_discarded_view(
         self, make_coordinator, mock_api
     ):
@@ -434,12 +521,51 @@ class TestDraftIsolation:
             await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
 
         assert SERIAL in coordinator._periodic_write_denied
-        assert SERIAL not in coordinator._periodic_schedules
+        assert coordinator._periodic_schedules[SERIAL] == _cached(periodic)
         assert coordinator.can_stage_schedule(SERIAL) is False
         with pytest.raises(ScheduleWriteError, match="Schedule control requires"):
             coordinator.stage_schedule_change(SERIAL, charge={"gridCharge": 0})
         mock_api.getChargeConfigInfo.assert_not_awaited()
         mock_api.updateChargeConfigInfo.assert_not_awaited()
+
+    async def test_write_denied_apply_then_discard_restores_committed_view(
+        self, make_coordinator, mock_api
+    ):
+        """A rejected POST must not erase the readable base behind Discard."""
+        periodic = _daily_schedule()
+        coordinator = _seed(make_coordinator(), periodic=periodic, readable=True)
+        coordinator.stage_schedule_change(
+            SERIAL,
+            charge={"timeChaf1": "02:00", "gridCharge": 0},
+        )
+        assert coordinator.data[SERIAL]["charge_timeChaf1"] == "02:00"
+        assert coordinator.data[SERIAL]["gridCharge"] == 0
+
+        mock_api.getTimeChargeBySn.return_value = deepcopy(periodic)
+        mock_api.setTimeChargeBySn.side_effect = _api_error(
+            PERIODIC_NOT_ENTITLED, "No operation permissions"
+        )
+
+        with pytest.raises(ScheduleWriteError, match="periodic schedule.*not updated"):
+            await coordinator.async_apply_schedule_draft(SERIAL)
+
+        assert coordinator.has_schedule_draft(SERIAL)
+        assert coordinator._periodic_schedules[SERIAL] == _cached(periodic)
+        assert coordinator.can_stage_schedule(SERIAL) is False
+
+        coordinator.discard_schedule_draft(SERIAL)
+
+        committed = coordinator._state_from_periodic(SERIAL, periodic)
+        assert coordinator.has_schedule_draft(SERIAL) is False
+        assert coordinator.data[SERIAL]["charge_timeChaf1"] == (
+            committed["charge"]["timeChaf1"]
+        )
+        assert coordinator.data[SERIAL]["gridCharge"] == (
+            committed["charge"]["gridCharge"]
+        )
+        assert coordinator.schedule_diagnostics(SERIAL)["periodic_snapshot"] == (
+            _cached(periodic)
+        )
 
     @pytest.mark.parametrize(
         ("side", "writer", "powers", "legacy_get", "legacy_post"),
@@ -1456,30 +1582,29 @@ class TestRemainingWriteGuards:
             == "02:00"
         )
 
-    async def test_the_charge_service_will_not_disable_the_last_timer(
+    async def test_the_charge_service_can_explicitly_disable_the_last_timer(
         self, make_coordinator, mock_api
     ):
-        """0/0 is indistinguishable from a self-consumption mode afterwards."""
+        """Schedule flags are not an inverter-mode detector; an explicit user
+        request is sent without inventing a local mode lock."""
         coordinator = self._seed_backup(
             make_coordinator(), mock_api, discharge=_legacy_discharge(enabled=0)
         )
 
-        with pytest.raises(ScheduleWriteError, match="last enabled timer"):
-            await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
 
-        mock_api.updateChargeConfigInfo.assert_not_awaited()
+        assert mock_api.updateChargeConfigInfo.await_args.kwargs["gridCharge"] == 0
 
-    async def test_the_discharge_service_will_not_disable_the_last_timer(
+    async def test_the_discharge_service_can_explicitly_disable_the_last_timer(
         self, make_coordinator, mock_api
     ):
         coordinator = self._seed_backup(
             make_coordinator(), mock_api, charge=_legacy_charge(enabled=0)
         )
 
-        with pytest.raises(ScheduleWriteError, match="last enabled timer"):
-            await coordinator.async_write_discharge_config(SERIAL, ctr_dis=0)
+        await coordinator.async_write_discharge_config(SERIAL, ctr_dis=0)
 
-        mock_api.updateDisChargeConfigInfo.assert_not_awaited()
+        assert mock_api.updateDisChargeConfigInfo.await_args.kwargs["ctrDis"] == 0
 
     def test_a_quick_button_will_not_create_a_period_without_a_cutoff(
         self, make_coordinator
@@ -1604,10 +1729,9 @@ class TestApiTracing:
 
 
 class TestScheduleSurfaceLogging:
-    """A user reports that the controls went away; the log should say when and
-    on the strength of what."""
+    """Capability changes are logged once with their actual API reason."""
 
-    async def test_a_lock_is_announced_with_its_reason(
+    async def test_a_write_permission_lock_is_announced_with_its_reason(
         self, make_coordinator, mock_api, caplog
     ):
         coordinator = _seed(
@@ -1616,14 +1740,12 @@ class TestScheduleSurfaceLogging:
         coordinator._publish_schedule_view(SERIAL)  # first pass: debug only
 
         with caplog.at_level(logging.INFO, logger="custom_components.alphaess.coordinator"):
-            coordinator.set_periodic_enable_intent(
-                SERIAL, grid_charge=0, ctr_dis=0,
-            )
+            coordinator._periodic_write_denied.add(SERIAL)
             coordinator._publish_schedule_view(SERIAL)
 
         assert "is locked" in caplog.text
         assert "periodic read readable" in caplog.text
-        assert "timed control inactive" in caplog.text
+        assert "working mode unavailable through OpenAPI" in caplog.text
 
     async def test_the_same_state_is_not_repeated_every_poll(
         self, make_coordinator, mock_api, caplog
