@@ -63,6 +63,14 @@ PERIODIC_NOT_ENTITLED = 6017
 PERIODIC_OVERLAP = 6008
 
 
+# Scope under which responses from calls that name no system (getESSList)
+# are retained for the export_raw_snapshot service.
+RAW_ACCOUNT_SCOPE = "account"
+# Bind/unbind calls carry a check code or a verification code in their
+# arguments; those arguments are never retained.
+RAW_UNRECORDED_ARGS = frozenset({"getVerificationCode", "bindSn", "unBindSn"})
+
+
 class ScheduleWriteError(HomeAssistantError):
     """Raised when a full-replacement schedule cannot be applied safely."""
 
@@ -411,6 +419,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         scan_interval: timedelta | None = None,
         alt_polling_mode: bool = False,
         fast_scan_interval: timedelta | None = None,
+        assume_schedule_flags_enabled: bool = False,
     ) -> None:
         """Initialize coordinator."""
         self.alt_polling_mode = alt_polling_mode
@@ -514,6 +523,19 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # fed by the two switches and confirmed by each successful write.
         self._periodic_enable_intent: dict[str, dict[str, int]] = {}
         self._periodic_enable_sent: dict[str, dict[str, int]] = {}
+        # Every periodic write needs that pair. With this option on, a flag
+        # Home Assistant has no record of is sent as 1 rather than refusing
+        # the write: the escape hatch for systems that read the pair back as
+        # 0/0 (#267) and have never had the switches set. It never overrides
+        # a value the user gave, and the pair is recorded once a write lands.
+        self.assume_schedule_flags_enabled = assume_schedule_flags_enabled
+        self._assumed_flags_logged: set[str] = set()
+
+        # The last answer from every endpoint, per system, for the
+        # export_raw_snapshot service: what the API actually returned, as
+        # opposed to the entity view parsed from it. Keyed by serial (or the
+        # account scope for calls that name none) and then endpoint name.
+        self._raw_responses: dict[str, dict[str, dict[str, Any]]] = {}
 
         # Last logged schedule capability state per serial, so changes are
         # reported once with their reason rather than on every poll.
@@ -594,6 +616,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         With debug logging on, every request and every response is written out.
         Establishing what this API actually returns has needed hand-signed
         requests more than once (#267); it should come out of a log instead.
+        The last answer from every endpoint is also retained per system, so
+        the export_raw_snapshot service can hand over the same evidence
+        without a log.
         """
         tracing = _LOGGER.isEnabledFor(logging.DEBUG)
         call = self._describe_call(method, args, kwargs) if tracing else ""
@@ -617,6 +642,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         call, self._describe_response(result),
                         time_mod.monotonic() - started, waited,
                     )
+                self._record_raw(method, args, kwargs, response=result)
                 return result
             except AlphaESSApiError as err:
                 if err.code == RATE_LIMIT_CODE and self._fast_api_lane:
@@ -629,12 +655,17 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         "dropping to %ss spacing", self.throttle_multiplier,
                     )
                     await asyncio.sleep(self.throttle_multiplier)
-                    retried = await method(*args, **kwargs)
+                    try:
+                        retried = await method(*args, **kwargs)
+                    except AlphaESSApiError as retry_err:
+                        self._record_raw(method, args, kwargs, error=retry_err)
+                        raise
                     if tracing:
                         _LOGGER.debug(
                             "API %s retried after 6053 -> %s",
                             call, self._describe_response(retried),
                         )
+                    self._record_raw(method, args, kwargs, response=retried)
                     return retried
                 if tracing:
                     _LOGGER.debug(
@@ -642,6 +673,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         call, describe_api_error(err),
                         time_mod.monotonic() - started, waited,
                     )
+                self._record_raw(method, args, kwargs, error=err)
                 raise
             except Exception as err:
                 if tracing:
@@ -650,11 +682,67 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                         call, type(err).__name__, err,
                         time_mod.monotonic() - started, waited,
                     )
+                self._record_raw(method, args, kwargs, exception=err)
                 raise
             finally:
                 # A rejected or indeterminate request still consumed an API
                 # attempt and must participate in the next-call delay.
                 self._last_api_request_completed = time_mod.monotonic()
+
+    @staticmethod
+    def _endpoint_name(method) -> str:
+        """Return the OpenAPI method name a call went to."""
+        return getattr(method, "__name__", None) or str(method)
+
+    def _record_raw(
+        self,
+        method,
+        args,
+        kwargs,
+        *,
+        response: Any = None,
+        error: AlphaESSApiError | None = None,
+        exception: Exception | None = None,
+    ) -> None:
+        """Retain what an endpoint last answered, for export_raw_snapshot.
+
+        One record per endpoint per system: the most recent call replaces the
+        previous one, so memory stays bounded however long the entry runs.
+        A rejection is kept as its return code, a transport failure as the
+        exception, so a report can show which it was.
+        """
+        endpoint = self._endpoint_name(method)
+        serial = kwargs.get("sysSn")
+        if serial is None and args and isinstance(args[0], str):
+            serial = args[0]
+        scope = serial if isinstance(serial, str) and serial else RAW_ACCOUNT_SCOPE
+        record: dict[str, Any] = {
+            "captured_at": dt_util.utcnow().isoformat(timespec="seconds"),
+        }
+        if endpoint not in RAW_UNRECORDED_ARGS:
+            record["request"] = {
+                "args": [deepcopy(arg) for arg in args],
+                "kwargs": deepcopy(kwargs),
+            }
+        if error is not None:
+            record["error"] = {"code": error.code, "message": str(error)}
+        elif exception is not None:
+            record["exception"] = f"{type(exception).__name__}: {exception}"
+        else:
+            record["response"] = deepcopy(response)
+        self._raw_responses.setdefault(scope, {})[endpoint] = record
+
+    def _record_local_raw(self, serial: str, ip: str | None, response: Any) -> None:
+        """Retain a local dongle answer; it bypasses the cloud gate."""
+        self._raw_responses.setdefault(serial, {})["getIPData"] = {
+            "captured_at": dt_util.utcnow().isoformat(timespec="seconds"),
+            "request": {"ip": ip},
+            "response": deepcopy(response),
+        }
+
+    def raw_responses(self) -> dict[str, dict[str, dict[str, Any]]]:
+        """Return a copy of the last response from every endpoint."""
+        return deepcopy(self._raw_responses)
 
     async def _async_wait_for_api_interval(self) -> None:
         """Hold the API gate until a just-completed request is safe to follow."""
@@ -1485,6 +1573,24 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # consume unrelated values waiting in an open Apply/Discard draft.
         grid = (charge or {}).get("gridCharge", stored.get("gridChargeCycle"))
         dis = (discharge or {}).get("ctrDis", stored.get("ctrDisCycle"))
+        if (grid is None or dis is None) and self.assume_schedule_flags_enabled:
+            # The option stands in only for a flag nobody has answered for.
+            # Once this write lands the pair is recorded, so the assumption
+            # is used at most once per system per session.
+            assumed = [
+                name for name, value in (("gridChargeCycle", grid), ("ctrDisCycle", dis))
+                if value is None
+            ]
+            if serial not in self._assumed_flags_logged:
+                self._assumed_flags_logged.add(serial)
+                _LOGGER.info(
+                    "Assuming %s enabled for %s: Home Assistant has no record "
+                    "of the pair and the assume-enabled option is on; the pair "
+                    "is recorded once AlphaESS accepts the write",
+                    " and ".join(assumed), serial,
+                )
+            grid = 1 if grid is None else grid
+            dis = 1 if dis is None else dis
         if grid is None or dis is None:
             return None
         return {"gridChargeCycle": int(grid), "ctrDisCycle": int(dis)}
@@ -2122,7 +2228,9 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 "discharging should be enabled: getTimeChargeBySn reports 0 for "
                 "both whatever the inverter is doing. Set the Scheduled Charging and "
                 "Scheduled Discharging switches once so there is something "
-                "truthful to send; nothing was written"
+                "truthful to send, or turn on 'Assume scheduled charging and "
+                "discharging are enabled when unknown' in the integration "
+                "options; nothing was written"
             )
 
         if (
@@ -2674,6 +2782,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 "can_stage_schedule": self.can_stage_schedule(serial),
                 "can_modify_time_controls": self.can_modify_time_controls(serial),
                 "can_reset_schedule": self.can_reset_schedule(serial),
+                "assume_schedule_flags_enabled": self.assume_schedule_flags_enabled,
             },
             # Write-only on the periodic API: the read reports 0 for both
             # whatever the inverter is set to, so this record is the only
@@ -2836,6 +2945,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         if include_local_ip and self.api.ipaddress:
             try:
                 ip_data = await self.api.getIPData()
+                self._record_local_raw(serial, self.api.ipaddress, ip_data)
                 if ip_data:
                     unit["LocalIPData"] = {
                         "type": "local_ip_data",
@@ -2867,6 +2977,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 try:
                     self.api.ipaddress = ip
                     local_ip_raw = await self.api.getIPData()
+                    self._record_local_raw(serial, ip, local_ip_raw)
                     if local_ip_raw:
                         local_ip_data = {"ip": ip, **local_ip_raw}
                         parsed = self.parser.parse_local_ip_data(local_ip_data)
@@ -2911,6 +3022,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
                 try:
                     self.api.ipaddress = ip
                     local_ip_raw = await self.api.getIPData()
+                    self._record_local_raw(serial, ip, local_ip_raw)
                     if local_ip_raw:
                         local_ip_data = {"ip": ip, **local_ip_raw}
                         parsed = self.parser.parse_local_ip_data(local_ip_data)

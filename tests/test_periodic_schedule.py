@@ -8,6 +8,7 @@ write is a fresh-read/patch/single-POST transaction, and a known-invalid
 transaction must fail before any POST is made.
 """
 
+import logging
 from copy import deepcopy
 
 import pytest
@@ -934,6 +935,114 @@ class TestWriteOnlyEnableFlags:
         payload = _periodic_payload(mock_api)
         assert payload["gridChargeCycle"] == 0
         assert payload["chargeTimeList"] == _cached(periodic)["chargeTimeList"]
+
+
+class TestAssumedEnableFlags:
+    """The escape hatch for systems that read the pair back as 0/0 and have
+    never had the switches set (#267, UK/EU). It stands in only for a flag
+    nobody has answered for, and only when the user turned it on."""
+
+    def _fresh(self, make_coordinator, *, option):
+        coordinator = _seed(make_coordinator(), periodic=_daily_schedule(), readable=True)
+        coordinator._periodic_enable_intent.pop(SERIAL, None)
+        coordinator._periodic_enable_sent.pop(SERIAL, None)
+        coordinator.assume_schedule_flags_enabled = option
+        return coordinator
+
+    async def test_off_by_default_the_refusal_names_the_option(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._fresh(make_coordinator, option=False)
+        mock_api.getTimeChargeBySn.return_value = _daily_schedule()
+
+        with pytest.raises(ScheduleWriteError, match="integration options"):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+        mock_api.setTimeChargeBySn.assert_not_awaited()
+
+    async def test_on_it_fills_both_unknown_flags_with_enabled(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = self._fresh(make_coordinator, option=True)
+        mock_api.getTimeChargeBySn.return_value = _daily_schedule()
+
+        with caplog.at_level(logging.INFO):
+            await coordinator.async_write_charge_config(
+                SERIAL, times={"timeChaf1": "02:00"}
+            )
+
+        payload = _periodic_payload(mock_api)
+        assert (payload["gridChargeCycle"], payload["ctrDisCycle"]) == (1, 1)
+        assert "Assuming gridChargeCycle and ctrDisCycle enabled" in caplog.text
+        # Once accepted, the assumption becomes the record and is not needed again.
+        assert coordinator._periodic_enable_intent[SERIAL] == {
+            "gridChargeCycle": 1, "ctrDisCycle": 1,
+        }
+        assert coordinator.recorded_schedule_flags_enabled(SERIAL) is True
+
+    async def test_it_never_overrides_a_flag_that_is_known(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = self._fresh(make_coordinator, option=True)
+        coordinator._periodic_enable_intent[SERIAL] = {"gridChargeCycle": 0}
+        mock_api.getTimeChargeBySn.return_value = _daily_schedule()
+
+        with caplog.at_level(logging.INFO):
+            await coordinator.async_write_discharge_config(
+                SERIAL, times={"timeDisf1": "18:00"}
+            )
+
+        payload = _periodic_payload(mock_api)
+        assert (payload["gridChargeCycle"], payload["ctrDisCycle"]) == (0, 1)
+        assert "Assuming ctrDisCycle enabled" in caplog.text
+
+    async def test_the_value_in_the_call_wins_over_the_assumption(
+        self, make_coordinator, mock_api
+    ):
+        coordinator = self._fresh(make_coordinator, option=True)
+        mock_api.getTimeChargeBySn.return_value = _daily_schedule()
+
+        await coordinator.async_write_charge_config(SERIAL, grid_charge=0)
+
+        payload = _periodic_payload(mock_api)
+        assert (payload["gridChargeCycle"], payload["ctrDisCycle"]) == (0, 1)
+
+    async def test_the_assumption_is_logged_once_per_system(
+        self, make_coordinator, mock_api, caplog
+    ):
+        coordinator = self._fresh(make_coordinator, option=True)
+        mock_api.getTimeChargeBySn.return_value = _daily_schedule()
+
+        with caplog.at_level(logging.INFO):
+            await coordinator.async_write_charge_config(SERIAL, times={"timeChaf1": "02:00"})
+            coordinator._periodic_enable_intent.pop(SERIAL, None)
+            await coordinator.async_write_charge_config(SERIAL, times={"timeChaf1": "03:00"})
+
+        assert caplog.text.count("Assuming ") == 1
+        assert mock_api.setTimeChargeBySn.await_count == 2
+
+    async def test_a_duration_button_works_on_a_fresh_install_with_it_on(
+        self, make_coordinator, mock_api
+    ):
+        """The b4 report: 15-minute charge on a system with no recorded pair."""
+        coordinator = self._fresh(make_coordinator, option=True)
+        mock_api.getTimeChargeBySn.return_value = _daily_schedule()
+
+        await coordinator.update_charge("batHighCap", SERIAL, 15)
+
+        payload = _periodic_payload(mock_api)
+        assert (payload["gridChargeCycle"], payload["ctrDisCycle"]) == (1, 1)
+        assert coordinator._periodic_enable_sent[SERIAL] == {
+            "gridChargeCycle": 1, "ctrDisCycle": 1,
+        }
+
+    def test_the_diagnostics_say_whether_it_is_on(self, make_coordinator):
+        coordinator = self._fresh(make_coordinator, option=True)
+        assert coordinator.schedule_diagnostics(SERIAL)["capabilities"][
+            "assume_schedule_flags_enabled"
+        ] is True
 
 
 class TestTheRemedyActuallyWorks:

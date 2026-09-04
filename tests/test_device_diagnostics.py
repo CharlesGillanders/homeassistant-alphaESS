@@ -195,6 +195,7 @@ class TestScheduleDiagnostics:
         # The resource itself, so an empty list is visible without asking.
         assert schedule["periodic_snapshot"]["dischargeTimeList"] == []
         assert schedule["capabilities"]["can_modify_time_controls"] is True
+        assert schedule["capabilities"]["assume_schedule_flags_enabled"] is False
         assert schedule["draft"] is None
         assert schedule["seconds_since_last_charge_write"] is not None
         assert schedule["seconds_since_last_discharge_write"] is None

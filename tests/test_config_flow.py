@@ -16,6 +16,7 @@ from custom_components.alphaess.config_flow import (
     validate_input,
 )
 from custom_components.alphaess.const import (
+    CONF_ASSUME_SCHEDULE_FLAGS,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_IP_ADDRESS,
     CONF_SERIAL_NUMBER,
@@ -232,6 +233,22 @@ class TestOptionsFlow:
         assert result["type"] == "create_entry"
         assert result["data"]["_ev_entity_cleanup_done"] is True
         assert result["data"]["scan_interval_seconds"] == 120
+
+    @pytest.mark.parametrize("stored", [None, False, True])
+    async def test_the_assume_option_is_offered_with_its_stored_value(self, stored):
+        """Off by default: a fresh install must stay fail-closed until the
+        user chooses otherwise."""
+        options = {} if stored is None else {CONF_ASSUME_SCHEDULE_FLAGS: stored}
+        handler = self._make(options=options)
+        result = await handler.async_step_init(None)
+        markers = {marker.schema: marker for marker in result["data_schema"].schema}
+        assert markers[CONF_ASSUME_SCHEDULE_FLAGS].default() is bool(stored)
+
+    async def test_the_assume_option_is_saved(self):
+        handler = self._make()
+        result = await handler.async_step_init({CONF_ASSUME_SCHEDULE_FLAGS: True})
+        assert result["type"] == "create_entry"
+        assert result["data"][CONF_ASSUME_SCHEDULE_FLAGS] is True
 
 
 def _make_subentry_flow(mock_hass, api):

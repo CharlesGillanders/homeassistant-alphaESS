@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any
 
@@ -10,15 +11,22 @@ import aiohttp
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState, ConfigSubentry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
     ConfigEntryNotReady,
     HomeAssistantError,
+    ServiceValidationError,
 )
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.loader import async_get_integration
 from homeassistant.util import slugify
 
 from alphaess import alphaess
@@ -27,6 +35,7 @@ from alphaess.alphaess import AlphaESSApiError
 from .const import (
     AUTH_FAILURE_CODES,
     CONF_ALT_POLLING_MODE,
+    CONF_ASSUME_SCHEDULE_FLAGS,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_EV_CHARGER_MODEL,
     CONF_FAST_SCAN_INTERVAL_SECONDS,
@@ -48,6 +57,7 @@ from .const import (
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .enums import AlphaESSNames
+from .snapshot import build_raw_snapshot
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,6 +103,17 @@ SERVICE_BATTERY_DISCHARGE_SCHEMA = vol.Schema(
         vol.Required('dischargecutoffsoc'): vol.All(cv.positive_int, vol.Range(min=10, max=100)),
         vol.Optional('dp1power'): vol.All(vol.Coerce(int), vol.Range(min=1)),
         vol.Optional('dp2power'): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
+
+SERVICE_EXPORT_RAW_SNAPSHOT = "export_raw_snapshot"
+
+# Any one of these picks the entry; with a single loaded entry none is needed.
+SERVICE_EXPORT_RAW_SNAPSHOT_SCHEMA = vol.Schema(
+    {
+        vol.Optional("serial"): cv.string,
+        vol.Optional("config_entry_id"): cv.string,
+        vol.Optional("device_id"): cv.string,
     }
 )
 
@@ -336,6 +357,76 @@ async def _async_service_battery_discharge(call: ServiceCall) -> None:
             f"AlphaESS rejected the discharge settings for {serial}: {err}") from err
 
 
+def _loaded_entries(hass: HomeAssistant) -> list[ConfigEntry]:
+    """Return the AlphaESS entries that currently carry a coordinator."""
+    return [
+        entry
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if isinstance(getattr(entry, "runtime_data", None), AlphaESSDataUpdateCoordinator)
+    ]
+
+
+def _resolve_entry_for_export(hass: HomeAssistant, data: Mapping[str, Any]) -> ConfigEntry:
+    """Pick the entry an export call addresses.
+
+    A serial is matched the way the schedule services match one; a
+    config_entry_id or device_id is looked up directly; with neither, the
+    sole loaded entry is used. Anything ambiguous is a validation error that
+    says what to pass, since a troubleshooting export must not guess.
+    """
+    entries = _loaded_entries(hass)
+
+    serial = data.get("serial")
+    if serial:
+        for entry in entries:
+            if serial in (entry.runtime_data.data or {}):
+                return entry
+        raise ServiceValidationError(
+            f"No loaded AlphaESS config entry currently manages serial {serial}"
+        )
+
+    entry_id = data.get("config_entry_id")
+    if entry_id:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN or entry not in entries:
+            raise ServiceValidationError(
+                f"No loaded AlphaESS config entry has id {entry_id}"
+            )
+        return entry
+
+    device_id = data.get("device_id")
+    if device_id:
+        device = dr.async_get(hass).async_get(device_id)
+        if device is None:
+            raise ServiceValidationError(f"No device has id {device_id}")
+        for entry in entries:
+            if entry.entry_id in device.config_entries:
+                return entry
+        raise ServiceValidationError(
+            f"Device {device_id} does not belong to a loaded AlphaESS config entry"
+        )
+
+    if len(entries) == 1:
+        return entries[0]
+    if not entries:
+        raise ServiceValidationError("No AlphaESS config entry is loaded")
+    raise ServiceValidationError(
+        "More than one AlphaESS config entry is loaded; pass serial, "
+        "config_entry_id or device_id to choose one"
+    )
+
+
+async def _async_service_export_raw_snapshot(call: ServiceCall) -> ServiceResponse:
+    """Handle export_raw_snapshot: the last API responses, identities removed."""
+    entry = _resolve_entry_for_export(call.hass, call.data)
+    try:
+        integration = await async_get_integration(call.hass, DOMAIN)
+        version = str(integration.version)
+    except Exception:  # noqa: BLE001 - the export must not fail on metadata
+        version = "unknown"
+    return build_raw_snapshot(entry, entry.runtime_data, version=version)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> bool:
     """Set up Alpha ESS from a config entry."""
 
@@ -462,6 +553,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
         scan_interval=timedelta(seconds=scan_interval_seconds),
         alt_polling_mode=alt_polling_mode,
         fast_scan_interval=timedelta(seconds=fast_scan_interval_seconds),
+        assume_schedule_flags_enabled=bool(
+            entry.options.get(CONF_ASSUME_SCHEDULE_FLAGS, False)
+        ),
     )
     # Reuse discovery for the first refresh. Repeating getESSList immediately
     # can trigger AlphaESS 6053 and leave setup with no entities.
@@ -552,6 +646,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
             DOMAIN, 'setbatterydischarge', _async_service_battery_discharge,
             SERVICE_BATTERY_DISCHARGE_SCHEMA)
 
+        hass.services.async_register(
+            DOMAIN, SERVICE_EXPORT_RAW_SNAPSHOT,
+            _async_service_export_raw_snapshot,
+            SERVICE_EXPORT_RAW_SNAPSHOT_SCHEMA,
+            supports_response=SupportsResponse.ONLY,
+        )
+
     return True
 
 
@@ -570,6 +671,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) ->
         if not remaining:
             hass.services.async_remove(DOMAIN, 'setbatterycharge')
             hass.services.async_remove(DOMAIN, 'setbatterydischarge')
+            hass.services.async_remove(DOMAIN, SERVICE_EXPORT_RAW_SNAPSHOT)
 
     return unload_ok
 

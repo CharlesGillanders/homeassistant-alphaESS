@@ -12,7 +12,10 @@ setbatterycharge:
     Apply. On periodic systems the Scheduled Charging and
     Scheduled Discharging switches must both have been set once before any
     call is accepted: AlphaESS never reports those two flags, and sending a
-    guess would overwrite the user's schedule intent.
+    guess would overwrite the user's schedule intent. Alternatively turn on
+    "Assume scheduled charging and discharging are enabled when unknown" in
+    the integration options to send 1 for any flag Home Assistant has no
+    record of.
   fields:
     serial:
       name: Serial
@@ -109,7 +112,10 @@ setbatterydischarge:
     entities and Apply. On periodic systems the Scheduled Charging and
     Scheduled Discharging switches must both have been set once before any
     call is accepted: AlphaESS never reports those two flags, and sending a
-    guess would overwrite the user's schedule intent.
+    guess would overwrite the user's schedule intent. Alternatively turn on
+    "Assume scheduled charging and discharging are enabled when unknown" in
+    the integration options to send 1 for any flag Home Assistant has no
+    record of.
   fields:
     serial:
       name: Serial
@@ -191,3 +197,38 @@ setbatterydischarge:
           min: 10
           max: 100
           unit_of_measurement: "%"
+export_raw_snapshot:
+  name: Export Raw Snapshot
+  description: >
+    Returns the last response the integration received from every AlphaESS
+    OpenAPI endpoint it uses, per system, together with the parsed data,
+    the schedule state and the coordinator's pacing. Nothing is requested
+    from AlphaESS: this is what Home Assistant already holds. Serial
+    numbers are replaced by inverter_N / ev_charger_N everywhere they
+    appear (the same numbering as the diagnostics download), and
+    credentials, register keys, wifi details and the local dongle serial are
+    redacted, so the response can be attached to an issue. With one AlphaESS
+    entry configured no field is needed; with more, pass a serial, a config
+    entry or a device to choose one.
+  fields:
+    serial:
+      name: Serial
+      description: The serial of one system managed by the entry to export.
+      required: false
+      example: AA123456789
+      selector:
+        text:
+    config_entry_id:
+      name: Config entry
+      description: The AlphaESS entry to export. Optional when only one is configured.
+      required: false
+      selector:
+        config_entry:
+          integration: alphaess
+    device_id:
+      name: Device
+      description: An AlphaESS inverter or EV charger device belonging to the entry to export.
+      required: false
+      selector:
+        device:
+          integration: alphaess

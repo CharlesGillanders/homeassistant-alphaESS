@@ -318,6 +318,19 @@ known, unrelated immediate writes are refused rather than borrowing a pending
 draft or guessing. Stage both switch choices and press Apply once to establish
 the pair.
 
+**Or tell the integration to assume.** Systems in the UK and Europe read the
+pair back as `0/0` whatever the app shows, so a fresh install there has no
+record at all, and every one-sided write — a service call from an automation,
+a duration button — is refused until the switches have been set once. The
+option **Assume scheduled charging and discharging are enabled when unknown**
+(Settings → Devices & Services → AlphaESS → Configure) changes only that
+case: a flag Home Assistant has no record of is sent as `1` instead of the
+write being refused. A switch you have set always wins, and the pair sent is
+recorded as soon as AlphaESS accepts the write, so the assumption is used at
+most once per system per session; the log says when it was. Leave it off if
+either scheduled charging or scheduled discharging is meant to stay off in
+the app, and set the switches instead. It is off by default.
+
 Schedule controls are gated only by whether a complete governing store can be
 read and safely replaced. A recorded `0/0` pair does not lock them, because the
 same flags and schedule contents cannot tell Home Assistant which working mode
@@ -365,6 +378,34 @@ The `coordinator.api` section reports the current call spacing and whether the
 fast lane is still active, which is what to check when something else is sharing
 the same API account. Serials are replaced with `inverter_1`, `inverter_2` and so
 on, and credentials, keys and addresses are redacted.
+
+#### Exporting the raw API responses
+
+The download carries the parsed entity view. When the question is what the
+API actually returned, call the `alphaess.export_raw_snapshot` action
+(Developer tools → Actions, or from a script with `response_variable`). It
+returns the last response the integration received from every OpenAPI
+endpoint it uses — `getEssList`, the summary/energy/power reads,
+`getTimeChargeBySn`, the legacy config reads in backup mode, the EV charger
+reads, the local dongle read when an IP is configured — plus the request
+each answered, the parsed data, the schedule state and the coordinator's
+pacing. Nothing is requested from AlphaESS; it is what Home Assistant already
+holds, so it is safe to call as often as you like. A rejected call is
+recorded as its return code and a transport failure as the exception.
+
+Serial numbers are replaced by `inverter_1`, `ev_charger_1` and so on
+everywhere they appear, including inside response bodies and entity IDs, with
+the same numbering as the diagnostics download; credentials, register keys,
+wifi details and the local dongle serial are redacted by key. Bind and unbind
+calls never have their arguments retained. With one AlphaESS entry configured
+no field is needed; with more, pass `serial`, `config_entry_id` or
+`device_id`.
+
+```yaml
+action: alphaess.export_raw_snapshot
+data: {}
+response_variable: snapshot
+```
 
 For anything the download cannot show — what happened, in what order — turn on
 debug logging:
@@ -416,6 +457,14 @@ share it.
 - AlphaESS reports `6008` only as generic `Set failed`. Overlapping charge and
   discharge windows are one documented cause, but the code is not conclusive. The
   log records the periods sent and retains the original API explanation.
+- A **discharge** period does not force export to the grid. On the systems
+  probed on #267 it governs whether the battery may discharge to support the
+  house load during the window; feed-in and export control are not exposed
+  through these endpoints.
+- A `200` from `setTimeChargeBySn` means the cloud stored the schedule, and the
+  next poll re-reads it. The integration does not poll back to confirm that the
+  inverter has activated a period; the AlphaESS app's active-period indicator
+  and the battery power readings are the check for that.
 
 A network timeout after a POST is not proof of rejection: the server might
 have stored the request before the response was lost. Home Assistant reports that
@@ -555,6 +604,23 @@ data:
   cp2start: "13:00"
   cp2end: "16:00"
   chargestopsoc: 100
+```
+
+### Alpha ESS: Export Raw Snapshot<br>
+
+  Returns the last response received from every AlphaESS endpoint the integration
+  uses, redacted so it can be attached to an issue. It makes no API request. See
+  *Exporting the raw API responses* above. <br>
+  Data (all optional, needed only with more than one AlphaESS entry):<br>
+    - serial = A system serial managed by the entry to export <br>
+    - config_entry_id = The entry to export <br>
+    - device_id = An inverter or EV charger device of the entry to export <br>
+
+example:
+```yaml
+action: alphaess.export_raw_snapshot
+data: {}
+response_variable: snapshot
 ```
 
 ### Alpha ESS: Set Battery Discharge<br>
