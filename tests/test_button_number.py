@@ -700,11 +700,11 @@ class TestButtonPress:
 
         coordinator.cloud_available = False
         assert apply_button.available is False
-        assert discard_button.available is False
+        assert discard_button.available is True
         coordinator.cloud_available = True
         coordinator.last_update_success = False
         assert apply_button.available is False
-        assert discard_button.available is False
+        assert discard_button.available is True
 
     async def test_apply_button_delegates_and_propagates_failures(
         self, make_coordinator, mock_hass
@@ -1135,7 +1135,9 @@ class TestAlphaNumber:
         assert entity.native_unit_of_measurement == "W"
         assert entity.native_min_value == 1
         assert entity.native_max_value == 100000
-        assert entity.native_step == 100
+        # A step of 100 from a minimum of 1 only accepts 1, 101, 201 ... so a
+        # user asking for 14000 W was forced to send 14001 (#267).
+        assert entity.native_step == 1
 
         await entity.async_set_native_value(1800)
 

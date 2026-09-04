@@ -3,7 +3,6 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -20,6 +19,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # Serialize switch writes; the AlphaESS API rate-limits config writes.
 PARALLEL_UPDATES = 1
+
+ATTR_LAST_CONFIRMED_STATE = "last_confirmed_state"
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -64,11 +65,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class AlphaSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
     """Switch entity for grid charge / discharge time control.
 
-    On the periodic store these two switches are the only record of whether
-    scheduled charging and discharging should be on: getTimeChargeBySn answers
-    0 for both however the inverter is set, so the state published here is
-    restored on startup and handed back to the coordinator, which needs it to
-    build any write at all.
+    On the periodic store these switches retain write intent because
+    getTimeChargeBySn cannot report it reliably. A separate confirmed-state
+    attribute is restored so an unapplied draft cannot become committed merely
+    because Home Assistant restarted.
     """
 
     def __init__(self, coordinator, serial, config, description, device_info=None):
@@ -102,13 +102,34 @@ class AlphaSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         self._optimistic_state = None
         super()._handle_coordinator_update()
 
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Persist confirmed intent separately from the displayed draft."""
+        value = self._coordinator.recorded_schedule_flag(
+            self._serial, self._coordinator_key
+        )
+        state = "unknown" if value is None else ("on" if value else "off")
+        return {ATTR_LAST_CONFIRMED_STATE: state}
+
     async def async_added_to_hass(self) -> None:
         """Hand the last published state back as the recorded answer."""
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
-        if last_state is None or last_state.state not in ("on", "off"):
+        if last_state is None:
             return
-        value = 1 if last_state.state == "on" else 0
+        attributes = getattr(last_state, "attributes", {}) or {}
+        if ATTR_LAST_CONFIRMED_STATE in attributes:
+            restored = attributes[ATTR_LAST_CONFIRMED_STATE]
+            source = ATTR_LAST_CONFIRMED_STATE
+        else:
+            # One-time compatibility for states written before the dedicated
+            # attribute existed. New states always carry the attribute, even
+            # when the confirmed answer is unknown.
+            restored = last_state.state
+            source = "legacy entity state"
+        if restored not in ("on", "off"):
+            return
+        value = 1 if restored == "on" else 0
         if self._coordinator_key == "gridCharge":
             self._coordinator.set_periodic_enable_intent(
                 self._serial, grid_charge=value,
@@ -116,8 +137,8 @@ class AlphaSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         else:
             self._coordinator.set_periodic_enable_intent(self._serial, ctr_dis=value)
         _LOGGER.debug(
-            "Restored %s=%s for %s from the last published state",
-            self._coordinator_key, value, self._serial,
+            "Restored %s=%s for %s from %s",
+            self._coordinator_key, value, self._serial, source,
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -130,10 +151,6 @@ class AlphaSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
 
     async def _set_value(self, value: int) -> None:
         """Stage the updated flag for the atomic Apply Schedule action."""
-        if self._coordinator.can_unlock_time_controls(self._serial):
-            await self._async_write_unlock(value)
-            return
-
         previous_state = self._optimistic_state
         self._optimistic_state = bool(value)
         self.async_write_ha_state()
@@ -158,61 +175,17 @@ class AlphaSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         # The coordinator overlays the draft on subsequent polls so the value
         # stays visible until it is applied or discarded.
 
-    async def _async_write_unlock(self, value: int) -> None:
-        """Send an enable immediately while the schedule surface is locked.
-
-        Nothing else can be staged or applied in that state, so a draft here
-        would only wait behind an Apply button that is itself unavailable.
-        """
-        if value != 1:
-            raise HomeAssistantError(
-                f"Both timers for {self._serial} are already off. Switching one "
-                "back on is the only schedule change Home Assistant can make "
-                "while the inverter reports no timed control; the working mode "
-                "can only be changed in the AlphaESS app"
-            )
-
-        previous_state = self._optimistic_state
-        self._optimistic_state = True
-        self.async_write_ha_state()
-        try:
-            if self._coordinator_key == "gridCharge":
-                await self._coordinator.async_write_charge_config(
-                    self._serial, grid_charge=1,
-                )
-            else:
-                await self._coordinator.async_write_discharge_config(
-                    self._serial, ctr_dis=1,
-                )
-        except Exception:
-            _LOGGER.exception(
-                "Failed to re-enable %s for %s, reverting",
-                self._coordinator_key, self._serial,
-            )
-            self._optimistic_state = previous_state
-            self.async_write_ha_state()
-            raise
-
     @property
     def available(self) -> bool:
-        """Switch controls require the cloud API, a usable schedule store,
-        and an active time-based working mode.
-
-        In a self-consumption mode the enable flags are accepted but ignored
-        by the inverter, and writing one would make the mode inference lie —
-        the working mode can only be changed in the AlphaESS app, so the
-        switches lock together with the rest of the schedule surface.
-        """
+        """Switch controls require the cloud API and a usable schedule store."""
         if (
             not self.coordinator.last_update_success
             or self._serial not in self._coordinator.data
         ):
             return False
-        return self._coordinator.cloud_available and (
-            self._coordinator.can_modify_time_controls(self._serial)
-            # The one exception to the lockout: with both timers off, these
-            # switches are the only way back to a timed mode from here.
-            or self._coordinator.can_unlock_time_controls(self._serial)
+        return (
+            self._coordinator.cloud_available
+            and self._coordinator.can_modify_time_controls(self._serial)
         )
 
     @property

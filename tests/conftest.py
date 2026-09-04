@@ -19,6 +19,7 @@ class FakeEntry:
 
     def __init__(self, entry_id="test_entry", data=None, options=None, subentries=None):
         self.entry_id = entry_id
+        self.domain = "alphaess"
         self.data = data or {"AppID": "app-id", "AppSecret": "app-secret"}
         self.options = options or {}
         self.subentries = subentries or {}
@@ -83,6 +84,9 @@ def mock_api():
         "authenticate",
     ):
         getattr(api, method).return_value = None
+        # autospec names every coroutine mock "AsyncMock"; the coordinator
+        # keys its raw-response records by the real method name.
+        getattr(api, method).__name__ = method
     return api
 
 

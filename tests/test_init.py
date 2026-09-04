@@ -7,6 +7,7 @@ import pytest
 import voluptuous as vol
 from alphaess.alphaess import AlphaESSApiError
 from homeassistant.config_entries import ConfigEntryState, ConfigSubentry
+from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
     ConfigEntryNotReady,
@@ -24,6 +25,7 @@ from custom_components.alphaess import (
     async_unload_entry,
 )
 from custom_components.alphaess.const import (
+    CONF_ASSUME_SCHEDULE_FLAGS,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
@@ -435,7 +437,9 @@ class TestUnloadAndListener:
         mock_hass.config_entries.async_entries.return_value = [entry]
 
         assert await async_unload_entry(mock_hass, entry) is True
-        assert mock_hass.services.async_remove.call_count == 2
+        assert mock_hass.services.async_remove.call_count == 3
+        removed = {call.args[1] for call in mock_hass.services.async_remove.call_args_list}
+        assert removed == {"setbatterycharge", "setbatterydischarge", "export_raw_snapshot"}
 
     async def test_unload_keeps_services_when_others_loaded(self, mock_hass):
         entry = FakeEntry(entry_id="one")
@@ -497,8 +501,9 @@ class FakeCoordinator:
 
     def __init__(self, hass, client=None, ip_address_map=None, inverter_models=None,
                  entry=None, scan_interval=None, alt_polling_mode=False,
-                 fast_scan_interval=None):
+                 fast_scan_interval=None, assume_schedule_flags_enabled=False):
         self.hass = hass
+        self.assume_schedule_flags_enabled = assume_schedule_flags_enabled
         self.api = client
         self.ip_address_map = ip_address_map
         self.inverter_models = inverter_models
@@ -569,10 +574,28 @@ class TestAsyncSetupEntry:
             raise_on_error=True,
         )
         mock_hass.config_entries.async_forward_entry_setups.assert_awaited_once()
-        assert mock_hass.services.async_register.call_count == 2
+        assert mock_hass.services.async_register.call_count == 3
+        export_registration = mock_hass.services.async_register.call_args_list[-1]
+        assert export_registration.args[1] == "export_raw_snapshot"
+        assert export_registration.kwargs["supports_response"] is SupportsResponse.ONLY
+        # Off unless the user turns it on: the default must stay fail-closed.
+        assert coordinator.assume_schedule_flags_enabled is False
         # EV cleanup flag stored
         update_kwargs = mock_hass.config_entries.async_update_entry.call_args.kwargs
         assert update_kwargs["options"]["_ev_entity_cleanup_done"] is True
+
+    async def test_the_assume_option_reaches_the_coordinator(self, setup_env):
+        mock_hass, mock_api = setup_env
+        sub = _inverter_subentry()
+        entry = FakeEntry(
+            subentries={sub.subentry_id: sub},
+            options={"_ev_entity_cleanup_done": True, CONF_ASSUME_SCHEDULE_FLAGS: True},
+        )
+        mock_api.getESSList.return_value = [{"sysSn": SERIAL, "minv": "SMILE5-INV"}]
+
+        await async_setup_entry(mock_hass, entry)
+
+        assert FakeCoordinator.instances[0].assume_schedule_flags_enabled is True
 
     async def test_services_not_reregistered(self, setup_env):
         mock_hass, mock_api = setup_env

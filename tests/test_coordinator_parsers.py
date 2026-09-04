@@ -110,6 +110,19 @@ class TestParseSummaryData:
         data = parser.parse_summary_data({})
         assert data[AlphaESSNames.CurrencyCode] == "Unknown"
 
+    def test_a_symbol_is_reported_as_a_code(self, parser):
+        """AlphaESS switched moneyType from "EUR" to "€"; the sensor is named
+        Currency Code and Home Assistant's monetary class needs one."""
+        data = parser.parse_summary_data({"moneyType": "€", "eload": 5})
+        assert data[AlphaESSNames.CurrencyCode] == "EUR"
+        assert data["Currency"] == "EUR"
+
+    def test_an_ambiguous_symbol_uses_the_configured_currency(self, parser):
+        data = parser.parse_summary_data(
+            {"moneyType": "$"}, fallback_currency="AUD",
+        )
+        assert data[AlphaESSNames.CurrencyCode] == "AUD"
+
     def test_self_consumption_scaling(self, parser):
         data = parser.parse_summary_data(
             {"eselfConsumption": 0.5, "eselfSufficiency": 0.25}

@@ -177,9 +177,7 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
 
     @property
     def available(self) -> bool:
-        """Time controls require the cloud API, a usable schedule store, and
-        time-based control being active — in a self-consumption mode there is
-        nothing a time edit could act on."""
+        """Time controls require the cloud API and a usable schedule store."""
         if (
             not self.coordinator.last_update_success
             or self._serial not in self._coordinator.data

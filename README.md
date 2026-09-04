@@ -230,10 +230,8 @@ What this setup depends on:
   AlphaESS app. An unused slot is stored as start equal to end and reads as
   `unknown`, which Predbat cannot parse as a window, and no one-sided write can
   create both sides at once.
-- **Leave Scheduled Discharging on.** Predbat turns the charge enable switch off
-  while it moves a window, and Home Assistant refuses to author the
-  both-timers-off state because it is indistinguishable from a self-consumption
-  mode.
+- **Leave Scheduled Discharging on** if you do not want Predbat's temporary
+  charge-disable step to leave both schedules disabled while it moves a window.
 - **Times are rounded to the nearest 15 minutes.** Predbat reads an entity back
   after writing it and warns when the value differs, so keep
   `inverter_clock_skew_start` and `inverter_clock_skew_end` at 0 and expect that
@@ -251,9 +249,7 @@ What this setup depends on:
 - **Set both enable switches once before letting Predbat write.** The periodic
   API cannot report whether scheduled charging and discharging are on, so until
   Scheduled Charging and Scheduled Discharging have an answer every write is
-  refused — see *The enable flags are write-only* below. Recording both as off
-  additionally locks the time-based controls, since that is how the API is told
-  to run self-consumption.
+  refused — see *The enable flags are write-only* below.
 
 If you drive the services from Predbat instead, note two things about its
 service templates: falsy values are dropped before the call, so `enabled: false`
@@ -275,55 +271,71 @@ was based. If the remote schedule changes before Apply, the write is rejected
 as a conflict instead of overwriting the newer schedule. Discard the draft,
 allow fresh values to load if necessary, review them, and stage the change
 again. Immediate actions and services have no long-lived draft, but still start
-from a fresh read.
+from a fresh read. If one succeeds while a draft is open, untouched draft fields
+are rebased onto the new remote schedule while explicitly staged fields remain
+pending. An immediate action uses only its own arguments plus the last confirmed
+enable pair; it never consumes staged switch values before Apply.
 
-The binary sensor **Time Based Control Active** reports whether any timed
-charge/discharge control is enabled in whichever store governs the system
-(either enable flag set). It turns off when the inverter runs a non-timed
-mode such as **Self Consumption (Plus)** — live probing showed those modes
-flip both enable flags to `0` while keeping the configured windows stored —
-and is unavailable while no schedule store is readable.
+The diagnostic binary sensor **Recorded Schedule Flags Enabled** reports whether
+either flag in Home Assistant's last confirmed pair is on. Its unique ID remains
+compatible with the former **Time Based Control Active** entity so an existing
+registry entry is renamed in place. It is deliberately not a working-mode
+sensor: AlphaESS OpenAPI exposes no authoritative way to tell **Time Based
+Control** from **Self Consumption (Plus)**.
 
 ### The enable flags are write-only
 
-`gridChargeCycle` and `ctrDisCycle` decide whether scheduled charging and
-discharging run. On the periodic store they are **write-only**: probing on
-issue #267 showed `getTimeChargeBySn` answers `0` for both however the inverter
-is actually set, while `setTimeChargeBySn` acts on what it is sent.
+`gridChargeCycle` and `ctrDisCycle` are the scheduled charge/discharge intent
+sent with a periodic replacement. They are effectively **write-only**: probing
+on issue #267 showed `getTimeChargeBySn` can answer `0` for both regardless of
+the inverter's app-selected working mode, while `setTimeChargeBySn` accepts the
+explicit pair it is sent.
 
-| sent | effect on the inverter |
+| sent | recorded schedule intent |
 | --- | --- |
-| `1 / 0` | schedule active, scheduled discharging off |
-| `1 / 1` | both schedules enabled |
-| `0 / 1` | scheduled discharging only |
-| `0 / 0` | **switches the inverter to self-consumption** |
+| `1 / 0` | scheduled charging on, scheduled discharging off |
+| `1 / 1` | both schedules on |
+| `0 / 1` | scheduled charging off, scheduled discharging on |
+| `0 / 0` | both schedules off |
+
+That pair does not reveal or reliably change the app's overall working mode.
+In Self Consumption modes the cloud may still accept and retain schedule edits,
+but the inverter may not physically act on them until its mode is changed in the
+AlphaESS app.
 
 Two consequences follow, and the integration is built around them.
 
-**The read is never echoed back.** A replacement built from the read would post
-`0/0` on every write and quietly switch the inverter out of timed control.
-Snapshots therefore drop both flags, and every write sends a value that came
-from the user instead.
+**The read is never echoed back.** A replacement built from the read could post
+an invented `0/0` pair on every write. Snapshots therefore drop both flags, and
+every write sends only values that came from the user or the last confirmed pair.
 
 **The switches are the record.** *Scheduled Charging* and *Scheduled
-Discharging* are the only place that answer can live, so their published state
-is restored across restarts and handed back to the coordinator. Until both have
-an answer they read **unknown**, and a schedule write is refused with a message
-naming them rather than guessing which working mode you wanted. Editing and
-staging still work; only the write needs the answer.
+Discharging* are the only place that answer can live, so a separate
+last-confirmed attribute is restored across restarts and handed back to the
+coordinator. The displayed switch can show a newer local draft without that
+draft becoming confirmed after a restart. Until both confirmed values are
+known, unrelated immediate writes are refused rather than borrowing a pending
+draft or guessing. Stage both switch choices and press Apply once to establish
+the pair.
 
-Once both are recorded, a request to set them to `0/0` is a real one — it is how
-the API is told to run self-consumption — so it locks the time-based controls:
-time entities, cutoff SOC and power numbers, duration buttons, Reset,
-Apply/Discard, and any service call carrying a window, cutoff or power. The two
-switches stay available so the inverter can be brought back to a timed mode from
-Home Assistant, and turning one on there is sent immediately rather than staged,
-since Apply is unavailable in that state. Home Assistant still refuses to author
-`0/0` by turning off the *last* enabled timer from a service.
+**Or tell the integration to assume.** Systems in the UK and Europe read the
+pair back as `0/0` whatever the app shows, so a fresh install there has no
+record at all, and every one-sided write — a service call from an automation,
+a duration button — is refused until the switches have been set once. The
+option **Assume scheduled charging and discharging are enabled when unknown**
+(Settings → Devices & Services → AlphaESS → Configure) changes only that
+case: a flag Home Assistant has no record of is sent as `1` instead of the
+write being refused. A switch you have set always wins, and the pair sent is
+recorded as soon as AlphaESS accepts the write, so the assumption is used at
+most once per system per session; the log says when it was. Leave it off if
+either scheduled charging or scheduled discharging is meant to stay off in
+the app, and set the switches instead. It is off by default.
 
-In legacy backup mode `gridCharge` and `ctrDis` are ordinary read-write fields
-and none of the above applies: they are read from the store, reported as-is, and
-a mode change made in the AlphaESS app is picked up on the next poll.
+Schedule controls are gated only by whether a complete governing store can be
+read and safely replaced. A recorded `0/0` pair does not lock them, because the
+same flags and schedule contents cannot tell Home Assistant which working mode
+the AlphaESS app selected. In legacy backup mode the flags are read-write fields,
+but they still are not treated as an overall working-mode endpoint.
 
 The diagnostic sensor `Periodic Schedule Read` reports:
 
@@ -344,24 +356,56 @@ erase weekly settings, extra periods, or power values that it cannot see.
 
 **Settings → Devices & Services → AlphaESS → ⋮ → Download diagnostics** answers
 most of what a report needs, without anyone having to sign API requests by hand.
-Alongside the usual entry and entity data, the `schedule` section carries, per
-inverter:
+Alongside the usual entry and entity data, the `schedule` section carries one
+atomic completed-poll snapshot per inverter:
 
 - `governing_store` and `periodic_read` — which surface the system is on;
-- `capabilities` — the exact flags behind every unavailable control, so a locked
-  UI explains itself;
+- `capabilities` — schedule read/write capability plus the explicit fact that
+  working mode is unavailable through OpenAPI;
 - `enable_intent` / `enable_last_sent` — the write-only pair, which nothing else
   can report;
 - `periodic_snapshot` and `legacy_snapshot` — what each store actually held,
   including an empty period list or a stale window the app no longer shows;
-- `draft` — what is staged, which fields are dirty, and whether an Apply is in
-  flight;
+- `draft` — what was staged when that poll completed;
 - cooldowns and consecutive poll errors.
+
+`schedule_live` separately reports the current draft, dirty fields, and
+in-flight Apply state. Keeping it separate prevents a diagnostics download
+during a sequential multi-inverter poll from pretending that live transaction
+state and completed-poll data came from the same tick.
 
 The `coordinator.api` section reports the current call spacing and whether the
 fast lane is still active, which is what to check when something else is sharing
 the same API account. Serials are replaced with `inverter_1`, `inverter_2` and so
 on, and credentials, keys and addresses are redacted.
+
+#### Exporting the raw API responses
+
+The download carries the parsed entity view. When the question is what the
+API actually returned, call the `alphaess.export_raw_snapshot` action
+(Developer tools → Actions, or from a script with `response_variable`). It
+returns the last response the integration received from every OpenAPI
+endpoint it uses — `getEssList`, the summary/energy/power reads,
+`getTimeChargeBySn`, the legacy config reads in backup mode, the EV charger
+reads, the local dongle read when an IP is configured — plus the request
+each answered, the parsed data, the schedule state and the coordinator's
+pacing. Nothing is requested from AlphaESS; it is what Home Assistant already
+holds, so it is safe to call as often as you like. A rejected call is
+recorded as its return code and a transport failure as the exception.
+
+Serial numbers are replaced by `inverter_1`, `ev_charger_1` and so on
+everywhere they appear, including inside response bodies and entity IDs, with
+the same numbering as the diagnostics download; credentials, register keys,
+wifi details and the local dongle serial are redacted by key. Bind and unbind
+calls never have their arguments retained. With one AlphaESS entry configured
+no field is needed; with more, pass `serial`, `config_entry_id` or
+`device_id`.
+
+```yaml
+action: alphaess.export_raw_snapshot
+data: {}
+response_variable: snapshot
+```
 
 For anything the download cannot show — what happened, in what order — turn on
 debug logging:
@@ -376,7 +420,7 @@ logger:
 
 Every OpenAPI request and **its full response** is then written out, along with
 each staged field, each write and the enable pair sent with it, and a line
-whenever the schedule surface locks or unlocks and what decided it. That is the
+whenever schedule capability changes and what decided it. That is the
 same information a hand-signed API request would give you, without signing one.
 Very large responses are capped rather than dropped. Requests carry no
 credentials — those live in the headers, which are not logged — but the log does
@@ -394,8 +438,12 @@ share it.
   all until one exists — add a period to that side in the app, or give it one and
   turn its switch off, which is how the API is told to run a single side.
 - Both a start and end time must be set before adding a new period. Existing
-  weekly periods can be edited while retaining their weekdays, but the entity UI
-  cannot add a new weekly period because it has no weekday selector.
+  weekly periods keep their weekdays when edited. The entity UI has no weekday
+  selector, so a period added to a weekly schedule runs on the same days as the
+  period it is added alongside — the newer AlphaESS app writes "every day" as a
+  weekly schedule covering all seven, so that is usually what you want. Change
+  the days in the app if it is not. A weekly schedule with no existing period on
+  that side has nothing to copy, and adding one there is refused.
 - Existing per-period power values are preserved. Adding a brand-new period
   requires an explicit positive power value for that slot; the inverter's nominal
   `poinv` rating is not a verified battery charge/discharge rate and is never used
@@ -409,6 +457,14 @@ share it.
 - AlphaESS reports `6008` only as generic `Set failed`. Overlapping charge and
   discharge windows are one documented cause, but the code is not conclusive. The
   log records the periods sent and retains the original API explanation.
+- A **discharge** period does not force export to the grid. On the systems
+  probed on #267 it governs whether the battery may discharge to support the
+  house load during the window; feed-in and export control are not exposed
+  through these endpoints.
+- A `200` from `setTimeChargeBySn` means the cloud stored the schedule, and the
+  next poll re-reads it. The integration does not poll back to confirm that the
+  inverter has activated a period; the AlphaESS app's active-period indicator
+  and the battery power readings are the check for that.
 
 A network timeout after a POST is not proof of rejection: the server might
 have stored the request before the response was lost. Home Assistant reports that
@@ -436,7 +492,14 @@ discarding the list shape.
 
 ### Currency and daily history sensors
 
-- Monetary sensors now use ISO 4217 currency codes when provided by the API, and fall back to Home Assistant's configured currency when not available.
+- Monetary sensors report an ISO 4217 currency code, which is what Home
+  Assistant's monetary device class accepts. AlphaESS answers `moneyType` with
+  either a code or the symbol and has changed which, so a symbol is resolved to
+  a code. Where a symbol names more than one currency (`$`, `¥`, `kr`) the
+  currency Home Assistant is configured for wins if it is one of them,
+  otherwise the most common is used. An unrecognised value falls back to the
+  configured currency rather than being guessed at. The `Currency Code`
+  diagnostic sensor reports the resolved code, not the raw value.
 - Diagnostic currency sensors are available for troubleshooting:
   - `Currency Code`
 - Daily history energy breakdown sensors are exposed:
@@ -460,8 +523,7 @@ In practice the integration runs calls at 1-second spacing: live probing of
 the current server showed reads accepted at sub-second spacing without
 `6053`, and at the documented 10 seconds a two-inverter full poll took
 minutes — blocking Home Assistant startup and delaying app-side changes
-(such as a work-mode switch flipping `Time Based Control Active`) by up to
-five minutes. The documented pace remains the fallback: if the server ever
+by up to five minutes. The documented pace remains the fallback: if the server ever
 answers `6053`, that call is retried once and the session drops back to
 10-second spacing permanently.
 
@@ -542,6 +604,23 @@ data:
   cp2start: "13:00"
   cp2end: "16:00"
   chargestopsoc: 100
+```
+
+### Alpha ESS: Export Raw Snapshot<br>
+
+  Returns the last response received from every AlphaESS endpoint the integration
+  uses, redacted so it can be attached to an issue. It makes no API request. See
+  *Exporting the raw API responses* above. <br>
+  Data (all optional, needed only with more than one AlphaESS entry):<br>
+    - serial = A system serial managed by the entry to export <br>
+    - config_entry_id = The entry to export <br>
+    - device_id = An inverter or EV charger device of the entry to export <br>
+
+example:
+```yaml
+action: alphaess.export_raw_snapshot
+data: {}
+response_variable: snapshot
 ```
 
 ### Alpha ESS: Set Battery Discharge<br>

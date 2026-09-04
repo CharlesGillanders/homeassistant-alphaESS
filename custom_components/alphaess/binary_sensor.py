@@ -104,13 +104,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
 
 class AlphaScheduleControlBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Whether AlphaESS time-based charge/discharge control is active.
+    """Whether either recorded schedule-enable flag is on.
 
-    On when either enable flag is set in whichever schedule store governs
-    the system (periodic cycles or the legacy backup flags). Off means a
-    non-timed mode such as Self Consumption Plus is running. Unavailable
-    while no schedule store is readable.
+    The OpenAPI has no inverter working-mode endpoint. This diagnostic reports
+    only the last pair Home Assistant successfully sent/restored (or the legacy
+    flags), and must never be interpreted as Time Based Control mode.
     """
+
+    # Keep the original unique ID so an existing diagnostic entity is renamed
+    # in place instead of leaving an orphan after this semantic correction.
+    _LEGACY_UNIQUE_ID_NAME = "Time Based Control Active"
 
     def __init__(self, coordinator, serial, config, description, device_info=None):
         super().__init__(coordinator)
@@ -128,7 +131,7 @@ class AlphaScheduleControlBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         value = self._coordinator.data.get(self._serial, {}).get(
-            AlphaESSNames.TimeBasedControl
+            AlphaESSNames.ScheduleFlagsEnabled
         )
         return None if value is None else bool(value)
 
@@ -139,14 +142,16 @@ class AlphaScheduleControlBinarySensor(CoordinatorEntity, BinarySensorEntity):
         serial_data = self._coordinator.data.get(self._serial)
         if serial_data is None:
             return False
-        return (
-            self._coordinator.cloud_available
-            and AlphaESSNames.TimeBasedControl in serial_data
-        )
+        return self._coordinator.cloud_available and serial_data.get(
+            AlphaESSNames.ScheduleFlagsEnabled
+        ) is not None
 
     @property
     def unique_id(self):
-        return f"{self._config.entry_id}_{self._serial} - {self._name}"
+        return (
+            f"{self._config.entry_id}_{self._serial} - "
+            f"{self._LEGACY_UNIQUE_ID_NAME}"
+        )
 
     @property
     def name(self):

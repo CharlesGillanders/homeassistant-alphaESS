@@ -31,6 +31,10 @@ ALPHA_POST_REQUEST_RESTRICTION = timedelta(seconds=30)
 # Alt polling mode constants
 CONF_ALT_POLLING_MODE = "alt_polling_mode"
 CONF_FAST_SCAN_INTERVAL_SECONDS = "fast_scan_interval_seconds"
+# When on, a periodic write whose enable pair Home Assistant has no record of
+# sends 1 for the unknown flag(s) instead of being refused. The escape hatch
+# for systems that read gridChargeCycle/ctrDisCycle back as 0/0 (#267).
+CONF_ASSUME_SCHEDULE_FLAGS = "assume_schedule_flags_enabled"
 DEFAULT_FAST_SCAN_INTERVAL_SECONDS = 15
 MIN_API_CALL_INTERVAL_SECONDS = 10
 # AlphaESS documents 10 seconds as the minimum polling interval. Faster

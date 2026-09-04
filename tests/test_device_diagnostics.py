@@ -100,6 +100,54 @@ class TestDiagnostics:
         result = await async_get_config_entry_diagnostics(mock_hass, entry)
         assert result["data"] == {}
 
+    async def test_multi_inverter_download_uses_one_completed_poll(
+        self, mock_hass, make_coordinator
+    ):
+        """A download during the next sequential poll must not contain the
+        freshly replaced first inverter and stale second inverter."""
+        coordinator = make_coordinator(models=["A", "B"])
+        coordinator.data = {
+            "SERIAL_A": {"Model": "A", AlphaESSNames.TotalLoad: 1.0},
+            "SERIAL_B": {"Model": "B", AlphaESSNames.TotalLoad: 2.0},
+        }
+        coordinator._periodic_readable.update({"SERIAL_A": False, "SERIAL_B": False})
+        coordinator._legacy_schedules["SERIAL_A"] = {
+            "charge": {"gridCharge": 1, "timeChaf1": "01:00"},
+            "discharge": {"ctrDis": 1},
+        }
+        coordinator._legacy_schedules["SERIAL_B"] = {
+            "charge": {"gridCharge": 1, "timeChaf1": "02:00"},
+            "discharge": {"ctrDis": 1},
+        }
+        coordinator._poll_tick_count = 728
+        coordinator._last_poll_type = "normal"
+        coordinator._finalize_data()
+
+        # Simulate the next poll after it has replaced only the first serial.
+        coordinator._poll_tick_count = 729
+        coordinator.data["SERIAL_A"] = {
+            "Model": "A", AlphaESSNames.TotalLoad: 9.0,
+        }
+        coordinator._legacy_schedules["SERIAL_A"]["charge"]["timeChaf1"] = "09:00"
+        entry = FakeEntry()
+        entry.runtime_data = coordinator
+
+        result = await async_get_config_entry_diagnostics(mock_hass, entry)
+
+        first = result["data"]["inverter_1"]
+        second = result["data"]["inverter_2"]
+        assert first[AlphaESSNames.TotalLoad] == 1.0
+        assert second[AlphaESSNames.TotalLoad] == 2.0
+        assert first[AlphaESSNames.PollTickCount] == 728
+        assert second[AlphaESSNames.PollTickCount] == 728
+        assert result["coordinator"]["api"]["poll_tick_count"] == 728
+        assert result["schedule"]["inverter_1"]["legacy_snapshot"]["charge"][
+            "timeChaf1"
+        ] == "01:00"
+        assert result["schedule_live"]["inverter_1"]["legacy_snapshot"]["charge"][
+            "timeChaf1"
+        ] == "09:00"
+
 
 class TestScheduleDiagnostics:
     """Every field here exists because answering a report needed it and the
@@ -147,6 +195,7 @@ class TestScheduleDiagnostics:
         # The resource itself, so an empty list is visible without asking.
         assert schedule["periodic_snapshot"]["dischargeTimeList"] == []
         assert schedule["capabilities"]["can_modify_time_controls"] is True
+        assert schedule["capabilities"]["assume_schedule_flags_enabled"] is False
         assert schedule["draft"] is None
         assert schedule["seconds_since_last_charge_write"] is not None
         assert schedule["seconds_since_last_discharge_write"] is None
@@ -187,7 +236,7 @@ class TestScheduleDiagnostics:
         entry.runtime_data = coordinator
 
         result = await async_get_config_entry_diagnostics(mock_hass, entry)
-        draft = result["schedule"]["inverter_1"]["draft"]
+        draft = result["schedule_live"]["inverter_1"]["draft"]
 
         assert draft["dirty"]["charge"] == ["timeChaf1"]
         assert draft["apply_in_progress"] is False

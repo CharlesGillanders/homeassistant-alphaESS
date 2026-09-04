@@ -456,6 +456,13 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
     @property
     def available(self) -> bool:
         """Buttons require cloud API to function."""
+        if self._key == AlphaESSNames.ButtonDiscardSchedule:
+            # Discard is entirely local. Keep the escape hatch available even
+            # if the cloud is down while edits are pending.
+            return (
+                self._coordinator.has_schedule_draft(self._serial)
+                and not self._coordinator.is_schedule_apply_in_progress(self._serial)
+            )
         if not self.coordinator.last_update_success:
             return False
         serial_data = self._coordinator.data.get(self._serial)
@@ -465,35 +472,23 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             AlphaESSNames.evchargersn
         ) != self._ev_serial:
             return False
-        if self._key in (
-            AlphaESSNames.ButtonApplySchedule,
-            AlphaESSNames.ButtonDiscardSchedule,
-        ):
-            # In a self-consumption working mode nothing time-based can be
-            # written, so a stranded draft cannot be applied (or discarded)
-            # until the app returns the inverter to a time-based mode.
+        if self._key == AlphaESSNames.ButtonApplySchedule:
             return (
                 self._coordinator.cloud_available
                 and self._coordinator.has_schedule_draft(self._serial)
                 and not self._coordinator.is_schedule_apply_in_progress(self._serial)
-                and self._coordinator.is_time_based_control_active(self._serial)
-                is not False
             )
         if self._key == AlphaESSNames.ButtonRechargeConfig:
             # The reset clears only the legacy backup stores; on a system the
             # periodic schedule governs it could only fail, so report it as
-            # unavailable there instead. In a self-consumption mode it would
-            # silently re-enable time-based control, so it locks there too.
+            # unavailable there instead.
             return (
                 self._coordinator.cloud_available
                 and self._coordinator.can_reset_schedule(self._serial)
-                and self._coordinator.is_time_based_control_active(self._serial)
-                is not False
             )
         if getattr(self, "_movement_state", None) in ("Charge", "Discharge"):
-            # Duration buttons need a usable schedule store and active
-            # time-based control; in a self-consumption mode a press would
-            # silently re-enable timed control.
+            # Duration buttons need a usable schedule store. The OpenAPI has
+            # no authoritative working-mode read with which to gate them.
             return (
                 self._coordinator.cloud_available
                 and self._coordinator.can_modify_time_controls(self._serial)

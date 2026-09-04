@@ -26,6 +26,7 @@ from alphaess.alphaess import AlphaESSApiError
 from .const import (
     AUTH_FAILURE_CODES,
     CONF_ALT_POLLING_MODE,
+    CONF_ASSUME_SCHEDULE_FLAGS,
     CONF_DISABLE_NOTIFICATIONS,
     CONF_FAST_SCAN_INTERVAL_SECONDS,
     CONF_INVERTER_MODEL,
@@ -278,6 +279,15 @@ class AlphaESSOptionsFlowHandler(OptionsFlowWithReload):
                 vol.Coerce(int),
                 vol.Range(min=MIN_FAST_SCAN_INTERVAL_SECONDS, max=MAX_FAST_SCAN_INTERVAL_SECONDS),
             ),
+            # Systems in the UK/EU read gridChargeCycle/ctrDisCycle back as
+            # 0/0 whatever the app shows, so a fresh install has no record of
+            # the pair and every one-sided write is refused until the two
+            # switches have been set once. This sends 1 for an unknown flag
+            # instead; it never overrides a switch the user has set.
+            vol.Optional(
+                CONF_ASSUME_SCHEDULE_FLAGS,
+                default=self.config_entry.options.get(CONF_ASSUME_SCHEDULE_FLAGS, False),
+            ): bool,
         }
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))

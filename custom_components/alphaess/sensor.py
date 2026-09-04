@@ -19,6 +19,7 @@ from .const import (
     WIFI_STATUS_KEYS,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
+from .currency import normalize_currency_unit
 from .device import build_ev_charger_device_info, build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import (
@@ -37,58 +38,6 @@ PARALLEL_UPDATES = 0
 # Map common currency symbols to ISO 4217 codes.
 # SensorDeviceClass.MONETARY expects an ISO 4217 currency code; raw symbols
 # (e.g. '€') would produce invalid-unit warnings and broken statistics.
-_SYMBOL_TO_ISO: dict[str, str] = {
-    "$": "USD",
-    "€": "EUR",
-    "£": "GBP",
-    "¥": "JPY",
-    "₩": "KRW",
-    "₹": "INR",
-    "₽": "RUB",
-    "₺": "TRY",
-    "R$": "BRL",
-    "₫": "VND",
-    "₴": "UAH",
-    "₱": "PHP",
-    "₦": "NGN",
-    "Fr": "CHF",
-    "kr": "SEK",
-    "zł": "PLN",
-    "A$": "AUD",
-    "C$": "CAD",
-    "NZ$": "NZD",
-    "R": "ZAR",
-}
-
-
-def _normalize_currency_unit(value: str | None, fallback: str | None) -> str | None:
-    """
-    Normalize currency for monetary units to an ISO 4217 code.
-
-    SensorDeviceClass.MONETARY expects an ISO 4217 currency code.
-    If the API returns a known symbol we map it; otherwise we fall back
-    to the HA-configured currency.
-    """
-    if value is None:
-        return fallback
-
-    normalized = value.strip()
-    if not normalized:
-        return fallback
-
-    # Already a 3-letter ISO code
-    if len(normalized) == 3 and normalized.isalpha():
-        return normalized.upper()
-
-    # Try to map a symbol to its ISO code
-    iso = _SYMBOL_TO_ISO.get(normalized)
-    if iso:
-        return iso
-
-    # Unknown symbol — fall back to HA's configured currency
-    return fallback
-
-
 EV_RELATED_KEYS = {
     AlphaESSNames.evchargersn,
     AlphaESSNames.evchargermodel,
@@ -192,7 +141,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             data = coordinator.data[serial]
             model = data.get("Model")
-            currency = _normalize_currency_unit(
+            currency = normalize_currency_unit(
                 data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
                 hass.config.currency,
             )
@@ -273,7 +222,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            currency = _normalize_currency_unit(
+            currency = normalize_currency_unit(
                 data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
                 hass.config.currency,
             )
@@ -306,7 +255,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         if not ev_charger or ev_charger in ev_subentry_serials:
             continue
 
-        currency = _normalize_currency_unit(
+        currency = normalize_currency_unit(
             data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
             hass.config.currency,
         )

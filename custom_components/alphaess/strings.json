@@ -91,12 +91,14 @@
           "Verify SSL Certificate": "Verify SSL Certificate",
           "scan_interval_seconds": "Full poll interval (seconds)",
           "alt_polling_mode": "Alt polling mode (split fast/slow)",
-          "fast_scan_interval_seconds": "Fast poll interval (seconds)"
+          "fast_scan_interval_seconds": "Fast poll interval (seconds)",
+          "assume_schedule_flags_enabled": "Assume scheduled charging and discharging are enabled when unknown"
         },
         "data_description": {
           "scan_interval_seconds": "Interval for all data: summary, energy, config, and power. When alt polling mode is enabled this becomes the slow/full poll interval.",
           "alt_polling_mode": "When enabled, live power data (SOC, PV, grid, battery, load) polls at the fast interval, while summary, energy, and config data polls at the full poll interval.",
-          "fast_scan_interval_seconds": "Interval for live power data when alt polling mode is enabled. Default 15 seconds."
+          "fast_scan_interval_seconds": "Interval for live power data when alt polling mode is enabled. Default 15 seconds.",
+          "assume_schedule_flags_enabled": "Some systems (UK/EU) report both schedule flags as 0 whatever the app shows, so Home Assistant has no record of them until the Scheduled Charging and Scheduled Discharging switches have been set once, and every service call or duration button is refused until then. Turn this on to send 1 for any flag Home Assistant has no record of; a switch you have set always wins, and the pair is recorded once a write succeeds. Leave it off if either schedule is meant to stay off in the app."
         }
       }
     }
