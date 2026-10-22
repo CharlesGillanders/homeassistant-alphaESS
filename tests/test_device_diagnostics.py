@@ -1,5 +1,10 @@
 """Tests for device info builders and diagnostics."""
 import time as time_mod
+from dataclasses import dataclass
+
+import pytest
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.typing import UNDEFINED, UndefinedType
 
 from custom_components.alphaess.device import (
     build_ev_charger_device_info,
@@ -13,54 +18,118 @@ from .conftest import FakeEntry
 SERIAL = "al1000021000123"
 
 
-class TestInverterDeviceInfo:
-    def test_basic(self):
-        info = build_inverter_device_info(SERIAL, {"Model": "SMILE5-INV"})
-        assert info["identifiers"] == {("alphaess", SERIAL.upper())}
-        assert info["model"] == "SMILE5-INV"
-        assert "configuration_url" not in info
+@dataclass(kw_only=True, slots=True)
+class DataclassDeviceInfo:
+    """Exercise the Core 2026.11 shape without its mapping compatibility layer."""
 
-    def test_with_local_ip(self):
+    identifiers: set[tuple[str, str]] | UndefinedType = UNDEFINED
+    manufacturer: str | None | UndefinedType = UNDEFINED
+    model: str | None | UndefinedType = UNDEFINED
+    serial_number: str | None | UndefinedType = UNDEFINED
+    name: str | None | UndefinedType = UNDEFINED
+    sw_version: str | None | UndefinedType = UNDEFINED
+    hw_version: str | None | UndefinedType = UNDEFINED
+    configuration_url: str | None | UndefinedType = UNDEFINED
+
+
+@pytest.fixture(params=[DeviceInfo, DataclassDeviceInfo], ids=["native", "dataclass"])
+def device_info_type(request, monkeypatch):
+    """Run builders against native DeviceInfo and a strict dataclass."""
+    monkeypatch.setattr("custom_components.alphaess.device.DeviceInfo", request.param)
+    return request.param
+
+
+class TestInverterDeviceInfo:
+    @pytest.mark.parametrize("data", [{"Model": "SMILE5-INV"}, {}], ids=["model", "missing_model"])
+    def test_basic(self, device_info_type, data):
+        info = build_inverter_device_info(SERIAL, data)
+        assert info == device_info_type(
+            identifiers={("alphaess", SERIAL.upper())},
+            manufacturer="AlphaESS",
+            model=data.get("Model"),
+            serial_number=SERIAL,
+            name=f"Alpha ESS Energy Statistics : {SERIAL.upper()}",
+        )
+
+    @pytest.mark.parametrize("status", [0, 1])
+    def test_with_local_ip(self, device_info_type, status):
         data = {
             "Model": "SMILE5-INV",
             AlphaESSNames.localIP: "192.168.1.5",
-            AlphaESSNames.deviceStatus: 1,
+            AlphaESSNames.deviceStatus: status,
             AlphaESSNames.deviceSerialNumber: "AL1234",
             AlphaESSNames.softwareVersion: "1.2.3",
             AlphaESSNames.hardwareVersion: "A1",
         }
         info = build_inverter_device_info(SERIAL, data)
-        assert info["configuration_url"] == "http://192.168.1.5"
         # DeviceInfo carries the system serial; the comms-dongle SN stays
         # available as its own diagnostic sensor.
-        assert info["serial_number"] == SERIAL
-        assert info["sw_version"] == "1.2.3"
-        assert info["hw_version"] == "A1"
+        assert info == device_info_type(
+            identifiers={("alphaess", SERIAL.upper())},
+            manufacturer="AlphaESS",
+            model="SMILE5-INV",
+            serial_number=SERIAL,
+            name=f"Alpha ESS Energy Statistics : {SERIAL.upper()}",
+            sw_version="1.2.3",
+            hw_version="A1",
+            configuration_url="http://192.168.1.5",
+        )
 
-    def test_local_ip_zero_ignored(self):
+    @pytest.mark.parametrize(
+        ("local_ip", "status"),
+        [(None, 1), ("", 1), ("0", 1), ("192.168.1.5", None)],
+        ids=["missing_ip", "empty_ip", "zero_ip", "missing_status"],
+    )
+    def test_unavailable_local_metadata_omitted(self, device_info_type, local_ip, status):
         data = {
             "Model": "SMILE5-INV",
-            AlphaESSNames.localIP: "0",
+            AlphaESSNames.localIP: local_ip,
+            AlphaESSNames.deviceStatus: status,
+            AlphaESSNames.softwareVersion: "1.2.3",
+            AlphaESSNames.hardwareVersion: "A1",
+        }
+        info = build_inverter_device_info(SERIAL, data)
+        assert info == device_info_type(
+            identifiers={("alphaess", SERIAL.upper())},
+            manufacturer="AlphaESS",
+            model="SMILE5-INV",
+            serial_number=SERIAL,
+            name=f"Alpha ESS Energy Statistics : {SERIAL.upper()}",
+        )
+
+    def test_local_ip_with_missing_versions(self, device_info_type):
+        data = {
+            AlphaESSNames.localIP: "192.168.1.5",
             AlphaESSNames.deviceStatus: 1,
         }
         info = build_inverter_device_info(SERIAL, data)
-        assert "configuration_url" not in info
-
-    def test_local_ip_without_status_ignored(self):
-        data = {"Model": "SMILE5-INV", AlphaESSNames.localIP: "192.168.1.5"}
-        info = build_inverter_device_info(SERIAL, data)
-        assert "configuration_url" not in info
+        assert info == device_info_type(
+            identifiers={("alphaess", SERIAL.upper())},
+            manufacturer="AlphaESS",
+            model=None,
+            serial_number=SERIAL,
+            name=f"Alpha ESS Energy Statistics : {SERIAL.upper()}",
+            sw_version=None,
+            hw_version=None,
+            configuration_url="http://192.168.1.5",
+        )
 
 
 class TestEvChargerDeviceInfo:
-    def test_basic(self):
+    @pytest.mark.parametrize("model", ["SMILE-EVCT11", None])
+    def test_basic(self, device_info_type, model):
         data = {
             AlphaESSNames.evchargersn: "EV123",
-            AlphaESSNames.evchargermodel: "SMILE-EVCT11",
+            AlphaESSNames.evchargermodel: model,
         }
         info = build_ev_charger_device_info(data)
-        assert info["identifiers"] == {("alphaess", "EV123")}
-        assert info["model"] == "SMILE-EVCT11"
+        assert info == device_info_type(
+            identifiers={("alphaess", "EV123")},
+            manufacturer="AlphaESS",
+            model=model,
+            serial_number="EV123",
+            name="Alpha ESS Charger : EV123",
+        )
 
 
 class TestDiagnostics:

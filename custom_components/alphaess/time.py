@@ -105,7 +105,7 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
         self._icon = description.icon
         self._name = description.name
 
-        if device_info:
+        if device_info is not None:
             self._attr_device_info = device_info
 
     @property

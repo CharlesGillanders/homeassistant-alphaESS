@@ -161,7 +161,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
             if not ev_charger:
                 self._time = int(self._name.split()[0])
 
-        if device_info:
+        if device_info is not None:
             self._attr_device_info = device_info
 
     @property

@@ -368,6 +368,8 @@ class TestSubentryVerifyStep:
 
 def _make_reconfigure_flow(mock_hass, api, subentry_data=None):
     flow, entry = _make_subentry_flow(mock_hass, api)
+    flow.context = {"source": "reconfigure"}
+    entry.update_listeners = []
     subentry = SimpleNamespace(
         data=subentry_data
         or {
@@ -378,9 +380,7 @@ def _make_reconfigure_flow(mock_hass, api, subentry_data=None):
         subentry_id="sub1",
     )
     flow._get_reconfigure_subentry = MagicMock(return_value=subentry)
-    flow.async_update_and_abort = MagicMock(
-        return_value={"type": "abort", "reason": "reconfigure_successful"}
-    )
+    mock_hass.config_entries.async_update_subentry.return_value = True
     return flow, entry, subentry
 
 
@@ -390,6 +390,8 @@ class TestSubentryReconfigureStep:
         result = await flow.async_step_reconfigure(None)
         assert result["type"] == "form"
         assert result["step_id"] == "reconfigure"
+        mock_hass.config_entries.async_update_subentry.assert_not_called()
+        mock_hass.config_entries.async_schedule_reload.assert_not_called()
 
     async def test_save_ip(self, mock_hass, mock_api):
         flow, entry, subentry = _make_reconfigure_flow(mock_hass, mock_api)
@@ -397,19 +399,51 @@ class TestSubentryReconfigureStep:
             {CONF_IP_ADDRESS: " 192.168.1.7 ", CONF_DISABLE_NOTIFICATIONS: False}
         )
         assert result["reason"] == "reconfigure_successful"
-        saved = flow.async_update_and_abort.call_args.kwargs["data"]
-        assert saved[CONF_IP_ADDRESS] == "192.168.1.7"
-        assert saved[CONF_DISABLE_NOTIFICATIONS] is False
+        update = mock_hass.config_entries.async_update_subentry
+        update.assert_called_once()
+        assert update.call_args.kwargs["entry"] is entry
+        assert update.call_args.kwargs["subentry"] is subentry
+        assert update.call_args.kwargs["data"] == {
+            CONF_SERIAL_NUMBER: "AL999",
+            CONF_IP_ADDRESS: "192.168.1.7",
+            CONF_DISABLE_NOTIFICATIONS: False,
+        }
+        mock_hass.config_entries.async_schedule_reload.assert_called_once_with(
+            entry.entry_id
+        )
+        entry.add_update_listener.assert_not_called()
 
     async def test_save_empty_ip(self, mock_hass, mock_api):
-        flow, _, _ = _make_reconfigure_flow(mock_hass, mock_api)
+        flow, entry, _ = _make_reconfigure_flow(
+            mock_hass,
+            mock_api,
+            subentry_data={
+                CONF_SERIAL_NUMBER: "AL999",
+                CONF_IP_ADDRESS: "192.168.1.7",
+                CONF_DISABLE_NOTIFICATIONS: True,
+            },
+        )
         result = await flow.async_step_reconfigure({CONF_IP_ADDRESS: ""})
         assert result["reason"] == "reconfigure_successful"
+        saved = mock_hass.config_entries.async_update_subentry.call_args.kwargs["data"]
+        assert saved[CONF_IP_ADDRESS] == ""
+        mock_hass.config_entries.async_schedule_reload.assert_called_once_with(
+            entry.entry_id
+        )
+
+    async def test_unchanged_settings_do_not_reload(self, mock_hass, mock_api):
+        flow, _, _ = _make_reconfigure_flow(mock_hass, mock_api)
+        mock_hass.config_entries.async_update_subentry.return_value = False
+        result = await flow.async_step_reconfigure({CONF_IP_ADDRESS: ""})
+        assert result["reason"] == "reconfigure_successful"
+        mock_hass.config_entries.async_schedule_reload.assert_not_called()
 
     async def test_invalid_ip(self, mock_hass, mock_api):
         flow, _, _ = _make_reconfigure_flow(mock_hass, mock_api)
         result = await flow.async_step_reconfigure({CONF_IP_ADDRESS: "not-an-ip"})
         assert result["errors"] == {"base": "invalid_ip"}
+        mock_hass.config_entries.async_update_subentry.assert_not_called()
+        mock_hass.config_entries.async_schedule_reload.assert_not_called()
 
     async def test_unbind_success(self, mock_hass, mock_api):
         # Successful AlphaESS mutations return data:null -> None.

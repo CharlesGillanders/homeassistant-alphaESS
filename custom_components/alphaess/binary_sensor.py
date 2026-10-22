@@ -125,7 +125,7 @@ class AlphaScheduleControlBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._icon = description.icon
         self._entity_category = description.entity_category
 
-        if device_info:
+        if device_info is not None:
             self._attr_device_info = device_info
 
     @property
@@ -185,7 +185,7 @@ class AlphaEVReadinessBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._entity_category = description.entity_category
         self._direction = description.direction
 
-        if device_info:
+        if device_info is not None:
             self._attr_device_info = device_info
 
     @property

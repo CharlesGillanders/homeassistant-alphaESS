@@ -285,6 +285,56 @@ def _cleanup_stale_ev_entities(
             ent_reg.async_remove(entity_entry.entity_id)
 
 
+def _migrate_devices_to_subentries(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Move legacy devices and their entities without recreating registry entries."""
+    subentries_by_serial: dict[str, set[str]] = {}
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type not in (
+            SUBENTRY_TYPE_INVERTER, SUBENTRY_TYPE_EV_CHARGER,
+        ):
+            continue
+        serial = subentry.data.get(CONF_SERIAL_NUMBER)
+        if serial:
+            subentries_by_serial.setdefault(serial.upper(), set()).add(subentry.subentry_id)
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    complete = True
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        matching_subentries = {
+            subentry_id
+            for domain, serial in device.identifiers
+            if domain == DOMAIN
+            for subentry_id in subentries_by_serial.get(serial.upper(), ())
+        }
+        if len(matching_subentries) != 1:
+            # Cloud discovery can be incomplete. Keep the device and retry the
+            # migration on the next setup, rather than discarding user metadata.
+            complete = False
+            _LOGGER.warning(
+                "Deferring subentry migration for device %s: no unambiguous matching subentry",
+                device.id,
+            )
+            continue
+
+        subentry_id = next(iter(matching_subentries))
+        # A device subentry move removes entities still assigned to its previous
+        # subentry. Move our entity records first, preserving IDs and overrides.
+        for entity in er.async_entries_for_device(
+            ent_reg, device.id, include_disabled_entities=True,
+        ):
+            if (
+                entity.config_entry_id == entry.entry_id
+                and entity.config_subentry_id != subentry_id
+            ):
+                ent_reg.async_update_entity(
+                    entity.entity_id, config_subentry_id=subentry_id,
+                )
+        if device.config_subentry_id != subentry_id:
+            dev_reg.async_update_device(device.id, new_config_subentry_id=subentry_id)
+    return complete
+
+
 def _resolve_coordinator_for_serial(
     hass: HomeAssistant, serial: str
 ) -> AlphaESSDataUpdateCoordinator:
@@ -396,12 +446,13 @@ def _resolve_entry_for_export(hass: HomeAssistant, data: Mapping[str, Any]) -> C
 
     device_id = data.get("device_id")
     if device_id:
-        device = dr.async_get(hass).async_get(device_id)
+        device, entry = dr.async_get_device_and_config_entry_for_domain(
+            hass, device_id, domain=DOMAIN,
+        )
         if device is None:
             raise ServiceValidationError(f"No device has id {device_id}")
-        for entry in entries:
-            if entry.entry_id in device.config_entries:
-                return entry
+        if entry is not None and entry in entries:
+            return entry
         raise ServiceValidationError(
             f"Device {device_id} does not belong to a loaded AlphaESS config entry"
         )
@@ -600,16 +651,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
         new_options = {**entry.options, "_ev_entity_cleanup_done": True}
         hass.config_entries.async_update_entry(entry, options=new_options)
 
-    # One-time cleanup: remove old device associations from pre-subentry era.
-    # Old devices were registered with (config_entry_id, None) - no subentry.
-    # Remove them so platforms recreate devices with proper subentry associations.
-    if entry.options.get("_needs_device_cleanup"):
-        dev_reg = dr.async_get(hass)
-        devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
-        for device_entry in devices:
-            dev_reg.async_update_device(
-                device_entry.id, remove_config_entry_id=entry.entry_id
-            )
+    # Attach legacy devices to their subentries while retaining device IDs,
+    # entity registry entries, user names, areas and disabled preferences.
+    if entry.options.get("_needs_device_cleanup") and _migrate_devices_to_subentries(hass, entry):
         # Clear the flag so this only runs once
         new_options = {
             k: v for k, v in entry.options.items()

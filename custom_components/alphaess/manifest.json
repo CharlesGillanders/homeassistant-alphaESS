@@ -1,6 +1,10 @@
 {
   "domain": "alphaess",
   "name": "Alpha ESS",
+  "categories": [
+    "energy.solar_batteries",
+    "energy.ev_charging"
+  ],
   "codeowners": [
     "@CharlesGillanders",
     "@Poshy163"

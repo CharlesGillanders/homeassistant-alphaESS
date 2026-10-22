@@ -499,35 +499,45 @@ class TestTheServicePicksTheRightEntry:
         with pytest.raises(ServiceValidationError, match="two"):
             init_mod._resolve_entry_for_export(mock_hass, {"config_entry_id": "two"})
 
+    @pytest.mark.parametrize("device_id", ["dev", "legacy-composite"])
     def test_a_device_selects_the_entry_it_belongs_to(
-        self, mock_hass, make_coordinator, monkeypatch
+        self, mock_hass, make_coordinator, monkeypatch, device_id
     ):
         entry = _entry_with(make_coordinator())
         mock_hass.config_entries.async_entries.return_value = [entry]
-        registry = MagicMock()
-        registry.async_get.return_value = SimpleNamespace(config_entries={"one"})
-        monkeypatch.setattr(init_mod.dr, "async_get", MagicMock(return_value=registry))
+        # The helper resolves a stored composite ID to AlphaESS's split device.
+        # No deprecated multi-owner property is needed on the resulting device.
+        lookup = MagicMock(return_value=(SimpleNamespace(id="split-device"), entry))
+        monkeypatch.setattr(
+            init_mod.dr, "async_get_device_and_config_entry_for_domain", lookup,
+            raising=False,
+        )
 
-        assert init_mod._resolve_entry_for_export(mock_hass, {"device_id": "dev"}) is entry
+        assert init_mod._resolve_entry_for_export(mock_hass, {"device_id": device_id}) is entry
+        lookup.assert_called_once_with(mock_hass, device_id, domain=DOMAIN)
 
     def test_an_unknown_device_is_a_validation_error(
         self, mock_hass, make_coordinator, monkeypatch
     ):
         mock_hass.config_entries.async_entries.return_value = [_entry_with(make_coordinator())]
-        registry = MagicMock()
-        registry.async_get.return_value = None
-        monkeypatch.setattr(init_mod.dr, "async_get", MagicMock(return_value=registry))
+        monkeypatch.setattr(
+            init_mod.dr, "async_get_device_and_config_entry_for_domain",
+            MagicMock(return_value=(None, None)), raising=False,
+        )
 
         with pytest.raises(ServiceValidationError, match="No device has id dev"):
             init_mod._resolve_entry_for_export(mock_hass, {"device_id": "dev"})
 
-    def test_a_device_of_another_integration_is_a_validation_error(
-        self, mock_hass, make_coordinator, monkeypatch
+    @pytest.mark.parametrize("owner", ["other-domain", "not-loaded"])
+    def test_a_device_without_a_loaded_alphaess_owner_is_a_validation_error(
+        self, mock_hass, make_coordinator, monkeypatch, owner
     ):
         mock_hass.config_entries.async_entries.return_value = [_entry_with(make_coordinator())]
-        registry = MagicMock()
-        registry.async_get.return_value = SimpleNamespace(config_entries={"elsewhere"})
-        monkeypatch.setattr(init_mod.dr, "async_get", MagicMock(return_value=registry))
+        entry = None if owner == "other-domain" else FakeEntry(entry_id="not-loaded")
+        monkeypatch.setattr(
+            init_mod.dr, "async_get_device_and_config_entry_for_domain",
+            MagicMock(return_value=(SimpleNamespace(id="dev"), entry)), raising=False,
+        )
 
         with pytest.raises(ServiceValidationError, match="does not belong"):
             init_mod._resolve_entry_for_export(mock_hass, {"device_id": "dev"})

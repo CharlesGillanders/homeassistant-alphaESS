@@ -465,7 +465,7 @@ class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
                         errors["base"] = "invalid_ip"
 
                 if not errors:
-                    return self.async_update_and_abort(
+                    return self.async_update_reload_and_abort(
                         self._get_entry(),
                         subentry,
                         data={
@@ -473,6 +473,7 @@ class AlphaESSInverterSubentryFlowHandler(ConfigSubentryFlow):
                             CONF_IP_ADDRESS: ip,
                             CONF_DISABLE_NOTIFICATIONS: user_input.get(CONF_DISABLE_NOTIFICATIONS, True),
                         },
+                        reload_even_if_entry_is_unchanged=False,
                     )
 
         schema = vol.Schema({

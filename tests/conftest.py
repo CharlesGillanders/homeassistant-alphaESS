@@ -1,13 +1,13 @@
 """Shared fixtures for AlphaESS tests.
 
-These unit tests exercise the integration with explicit mocks instead of the
-pytest-homeassistant-custom-component plugin (whose runtime fixtures are
-Linux-only), so the suite runs identically on Windows, macOS and Linux/CI.
-The plugin is disabled via `-p no:homeassistant` in pyproject.toml.
+These unit tests exercise the integration with explicit mocks and run on
+Windows, macOS and Linux/CI. An independently installed Home Assistant test
+plugin is disabled via `-p no:homeassistant` in pyproject.toml.
 """
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 
+import homeassistant  # noqa: F401 - initialize Probatio's voluptuous alias before the API client
 import pytest
 from alphaess.alphaess import alphaess as AlphaESSApiClient
 
