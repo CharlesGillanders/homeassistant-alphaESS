@@ -11,4 +11,10 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
         - uses: "actions/checkout@v4"
+        # Keep the official validator, using a schema that supports categories.
+        - name: Build Hassfest with category support
+          run: >-
+            docker build --file script/hassfest/docker/Dockerfile
+            --tag ghcr.io/home-assistant/hassfest:latest
+            https://github.com/home-assistant/core.git#8a75c7d26dee678983db83ae50782c25f0a56637
         - uses: "home-assistant/actions/hassfest@master"
