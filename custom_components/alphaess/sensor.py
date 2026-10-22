@@ -282,7 +282,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         self._serial = serial
         self._coordinator = coordinator
 
-        if key_supported_states.native_unit_of_measurement is CURRENCY_DOLLAR:
+        if key_supported_states.native_unit_of_measurement == CURRENCY_DOLLAR:
             self._native_unit_of_measurement = currency
         else:
             self._native_unit_of_measurement = key_supported_states.native_unit_of_measurement

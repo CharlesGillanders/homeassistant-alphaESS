@@ -30,11 +30,12 @@ If you had previously been using this custom component in Home Assistant you wil
 
 ## Installation using HACS
 
-1. Use [HACS](https://hacs.xyz/docs/setup/download), in `HACS > Integrations > Hamburger Menu > Custom Repositories add https://github.com/CharlesGillanders/homeassistant-alphaESS with category set to integration.
-2. in `HACS > Integrations > Explore & Add Repositories` search for "alphaess". 
-3. Restart Home Assistant.
-4. Go to **Settings > Devices & services > Add integration** and search for **Alpha ESS**.
-5. Enter the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
+1. Open [HACS](https://www.hacs.xyz/docs/use/repositories/dashboard/) in the Home Assistant sidebar. Select the top-right three-dot menu, then **Custom repositories**.
+2. Add [https://github.com/CharlesGillanders/homeassistant-alphaESS](https://github.com/CharlesGillanders/homeassistant-alphaESS), choose **Integration** as the type, then select **Add**.
+3. Search for **AlphaESS**, open the repository, and select **Download**.
+4. Restart Home Assistant.
+5. Go to **Settings > Devices & services > Add integration** and search for **Alpha ESS**.
+6. Enter the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
 
 ## Manual Installation
 
