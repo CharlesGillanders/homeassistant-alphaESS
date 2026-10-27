@@ -4,7 +4,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfMass, UnitOfPower
+from homeassistant.const import CURRENCY_DOLLAR, EntityCategory, UnitOfEnergy, UnitOfMass, UnitOfPower, UnitOfRatio
 
 from .entity import (
     AlphaESSBinarySensorDescription,
@@ -275,7 +275,7 @@ FULL_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.BatterySOC,
         name="Instantaneous Battery SOC",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
     ),
@@ -321,14 +321,14 @@ FULL_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
         icon="mdi:home-percent",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
         icon="mdi:home-percent",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
@@ -342,7 +342,7 @@ FULL_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         key=AlphaESSNames.usCapacity,
         name="Maximum Battery Capacity",
         icon="mdi:home-percent",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
@@ -537,7 +537,7 @@ LIMITED_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
     AlphaESSSensorDescription(
         key=AlphaESSNames.StateOfCharge,
         name="State of Charge",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
     ),
@@ -637,14 +637,14 @@ LIMITED_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         key=AlphaESSNames.SelfConsumption,
         name="Self Consumption",
         icon="mdi:home-percent",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
         key=AlphaESSNames.SelfSufficiency,
         name="Self Sufficiency",
         icon="mdi:home-percent",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     AlphaESSSensorDescription(
@@ -658,7 +658,7 @@ LIMITED_SENSOR_DESCRIPTIONS: list[AlphaESSSensorDescription] = [
         key=AlphaESSNames.usCapacity,
         name="Maximum Battery Capacity",
         icon="mdi:battery-high",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC
     ),
@@ -915,7 +915,7 @@ DISCHARGE_AND_CHARGE_NUMBERS: list[AlphaESSNumberDescription] = [
         name="Charge Cut-Off SOC",
         entity_category=EntityCategory.CONFIG,
         icon="mdi:battery-sync",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         native_min_value=10,
         native_max_value=100,
         native_step=1,
@@ -925,7 +925,7 @@ DISCHARGE_AND_CHARGE_NUMBERS: list[AlphaESSNumberDescription] = [
         name="Discharge To SOC",
         entity_category=EntityCategory.CONFIG,
         icon="mdi:battery-sync",
-        native_unit_of_measurement=PERCENTAGE,
+        native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
         native_min_value=10,
         native_max_value=100,
         native_step=1,

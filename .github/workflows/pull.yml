@@ -16,5 +16,13 @@ jobs:
           category: "integration"
           ignore: brands
 
+      # The published image predates integration categories. Build the official
+      # image from a pinned Core revision until a release includes this schema.
+      - name: Build Hassfest with category support
+        run: >-
+          docker build --file script/hassfest/docker/Dockerfile
+          --tag ghcr.io/home-assistant/hassfest:latest
+          https://github.com/home-assistant/core.git#8a75c7d26dee678983db83ae50782c25f0a56637
+
       - name: Hassfest validation
         uses: "home-assistant/actions/hassfest@master"

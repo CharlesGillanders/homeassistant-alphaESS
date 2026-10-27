@@ -1,6 +1,7 @@
 import logging
 
 from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
+from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -156,8 +157,13 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         else:
             self._def_initial_value = None
 
-        if device_info:
+        if device_info is not None:
             self._attr_device_info = device_info
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Keep restored values and pending edits when renamed on Core 2026.11+."""
+        super().async_entity_id_changed(old_entity_id)
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -313,7 +319,7 @@ class AlphaEVNumber(CoordinatorEntity, NumberEntity):
         self._attr_native_step = description.native_step
         self._attr_mode = description.mode
 
-        if device_info:
+        if device_info is not None:
             self._attr_device_info = device_info
 
     @property

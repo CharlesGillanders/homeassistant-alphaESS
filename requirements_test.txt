@@ -1,2 +1,6 @@
-pytest-homeassistant-custom-component
+homeassistant>=2026.9.0
+pytest
+pytest-asyncio
+pytest-cov
+pytest-freezer
 ruff

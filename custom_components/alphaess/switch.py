@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.core import callback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -83,7 +84,7 @@ class AlphaSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         self._coordinator_key = description.coordinator_key
         self._optimistic_state: bool | None = None
 
-        if device_info:
+        if device_info is not None:
             self._attr_device_info = device_info
 
     @property
@@ -110,6 +111,11 @@ class AlphaSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         )
         state = "unknown" if value is None else ("on" if value else "off")
         return {ATTR_LAST_CONFIRMED_STATE: state}
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Keep recorded intent and pending edits when renamed on Core 2026.11+."""
+        super().async_entity_id_changed(old_entity_id)
 
     async def async_added_to_hass(self) -> None:
         """Hand the last published state back as the recorded answer."""

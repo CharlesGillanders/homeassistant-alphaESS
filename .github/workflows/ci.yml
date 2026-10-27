@@ -15,7 +15,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Install ruff
         run: pip install ruff
@@ -25,17 +25,26 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    name: Pytest
+    name: Pytest (HA ${{ matrix.homeassistant }})
+    strategy:
+      matrix:
+        homeassistant: ["2026.9.0", "latest"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Install test dependencies
+        env:
+          HOMEASSISTANT_VERSION: ${{ matrix.homeassistant }}
         run: |
-          pip install -r requirements_test.txt
+          if [ "$HOMEASSISTANT_VERSION" = "latest" ]; then
+            pip install -r requirements_test.txt
+          else
+            pip install -r requirements_test.txt "homeassistant==$HOMEASSISTANT_VERSION"
+          fi
           pip install $(python -c "import json; print(' '.join(json.load(open('custom_components/alphaess/manifest.json'))['requirements']))")
 
       - name: Run tests with 100% coverage gate

@@ -1,23 +1,27 @@
 """Tests for __init__.py setup, services, migration, unload and registry helpers."""
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 import pytest
 import voluptuous as vol
 from alphaess.alphaess import AlphaESSApiError
-from homeassistant.config_entries import ConfigEntryState, ConfigSubentry
-from homeassistant.core import SupportsResponse
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState, ConfigSubentry
+from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
     ConfigEntryNotReady,
     HomeAssistantError,
 )
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 import custom_components.alphaess as init_mod
 from custom_components.alphaess import (
     _cleanup_stale_ev_entities,
     _has_inverter_subentries,
+    _migrate_devices_to_subentries,
     _migrate_entity_ids,
     _resolve_coordinator_for_serial,
     async_migrate_entry,
@@ -30,6 +34,7 @@ from custom_components.alphaess.const import (
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
     CONF_SERIAL_NUMBER,
+    DOMAIN,
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
@@ -120,6 +125,193 @@ class TestHasInverterSubentries:
 
     def test_false(self):
         assert _has_inverter_subentries(FakeEntry()) is False
+
+
+class TestMigrateDevicesToSubentries:
+    async def test_real_registries_preserve_entities_after_the_device_move_event(self, tmp_path):
+        """Exercise Core's validation and device-move listener, not a mock API."""
+        hass = HomeAssistant(str(tmp_path))
+        entry = ConfigEntry(
+            data={}, discovery_keys=MappingProxyType({}), domain=DOMAIN,
+            minor_version=1, options={}, source="user", title="AlphaESS",
+            unique_id="account", version=2,
+            subentries_data=[{
+                "data": {CONF_SERIAL_NUMBER: SERIAL},
+                "subentry_id": "inverter-subentry", "subentry_type": SUBENTRY_TYPE_INVERTER,
+                "title": "Inverter", "unique_id": f"inverter_{SERIAL}",
+            }],
+        )
+        hass.config_entries = MagicMock()
+        hass.config_entries.async_get_entry.return_value = entry
+        dr.async_setup(hass)
+        await dr.async_load(hass, load_empty=True)
+        await er.async_load(hass, load_empty=True)
+        await ar.async_load(hass, load_empty=True)
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+        area = ar.async_get(hass).async_create("Garage")
+        try:
+            device = dev_reg.async_get_or_create(
+                config_entry_id=entry.entry_id, identifiers={(DOMAIN, SERIAL)},
+                name="Legacy inverter", disabled_by=dr.DeviceEntryDisabler.USER,
+            )
+            device = dev_reg.async_update_device(
+                device.id, area_id=area.id, name_by_user="My solar inverter",
+            )
+            entity = ent_reg.async_get_or_create(
+                "sensor", DOMAIN, "legacy-sensor-uid", config_entry=entry,
+                device_id=device.id, disabled_by=er.RegistryEntryDisabler.USER,
+            )
+            entity = ent_reg.async_update_entity(
+                entity.entity_id, name="My solar output", area_id=area.id,
+            )
+            await hass.async_block_till_done()
+
+            assert _migrate_devices_to_subentries(hass, entry) is True
+            # Flush the real registry's device-update listener. Moving the device
+            # before its entities would delete the entity here.
+            await hass.async_block_till_done()
+
+            migrated_device = dev_reg.async_get(device.id)
+            migrated_entity = ent_reg.async_get(entity.entity_id)
+            assert migrated_device.config_subentry_id == "inverter-subentry"
+            assert migrated_device.name_by_user == "My solar inverter"
+            assert migrated_device.area_id == area.id
+            assert migrated_device.disabled_by is dr.DeviceEntryDisabler.USER
+            assert migrated_entity is not None
+            assert migrated_entity.id == entity.id
+            assert migrated_entity.unique_id == entity.unique_id
+            assert migrated_entity.device_id == device.id
+            assert migrated_entity.config_subentry_id == "inverter-subentry"
+            assert migrated_entity.name == "My solar output"
+            assert migrated_entity.area_id == area.id
+            assert migrated_entity.disabled_by is er.RegistryEntryDisabler.USER
+            assert not ent_reg.deleted_entities
+        finally:
+            await hass.async_stop(force=True)
+
+    def _registries(self, monkeypatch, devices, entities):
+        dev_reg = MagicMock(spec=["async_update_device", "async_remove_device"])
+        ent_reg = MagicMock(spec=["async_update_entity", "async_remove"])
+
+        def update_entity(entity_id, *, config_subentry_id):
+            next(entity for entity in entities if entity.entity_id == entity_id).config_subentry_id = (
+                config_subentry_id
+            )
+
+        def update_device(device_id, *, new_config_subentry_id):
+            device = next(device for device in devices if device.id == device_id)
+            # Core deletes old-subentry entities when a device moves. Ensuring
+            # those records were moved first protects their IDs and overrides.
+            assert all(
+                entity.config_subentry_id == new_config_subentry_id
+                for entity in entities
+                if entity.device_id == device_id and entity.config_entry_id == "test_entry"
+            )
+            device.config_subentry_id = new_config_subentry_id
+
+        dev_reg.async_update_device.side_effect = update_device
+        ent_reg.async_update_entity.side_effect = update_entity
+        monkeypatch.setattr(init_mod.dr, "async_get", MagicMock(return_value=dev_reg))
+        monkeypatch.setattr(init_mod.er, "async_get", MagicMock(return_value=ent_reg))
+        monkeypatch.setattr(
+            init_mod.dr, "async_entries_for_config_entry", MagicMock(return_value=devices),
+        )
+        monkeypatch.setattr(
+            init_mod.er, "async_entries_for_device",
+            MagicMock(side_effect=lambda _reg, device_id, *, include_disabled_entities: [
+                entity for entity in entities if entity.device_id == device_id
+            ]),
+        )
+        return dev_reg, ent_reg
+
+    def test_devices_entities_and_user_overrides_survive_idempotent_migration(self, monkeypatch):
+        inverter = _inverter_subentry()
+        charger = ConfigSubentry(
+            data={CONF_SERIAL_NUMBER: "Ev777"},
+            subentry_type=SUBENTRY_TYPE_EV_CHARGER, title="Charger", unique_id="charger",
+        )
+        entry = FakeEntry(subentries={
+            sub.subentry_id: sub for sub in (inverter, charger)
+        })
+        devices = [
+            SimpleNamespace(
+                id=device_id, identifiers={(DOMAIN, serial.lower())},
+                config_subentry_id=None, name_by_user="My device", area_id="garage",
+                labels={"energy"}, disabled_by="user",
+            )
+            for device_id, serial in (("inverter", SERIAL), ("charger", "EV777"))
+        ]
+        entities = [
+            SimpleNamespace(
+                entity_id=f"sensor.{device.id}", unique_id=f"custom_{device.id}",
+                device_id=device.id, config_entry_id=entry.entry_id,
+                config_subentry_id=None, name="My sensor", disabled_by="user",
+            )
+            for device in devices
+        ]
+        # An external helper's link must remain on its own config entry.
+        external = SimpleNamespace(
+            entity_id="sensor.helper", device_id="inverter",
+            config_entry_id="another_entry", config_subentry_id=None,
+        )
+        entities.append(external)
+        original_devices = [vars(device).copy() for device in devices]
+        original_entities = [vars(entity).copy() for entity in entities]
+        dev_reg, ent_reg = self._registries(monkeypatch, devices, entities)
+
+        assert _migrate_devices_to_subentries(MagicMock(), entry) is True
+        assert _migrate_devices_to_subentries(MagicMock(), entry) is True
+
+        for device, original, subentry in zip(devices, original_devices, (inverter, charger), strict=True):
+            assert vars(device) == {**original, "config_subentry_id": subentry.subentry_id}
+        for entity, original, subentry in zip(entities[:2], original_entities[:2], (inverter, charger), strict=True):
+            assert vars(entity) == {**original, "config_subentry_id": subentry.subentry_id}
+        assert vars(external) == original_entities[-1]
+        assert dev_reg.async_update_device.call_count == 2
+        assert ent_reg.async_update_entity.call_count == 2
+        dev_reg.async_remove_device.assert_not_called()
+        ent_reg.async_remove.assert_not_called()
+        assert all(
+            call.kwargs == {"include_disabled_entities": True}
+            for call in init_mod.er.async_entries_for_device.call_args_list
+        )
+
+    @pytest.mark.parametrize("problem", ["unmatched", "duplicate-serial", "multiple-identifiers"])
+    def test_unmatched_or_ambiguous_devices_are_preserved_for_retry(self, monkeypatch, caplog, problem):
+        inverter = _inverter_subentry()
+        other = _inverter_subentry(serial=SERIAL if problem == "duplicate-serial" else "OTHER")
+        blank = _inverter_subentry(serial="")
+        unsupported = ConfigSubentry(
+            data={CONF_SERIAL_NUMBER: "UNKNOWN"}, subentry_type="unsupported",
+            title="Unsupported", unique_id="unsupported",
+        )
+        entry = FakeEntry(subentries={
+            sub.subentry_id: sub for sub in (inverter, other, blank, unsupported)
+        })
+        identifiers = {(DOMAIN, SERIAL)}
+        if problem == "unmatched":
+            identifiers = {(DOMAIN, "UNKNOWN"), ("other_domain", SERIAL)}
+        elif problem == "multiple-identifiers":
+            identifiers.add((DOMAIN, "OTHER"))
+        device = SimpleNamespace(id="unresolved", identifiers=identifiers, config_subentry_id=None)
+        dev_reg, ent_reg = self._registries(monkeypatch, [device], [])
+
+        assert _migrate_devices_to_subentries(MagicMock(), entry) is False
+
+        assert device.config_subentry_id is None
+        dev_reg.async_update_device.assert_not_called()
+        dev_reg.async_remove_device.assert_not_called()
+        ent_reg.async_update_entity.assert_not_called()
+        assert "Deferring subentry migration for device unresolved" in caplog.text
+
+    def test_no_devices_need_no_migration(self, monkeypatch):
+        dev_reg, ent_reg = self._registries(monkeypatch, [], [])
+
+        assert _migrate_devices_to_subentries(MagicMock(), FakeEntry()) is True
+
+        dev_reg.async_update_device.assert_not_called()
+        ent_reg.async_update_entity.assert_not_called()
 
 
 class FakeRegistryEntry:
@@ -659,11 +851,16 @@ class TestAsyncSetupEntry:
             {"sysSn": SERIAL, "minv": "SMILE5-INV"},
             {"minv": "ignored-no-serial"},
         ]
+        mock_hass.config_entries.async_add_subentry.side_effect = (
+            lambda config, subentry: config.subentries.update({subentry.subentry_id: subentry})
+        )
 
         # device cleanup path
         dev_reg = MagicMock()
         device = MagicMock()
         device.id = "device1"
+        device.identifiers = {(DOMAIN, SERIAL)}
+        device.config_subentry_id = None
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(init_mod.dr, "async_get", MagicMock(return_value=dev_reg))
             mp.setattr(
@@ -681,10 +878,31 @@ class TestAsyncSetupEntry:
         assert created.data[CONF_IP_ADDRESS] == "192.168.1.4"
         # device cleanup ran
         dev_reg.async_update_device.assert_called_once_with(
-            "device1", remove_config_entry_id=entry.entry_id
+            "device1", new_config_subentry_id=created.subentry_id
+        )
+        assert any(
+            "_needs_device_cleanup" not in call.kwargs.get("options", {})
+            for call in mock_hass.config_entries.async_update_entry.call_args_list
         )
         # entity-id migration ran
         init_mod._migrate_entity_ids.assert_called_once()
+
+    async def test_unresolved_devices_keep_the_migration_pending(self, setup_env, monkeypatch):
+        mock_hass, mock_api = setup_env
+        sub = _inverter_subentry()
+        entry = FakeEntry(
+            subentries={sub.subentry_id: sub},
+            options={"_needs_device_cleanup": True, "_ev_entity_cleanup_done": True},
+        )
+        mock_api.getESSList.return_value = [{"sysSn": SERIAL, "minv": "SMILE5-INV"}]
+        migration = MagicMock(return_value=False)
+        monkeypatch.setattr(init_mod, "_migrate_devices_to_subentries", migration)
+
+        assert await async_setup_entry(mock_hass, entry) is True
+
+        migration.assert_called_once_with(mock_hass, entry)
+        assert entry.options["_needs_device_cleanup"] is True
+        mock_hass.config_entries.async_update_entry.assert_not_called()
 
     async def test_ev_subentry_auto_created(self, setup_env):
         mock_hass, mock_api = setup_env

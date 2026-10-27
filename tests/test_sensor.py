@@ -1,7 +1,12 @@
 """Tests for the sensor platform."""
 
+from dataclasses import replace
+from enum import StrEnum
+
+import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.config_entries import ConfigSubentry
+from homeassistant.const import CURRENCY_DOLLAR
 
 from custom_components.alphaess.const import (
     CONF_INVERTER_MODEL,
@@ -240,10 +245,12 @@ class TestSensorEntity:
         assert sensor.icon is None or isinstance(sensor.icon, str)
         assert sensor.entity_category is None or sensor.entity_category
 
-    def test_currency_unit_substitution(self, make_coordinator):
+    @pytest.mark.parametrize("unit", [CURRENCY_DOLLAR, StrEnum("CurrencyMarker", {"DOLLAR": "$"}).DOLLAR])
+    def test_currency_unit_substitution(self, make_coordinator, unit):
         coordinator = make_coordinator()
         coordinator.data = {SERIAL: {}}
-        income = _make_sensor(coordinator, AlphaESSNames.Income, currency="EUR")
+        description = replace(_description(AlphaESSNames.Income), native_unit_of_measurement=unit)
+        income = AlphaESSSensor(coordinator, FakeEntry(), SERIAL, description, "EUR")
         assert income.native_unit_of_measurement == "EUR"
 
         solar = _make_sensor(coordinator, AlphaESSNames.SolarProduction)
