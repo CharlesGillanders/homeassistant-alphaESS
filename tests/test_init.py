@@ -905,7 +905,9 @@ class TestAsyncSetupEntry:
         assert entry.options["_needs_device_cleanup"] is True
         mock_hass.config_entries.async_update_entry.assert_not_called()
 
-    async def test_ev_subentry_auto_created(self, setup_env):
+    async def test_charger_migration_precedes_platforms_without_creating_ev_subentries(
+        self, setup_env, monkeypatch,
+    ):
         mock_hass, mock_api = setup_env
         FakeCoordinator.next_data = {
             SERIAL: {
@@ -920,15 +922,17 @@ class TestAsyncSetupEntry:
             options={"_ev_entity_cleanup_done": True},
         )
         mock_api.getESSList.return_value = [{"sysSn": SERIAL, "minv": "SMILE5-INV"}]
+        migrate = MagicMock(return_value={"DEFERRED-EV"})
+        monkeypatch.setattr(init_mod, "async_migrate_charger_devices", migrate)
+
+        async def forward(config, platforms):
+            migrate.assert_called_once_with(mock_hass, config, config.runtime_data.data)
+            assert config.runtime_data.deferred_charger_serials == {"DEFERRED-EV"}
+
+        mock_hass.config_entries.async_forward_entry_setups.side_effect = forward
 
         await async_setup_entry(mock_hass, entry)
-        added = mock_hass.config_entries.async_add_subentry.call_args_list
-        ev_subs = [
-            call.args[1] for call in added
-            if call.args[1].subentry_type == SUBENTRY_TYPE_EV_CHARGER
-        ]
-        assert len(ev_subs) == 1
-        assert ev_subs[0].data[CONF_SERIAL_NUMBER] == "EV777"
+        mock_hass.config_entries.async_add_subentry.assert_not_called()
 
     async def test_cleanup_skipped_when_cloud_unavailable(self, setup_env):
         mock_hass, mock_api = setup_env

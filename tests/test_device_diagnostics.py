@@ -3,7 +3,7 @@ import time as time_mod
 from dataclasses import dataclass
 
 import pytest
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import ChildDeviceInfo, DeviceInfo
 from homeassistant.helpers.typing import UNDEFINED, UndefinedType
 
 from custom_components.alphaess.device import (
@@ -23,6 +23,7 @@ class DataclassDeviceInfo:
     """Exercise the Core 2026.11 shape without its mapping compatibility layer."""
 
     identifiers: set[tuple[str, str]] | UndefinedType = UNDEFINED
+    entry_type: object | UndefinedType = UNDEFINED
     manufacturer: str | None | UndefinedType = UNDEFINED
     model: str | None | UndefinedType = UNDEFINED
     serial_number: str | None | UndefinedType = UNDEFINED
@@ -30,7 +31,15 @@ class DataclassDeviceInfo:
     sw_version: str | None | UndefinedType = UNDEFINED
     hw_version: str | None | UndefinedType = UNDEFINED
     configuration_url: str | None | UndefinedType = UNDEFINED
-    via_device_id: str | UndefinedType = UNDEFINED
+
+
+@dataclass(kw_only=True, slots=True)
+class DataclassChildDeviceInfo:
+    """Child devices accept identity and a parent, without main-device metadata."""
+
+    identifiers: set[tuple[str, str]]
+    parent_device_id: str
+    name: str | None | UndefinedType = UNDEFINED
 
 
 @pytest.fixture(params=[DeviceInfo, DataclassDeviceInfo], ids=["native", "dataclass"])
@@ -40,12 +49,20 @@ def device_info_type(request, monkeypatch):
     return request.param
 
 
+@pytest.fixture(params=[ChildDeviceInfo, DataclassChildDeviceInfo], ids=["native", "dataclass"])
+def child_device_info_type(request, monkeypatch):
+    """Exercise typed-dict and strict dataclass child constructors."""
+    monkeypatch.setattr("custom_components.alphaess.device.ChildDeviceInfo", request.param)
+    return request.param
+
+
 class TestInverterDeviceInfo:
     @pytest.mark.parametrize("data", [{"Model": "SMILE5-INV"}, {}], ids=["model", "missing_model"])
     def test_basic(self, device_info_type, data):
         info = build_inverter_device_info(SERIAL, data)
         assert info == device_info_type(
             identifiers={("alphaess", SERIAL.upper())},
+            entry_type=None,
             manufacturer="AlphaESS",
             model=data.get("Model"),
             serial_number=SERIAL,
@@ -67,6 +84,7 @@ class TestInverterDeviceInfo:
         # available as its own diagnostic sensor.
         assert info == device_info_type(
             identifiers={("alphaess", SERIAL.upper())},
+            entry_type=None,
             manufacturer="AlphaESS",
             model="SMILE5-INV",
             serial_number=SERIAL,
@@ -92,6 +110,7 @@ class TestInverterDeviceInfo:
         info = build_inverter_device_info(SERIAL, data)
         assert info == device_info_type(
             identifiers={("alphaess", SERIAL.upper())},
+            entry_type=None,
             manufacturer="AlphaESS",
             model="SMILE5-INV",
             serial_number=SERIAL,
@@ -106,6 +125,7 @@ class TestInverterDeviceInfo:
         info = build_inverter_device_info(SERIAL, data)
         assert info == device_info_type(
             identifiers={("alphaess", SERIAL.upper())},
+            entry_type=None,
             manufacturer="AlphaESS",
             model=None,
             serial_number=SERIAL,
@@ -117,21 +137,22 @@ class TestInverterDeviceInfo:
 
 
 class TestEvChargerDeviceInfo:
-    @pytest.mark.parametrize("model", ["SMILE-EVCT11", None])
-    @pytest.mark.parametrize("parent_id", [None, "inverter-device"])
-    def test_basic(self, device_info_type, model, parent_id):
+    @pytest.mark.parametrize(("model", "expected_name"), [
+        ("SMILE-EVCT11", "EV Charger (SMILE-EVCT11)"),
+        (None, "EV Charger"),
+        ("", "EV Charger"),
+        ("Unknown", "EV Charger"),
+    ])
+    def test_basic(self, child_device_info_type, model, expected_name):
         data = {
             AlphaESSNames.evchargersn: "EV123",
             AlphaESSNames.evchargermodel: model,
         }
-        info = build_ev_charger_device_info(data, via_device_id=parent_id)
-        assert info == device_info_type(
+        info = build_ev_charger_device_info(data, parent_device_id="inverter-device")
+        assert info == child_device_info_type(
             identifiers={("alphaess", "EV123")},
-            manufacturer="AlphaESS",
-            model=model,
-            serial_number="EV123",
-            name="Alpha ESS Charger : EV123",
-            **({"via_device_id": parent_id} if parent_id is not None else {}),
+            name=expected_name,
+            parent_device_id="inverter-device",
         )
 
 

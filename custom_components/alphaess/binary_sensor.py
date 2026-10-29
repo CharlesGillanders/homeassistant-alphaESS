@@ -16,6 +16,7 @@ from .device import (
     async_get_inverter_device_id,
     build_ev_charger_device_info,
     build_inverter_device_info,
+    get_inverter_subentry,
 )
 from .enums import AlphaESSNames
 from .sensorlist import EV_CHARGER_BINARY_SENSORS, INVERTER_BINARY_SENSORS
@@ -62,9 +63,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 for sub in entry.subentries.values()
                 if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
             }
-            if ev_charger and ev_charger not in ev_subentry_serials:
+            if (
+                ev_charger
+                and ev_charger not in ev_subentry_serials
+                and ev_charger.upper() not in getattr(coordinator, "deferred_charger_serials", ())
+                and (parent_device_id := async_get_inverter_device_id(hass, entry, serial)) is not None
+            ):
                 ev_device_info = build_ev_charger_device_info(
-                    data, via_device_id=async_get_inverter_device_id(hass, entry, serial),
+                    data, parent_device_id=parent_device_id,
                 )
                 for description in ev_binary_supported_states.values():
                     entities.append(
@@ -85,14 +91,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
             if not parent_serial or parent_serial not in coordinator.data:
                 continue
+            parent_subentry = get_inverter_subentry(entry, parent_serial)
+            parent_device_id = async_get_inverter_device_id(hass, entry, parent_serial)
+            if parent_subentry is None or parent_device_id is None:
+                continue
 
             data = coordinator.data[parent_serial]
             ev_charger = data.get(AlphaESSNames.evchargersn)
-            if not ev_charger:
+            if not ev_charger or ev_charger.upper() in getattr(coordinator, "deferred_charger_serials", ()):
                 continue
 
             ev_device_info = build_ev_charger_device_info(
-                data, via_device_id=async_get_inverter_device_id(hass, entry, parent_serial),
+                data, parent_device_id=parent_device_id,
             )
             ev_entities: list[BinarySensorEntity] = []
             for description in ev_binary_supported_states.values():
@@ -108,7 +118,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 )
 
             if ev_entities:
-                async_add_entities(ev_entities, config_subentry_id=subentry.subentry_id)
+                async_add_entities(ev_entities, config_subentry_id=parent_subentry.subentry_id)
 
 
 class AlphaScheduleControlBinarySensor(CoordinatorEntity, BinarySensorEntity):

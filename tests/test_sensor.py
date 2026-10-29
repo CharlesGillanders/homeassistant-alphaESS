@@ -164,11 +164,16 @@ class TestSensorSetup:
                 AlphaESSNames.evchargermodel: "SMILE-EVCT11",
             }
         }
-        entry = _entry_for([_inverter_subentry(), _ev_subentry()], coordinator)
+        inverter = _inverter_subentry()
+        entry = _entry_for([inverter, _ev_subentry()], coordinator)
 
         await async_setup_entry(mock_hass, entry, add_entities)
-        # second add_entities call is for the EV subentry
+        # Legacy EV subentries still register the child under the inverter.
         assert len(add_entities.calls) == 2
+        assert all(
+            kwargs["config_subentry_id"] == inverter.subentry_id
+            for _entities, kwargs in add_entities.calls
+        )
 
     async def test_ev_subentry_missing_parent_skipped(
         self, mock_hass, make_coordinator, add_entities

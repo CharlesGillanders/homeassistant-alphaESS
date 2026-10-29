@@ -24,6 +24,7 @@ from .device import (
     async_get_inverter_device_id,
     build_ev_charger_device_info,
     build_inverter_device_info,
+    get_inverter_subentry,
 )
 from .enums import AlphaESSNames
 from .sensorlist import (
@@ -97,9 +98,14 @@ AU_MIGRATION_NULLABLE_KEYS = {
 def _add_ev_entities(hass, coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
     """Create and register EV charger sensor entities."""
     ev_charger = data.get(AlphaESSNames.evchargersn)
+    if ev_charger.upper() in getattr(coordinator, "deferred_charger_serials", ()):
+        return
+    parent_device_id = async_get_inverter_device_id(hass, entry, serial)
+    if parent_device_id is None:
+        return
     ev_model = data.get(AlphaESSNames.evchargermodel)
     ev_device_info = build_ev_charger_device_info(
-        data, via_device_id=async_get_inverter_device_id(hass, entry, serial),
+        data, parent_device_id=parent_device_id,
     )
     _LOGGER.info("New EV Charger: Serial: %s, Model: %s", ev_charger, ev_model)
 
@@ -222,6 +228,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
             if not parent_serial or parent_serial not in coordinator.data:
                 continue
+            parent_subentry = get_inverter_subentry(entry, parent_serial)
+            if parent_subentry is None:
+                continue
 
             data = coordinator.data[parent_serial]
             ev_charger = data.get(AlphaESSNames.evchargersn)
@@ -238,7 +247,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             _add_ev_entities(
                 hass, coordinator, entry, parent_serial, data, currency,
-                ev_charging_supported_states, subentry.subentry_id, async_add_entities,
+                ev_charging_supported_states, parent_subentry.subentry_id, async_add_entities,
             )
 
     # Handle inverters with EV chargers that don't have a dedicated EV subentry

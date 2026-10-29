@@ -232,11 +232,16 @@ class TestButtonSetup:
                 AlphaESSNames.evchargermodel: "SMILE-EVCT11",
             }
         }
-        entry = _entry_for([_inverter_subentry(), _ev_subentry()], coordinator)
+        inverter = _inverter_subentry()
+        entry = _entry_for([inverter, _ev_subentry()], coordinator)
 
         await button_setup(mock_hass, entry, add_entities)
-        # battery buttons via inverter + EV buttons via EV subentry
+        # Both the inverter and its child belong to the inverter subentry.
         assert len(add_entities.calls) == 2
+        assert all(
+            kwargs["config_subentry_id"] == inverter.subentry_id
+            for _entities, kwargs in add_entities.calls
+        )
 
     async def test_ev_subentry_missing_parent(self, mock_hass, make_coordinator, add_entities):
         coordinator = make_coordinator()
@@ -929,10 +934,15 @@ class TestNumberSetup:
                 AlphaESSNames.evchargermodel: "SMILE-EVCT11",
             }
         }
-        entry = _entry_for([_inverter_subentry(), _ev_subentry()], coordinator)
+        inverter = _inverter_subentry()
+        entry = _entry_for([inverter, _ev_subentry()], coordinator)
 
         await number_setup(mock_hass, entry, add_entities)
         assert len(add_entities.calls) == 2
+        assert all(
+            kwargs["config_subentry_id"] == inverter.subentry_id
+            for _entities, kwargs in add_entities.calls
+        )
 
     async def test_ev_subentry_missing_parent(self, mock_hass, make_coordinator, add_entities):
         coordinator = make_coordinator()

@@ -37,11 +37,9 @@ from .const import (
     CONF_ALT_POLLING_MODE,
     CONF_ASSUME_SCHEDULE_FLAGS,
     CONF_DISABLE_NOTIFICATIONS,
-    CONF_EV_CHARGER_MODEL,
     CONF_FAST_SCAN_INTERVAL_SECONDS,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
-    CONF_PARENT_INVERTER,
     CONF_SCAN_INTERVAL_SECONDS,
     CONF_SERIAL_NUMBER,
     DEFAULT_FAST_SCAN_INTERVAL_SECONDS,
@@ -56,6 +54,7 @@ from .const import (
     SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
+from .device import async_migrate_charger_devices
 from .enums import AlphaESSNames
 from .snapshot import build_raw_snapshot
 
@@ -450,6 +449,16 @@ def _resolve_entry_for_export(hass: HomeAssistant, data: Mapping[str, Any]) -> C
             hass, device_id, domain=DOMAIN,
         )
         if device is None:
+            # Core 2026.9's domain helper only resolves main devices.
+            child = dr.async_get(hass).async_get(
+                device_id, include_main_devices=False, include_composite_devices=False,
+            )
+            if isinstance(child, dr.ChildDeviceEntry):
+                device = child
+                entry = hass.config_entries.async_get_entry(child.config_entry_id)
+                if entry is not None and entry.domain != DOMAIN:
+                    entry = None
+        if device is None:
             raise ServiceValidationError(f"No device has id {device_id}")
         if entry is not None and entry in entries:
             return entry
@@ -619,29 +628,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
     # API is usable. Systems that return 6017 keep using only the legacy
     # endpoints. Never fatal — a failure here just leaves it to be retried on
     # the first write.
-    # Auto-create EV charger subentries for any discovered chargers
-    existing_ev_serials = {
-        sub.data.get(CONF_SERIAL_NUMBER)
-        for sub in entry.subentries.values()
-        if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
-    }
-    for serial, data in _coordinator.data.items():
-        ev_sn = data.get(AlphaESSNames.evchargersn)
-        if ev_sn and ev_sn not in existing_ev_serials:
-            ev_model = data.get(AlphaESSNames.evchargermodel, "Unknown")
-            ev_subentry = ConfigSubentry(
-                data={
-                    CONF_SERIAL_NUMBER: ev_sn,
-                    CONF_EV_CHARGER_MODEL: ev_model,
-                    CONF_PARENT_INVERTER: serial,
-                },
-                subentry_type=SUBENTRY_TYPE_EV_CHARGER,
-                title=f"{ev_model} ({ev_sn})",
-                unique_id=f"{SUBENTRY_TYPE_EV_CHARGER}_{ev_sn}",
-            )
-            hass.config_entries.async_add_subentry(entry, ev_subentry)
-            existing_ev_serials.add(ev_sn)
-
     # One-time cleanup: remove stale EV entities no longer supported by data.
     # Only run when cloud data is available; in local-fallback mode EV keys are
     # intentionally absent and we must not remove valid entities.
@@ -660,6 +646,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
             if k != "_needs_device_cleanup"
         }
         hass.config_entries.async_update_entry(entry, options=new_options)
+
+    # Chargers share the inverter subentry so the integration page can nest
+    # their device rows. Registry conversion retains existing device/entity IDs.
+    _coordinator.deferred_charger_serials = async_migrate_charger_devices(
+        hass, entry, _coordinator.data,
+    )
 
     # Idempotent: only matches unique_ids still carrying a pre-0.9.0 name.
     _migrate_renamed_unique_ids(hass, entry)

@@ -1,6 +1,8 @@
 """Tests for binary_sensor, switch and time platforms."""
 from copy import deepcopy
+from dataclasses import asdict, is_dataclass
 from datetime import time as dt_time
+from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -19,6 +21,7 @@ from custom_components.alphaess.const import (
     CONF_IP_ADDRESS,
     CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
+    DOMAIN,
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
@@ -173,12 +176,17 @@ class TestBinarySensorSetup:
                 AlphaESSNames.evchargermodel: "SMILE-EVCT11",
             }
         }
-        entry = _entry_for([_inverter_subentry(), _ev_subentry()], coordinator)
+        inverter = _inverter_subentry()
+        entry = _entry_for([inverter, _ev_subentry()], coordinator)
 
         await binary_setup(mock_hass, entry, add_entities)
         # inverter path adds only the schedule sensor; EV sensors come via
         # the EV subentry path without duplication
         assert len(add_entities.calls) == 2
+        assert all(
+            kwargs["config_subentry_id"] == inverter.subentry_id
+            for _entities, kwargs in add_entities.calls
+        )
         ev_entities = [
             entity
             for call_entities, _kwargs in add_entities.calls
@@ -204,6 +212,49 @@ class TestBinarySensorSetup:
 
         await binary_setup(mock_hass, entry, add_entities)
         assert add_entities.entities == []
+
+
+@pytest.mark.parametrize("platform_name", ["sensor", "binary_sensor", "button", "number"])
+@pytest.mark.parametrize(
+    "case",
+    ["missing_inverter_subentry", "unresolved_parent", "unresolved_discovery", "missing_charger", "deferred_charger"],
+)
+async def test_ev_platforms_skip_unresolved_child_devices(
+    mock_hass, make_coordinator, add_entities, monkeypatch, platform_name, case,
+):
+    """Never register a standalone charger or attach it to the wrong subentry."""
+    platform = import_module(f"custom_components.alphaess.{platform_name}")
+    data = {"Model": "SMILE5-INV"}
+    if case != "missing_charger":
+        data.update({
+            AlphaESSNames.evchargersn: "EV123",
+            AlphaESSNames.evchargermodel: "SMILE-EVCT11",
+        })
+    coordinator = make_coordinator()
+    coordinator.data = {SERIAL: data}
+    if case == "deferred_charger":
+        coordinator.deferred_charger_serials = {"EV123"}
+        data[AlphaESSNames.evchargersn] = "ev123"
+    inverter = _inverter_subentry()
+    subentries = [] if case == "missing_inverter_subentry" else [inverter]
+    if case != "unresolved_discovery":
+        subentries.append(_ev_subentry())
+    entry = _entry_for(subentries, coordinator)
+    if case.startswith("unresolved"):
+        monkeypatch.setattr(platform, "async_get_inverter_device_id", lambda *_args: None)
+
+    await platform.async_setup_entry(mock_hass, entry, add_entities)
+
+    if case == "deferred_charger":
+        assert add_entities.entities
+    for entity in add_entities.entities:
+        info = entity.device_info
+        fields = asdict(info) if is_dataclass(info) else info
+        assert (DOMAIN, "EV123") not in {
+            (domain, identifier.upper()) for domain, identifier in fields["identifiers"]
+        }
+    for _entities, kwargs in add_entities.calls:
+        assert kwargs["config_subentry_id"] == inverter.subentry_id
 
 
 class TestBinarySensorEntity:

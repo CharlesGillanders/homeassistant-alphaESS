@@ -564,6 +564,7 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # The current entity model exposes one EV charger per inverter. Do not
         # silently truncate the upstream list when an account has more.
         self._multi_ev_warned: set[str] = set()
+        self.deferred_charger_serials: set[str] = set()
 
         # Guards temporary mutation of the shared API client's ipaddress
         self._local_ip_lock = asyncio.Lock()

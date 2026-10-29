@@ -456,6 +456,43 @@ def _entry_with(coordinator, entry_id="one"):
 
 
 class TestTheServicePicksTheRightEntry:
+    @pytest.mark.parametrize("ownership", ["loaded", "missing", "other-domain", "not-loaded"])
+    def test_child_device_lookup_supports_core_2026_9(
+        self, mock_hass, make_coordinator, monkeypatch, ownership,
+    ):
+        entry = _entry_with(make_coordinator())
+        mock_hass.config_entries.async_entries.return_value = [entry]
+        candidate = entry
+        if ownership == "missing":
+            candidate = None
+        elif ownership != "loaded":
+            candidate = FakeEntry(entry_id="another-entry")
+            if ownership == "other-domain":
+                candidate.domain = "other_integration"
+        mock_hass.config_entries.async_get_entry.return_value = candidate
+        child = init_mod.dr.ChildDeviceEntry(
+            config_entry_id=entry.entry_id, parent_device_id="inverter-device",
+            identifiers={(DOMAIN, "EV123")}, id="charger-child",
+        )
+        registry = MagicMock()
+        registry.async_get.return_value = child
+        monkeypatch.setattr(init_mod.dr, "async_get", lambda hass: registry)
+        monkeypatch.setattr(
+            init_mod.dr, "async_get_device_and_config_entry_for_domain",
+            lambda *args, **kwargs: (None, None),
+        )
+
+        if ownership == "loaded":
+            assert init_mod._resolve_entry_for_export(
+                mock_hass, {"device_id": child.id},
+            ) is entry
+        else:
+            with pytest.raises(ServiceValidationError, match="does not belong"):
+                init_mod._resolve_entry_for_export(mock_hass, {"device_id": child.id})
+        registry.async_get.assert_called_once_with(
+            child.id, include_main_devices=False, include_composite_devices=False,
+        )
+
     def test_a_serial_selects_the_entry_that_manages_it(self, mock_hass, make_coordinator):
         first, second = make_coordinator(), make_coordinator()
         first.data, second.data = {OTHER: {}}, {SERIAL: {}}
