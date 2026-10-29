@@ -18,9 +18,7 @@ from custom_components.alphaess.const import (
     CONF_DISABLE_NOTIFICATIONS,
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
-    CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
-    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
 from custom_components.alphaess.coordinator import (
@@ -46,7 +44,7 @@ from custom_components.alphaess.sensorlist import (
 from custom_components.alphaess.switch import AlphaSwitch
 from custom_components.alphaess.time import AlphaTime
 
-from .conftest import FakeEntry
+from .conftest import CHARGER_INFO, FakeEntry
 
 SERIAL = "AL1000021000123"
 
@@ -136,14 +134,6 @@ def _inverter_subentry(serial=SERIAL, model="SMILE5-INV", disable_notifications=
     )
 
 
-def _ev_subentry(ev_serial="EV123", parent=SERIAL):
-    return ConfigSubentry(
-        data={CONF_SERIAL_NUMBER: ev_serial, CONF_PARENT_INVERTER: parent},
-        subentry_type=SUBENTRY_TYPE_EV_CHARGER,
-        title=f"EV ({ev_serial})",
-        unique_id=f"{SUBENTRY_TYPE_EV_CHARGER}_{ev_serial}",
-    )
-
 
 def _entry_for(subentries, coordinator):
     entry = FakeEntry(subentries={sub.subentry_id: sub for sub in subentries})
@@ -215,6 +205,7 @@ class TestButtonSetup:
                 AlphaESSNames.evchargermodel: "SMILE-EVCT11",
             }
         }
+        coordinator.charger_device_info = {SERIAL: CHARGER_INFO}
         entry = _entry_for([_inverter_subentry()], coordinator)
 
         await button_setup(mock_hass, entry, add_entities)
@@ -222,44 +213,6 @@ class TestButtonSetup:
             EV_DISCHARGE_AND_CHARGE_BUTTONS
         )
         assert len(add_entities.entities) == expected
-
-    async def test_ev_subentry_buttons(self, mock_hass, make_coordinator, add_entities):
-        coordinator = make_coordinator()
-        coordinator.data = {
-            SERIAL: {
-                "Model": "SMILE5-INV",
-                AlphaESSNames.evchargersn: "EV123",
-                AlphaESSNames.evchargermodel: "SMILE-EVCT11",
-            }
-        }
-        inverter = _inverter_subentry()
-        entry = _entry_for([inverter, _ev_subentry()], coordinator)
-
-        await button_setup(mock_hass, entry, add_entities)
-        # Both the inverter and its child belong to the inverter subentry.
-        assert len(add_entities.calls) == 2
-        assert all(
-            kwargs["config_subentry_id"] == inverter.subentry_id
-            for _entities, kwargs in add_entities.calls
-        )
-
-    async def test_ev_subentry_missing_parent(self, mock_hass, make_coordinator, add_entities):
-        coordinator = make_coordinator()
-        coordinator.data = {}
-        entry = _entry_for([_ev_subentry(parent="GONE")], coordinator)
-
-        await button_setup(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
-
-    async def test_ev_subentry_no_charger_in_data(
-        self, mock_hass, make_coordinator, add_entities
-    ):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
-        entry = _entry_for([_ev_subentry()], coordinator)
-
-        await button_setup(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
 
     async def test_serial_missing_skipped(self, mock_hass, make_coordinator, add_entities):
         coordinator = make_coordinator()
@@ -919,46 +872,12 @@ class TestNumberSetup:
                 AlphaESSNames.evchargermodel: "SMILE-EVCT11",
             }
         }
+        coordinator.charger_device_info = {SERIAL: CHARGER_INFO}
         entry = _entry_for([_inverter_subentry()], coordinator)
 
         await number_setup(mock_hass, entry, add_entities)
         expected = len(DISCHARGE_AND_CHARGE_NUMBERS) + len(EV_CHARGER_NUMBERS)
         assert len(add_entities.entities) == expected
-
-    async def test_ev_subentry_numbers(self, mock_hass, make_coordinator, add_entities):
-        coordinator = make_coordinator()
-        coordinator.data = {
-            SERIAL: {
-                "Model": "SMILE5-INV",
-                AlphaESSNames.evchargersn: "EV123",
-                AlphaESSNames.evchargermodel: "SMILE-EVCT11",
-            }
-        }
-        inverter = _inverter_subentry()
-        entry = _entry_for([inverter, _ev_subentry()], coordinator)
-
-        await number_setup(mock_hass, entry, add_entities)
-        assert len(add_entities.calls) == 2
-        assert all(
-            kwargs["config_subentry_id"] == inverter.subentry_id
-            for _entities, kwargs in add_entities.calls
-        )
-
-    async def test_ev_subentry_missing_parent(self, mock_hass, make_coordinator, add_entities):
-        coordinator = make_coordinator()
-        coordinator.data = {}
-        entry = _entry_for([_ev_subentry(parent="GONE")], coordinator)
-
-        await number_setup(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
-
-    async def test_ev_subentry_no_charger(self, mock_hass, make_coordinator, add_entities):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
-        entry = _entry_for([_ev_subentry()], coordinator)
-
-        await number_setup(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
 
     async def test_serial_missing(self, mock_hass, make_coordinator, add_entities):
         coordinator = make_coordinator()

@@ -7,25 +7,18 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
     ETHERNET_STATUS_KEYS,
     EV_CHARGER_STATE_KEYS,
     FOUR_G_STATUS_KEYS,
     LIMITED_INVERTER_SENSOR_LIST,
-    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
     TCP_STATUS_KEYS,
     WIFI_STATUS_KEYS,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .currency import normalize_currency_unit
-from .device import (
-    async_get_charger_device_info,
-    build_inverter_device_info,
-    get_inverter_subentry,
-    legacy_charger_serials,
-)
+from .device import build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import (
     EV_CHARGING_DETAILS,
@@ -94,29 +87,6 @@ AU_MIGRATION_NULLABLE_KEYS = {
 }
 
 
-
-def _add_ev_entities(hass, coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
-    """Create and register EV charger sensor entities."""
-    ev_device_info = async_get_charger_device_info(hass, entry, coordinator, serial)
-    if ev_device_info is None:
-        return
-    ev_charger = data.get(AlphaESSNames.evchargersn)
-    ev_model = data.get(AlphaESSNames.evchargermodel)
-    _LOGGER.info("New EV Charger: Serial: %s, Model: %s", ev_charger, ev_model)
-
-    ev_entities: list[AlphaESSSensor] = []
-    for description in EV_CHARGING_DETAILS:
-        ev_entities.append(
-            AlphaESSSensor(
-                coordinator, entry, serial,
-                ev_charging_supported_states[description.key],
-                currency, device_info=ev_device_info,
-            )
-        )
-
-    async_add_entities(ev_entities, config_subentry_id=subentry_id)
-
-
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up sensor entities for each subentry."""
 
@@ -127,10 +97,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     }
     limited_key_supported_states = {
         description.key: description for description in LIMITED_SENSOR_DESCRIPTIONS
-    }
-
-    ev_charging_supported_states = {
-        description.key: description for description in EV_CHARGING_DETAILS
     }
 
     local_ip_supported_states = {
@@ -214,59 +180,23 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         )
                     )
 
+            if (ev_device_info := coordinator.charger_device_info.get(serial)) is not None:
+                _LOGGER.info(
+                    "New EV Charger: Serial: %s, Model: %s",
+                    data[AlphaESSNames.evchargersn], data.get(AlphaESSNames.evchargermodel),
+                )
+                inverter_entities.extend(
+                    AlphaESSSensor(
+                        coordinator, entry, serial, description,
+                        currency, device_info=ev_device_info,
+                    )
+                    for description in EV_CHARGING_DETAILS
+                )
+
             async_add_entities(
                 inverter_entities,
                 config_subentry_id=subentry.subentry_id,
             )
-
-        elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
-            parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
-            if not parent_serial or parent_serial not in coordinator.data:
-                continue
-            parent_subentry = get_inverter_subentry(entry, parent_serial)
-            if parent_subentry is None:
-                continue
-
-            data = coordinator.data[parent_serial]
-            ev_charger = data.get(AlphaESSNames.evchargersn)
-            if not ev_charger:
-                continue
-
-            currency = normalize_currency_unit(
-                data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
-                hass.config.currency,
-            )
-
-            _add_ev_entities(
-                hass, coordinator, entry, parent_serial, data, currency,
-                ev_charging_supported_states, parent_subentry.subentry_id, async_add_entities,
-            )
-
-    # Handle inverters with EV chargers that don't have a dedicated EV subentry
-    # (auto-discovered EV chargers without explicit subentries)
-    legacy_serials = legacy_charger_serials(entry)
-
-    for subentry in entry.subentries.values():
-        if subentry.subentry_type != SUBENTRY_TYPE_INVERTER:
-            continue
-        serial = subentry.data.get(CONF_SERIAL_NUMBER)
-        if not serial or serial not in coordinator.data:
-            continue
-
-        data = coordinator.data[serial]
-        ev_charger = data.get(AlphaESSNames.evchargersn)
-        if not ev_charger or ev_charger.upper() in legacy_serials:
-            continue
-
-        currency = normalize_currency_unit(
-            data.get(AlphaESSNames.CurrencyCode) or data.get("Currency"),
-            hass.config.currency,
-        )
-
-        _add_ev_entities(
-            hass, coordinator, entry, serial, data, currency,
-            ev_charging_supported_states, subentry.subentry_id, async_add_entities,
-        )
 
 
 class AlphaESSSensor(CoordinatorEntity, SensorEntity):

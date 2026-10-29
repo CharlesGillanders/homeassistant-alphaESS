@@ -28,7 +28,6 @@ from .const import (
     MIN_API_CALL_INTERVAL_SECONDS,
     RATE_LIMIT_CODE,
     SCAN_INTERVAL,
-    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
 from .currency import normalize_currency_unit
@@ -564,21 +563,18 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         # The current entity model exposes one EV charger per inverter. Do not
         # silently truncate the upstream list when an account has more.
         self._multi_ev_warned: set[str] = set()
-        self.deferred_charger_serials: set[str] = set()
+        # Charger child-device info by inverter serial, set by setup's migration.
+        self.charger_device_info: dict[str, Any] = {}
 
         # Guards temporary mutation of the shared API client's ipaddress
         self._local_ip_lock = asyncio.Lock()
 
         # Build subentry lookup for device info
         self._inverter_subentry_map: dict[str, str] = {}
-        self._ev_charger_subentry_map: dict[str, str] = {}
         if entry:
             for subentry_id, subentry in entry.subentries.items():
-                serial = subentry.data.get(CONF_SERIAL_NUMBER, "")
                 if subentry.subentry_type == SUBENTRY_TYPE_INVERTER:
-                    self._inverter_subentry_map[serial] = subentry_id
-                elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
-                    self._ev_charger_subentry_map[serial] = subentry_id
+                    self._inverter_subentry_map[subentry.data.get(CONF_SERIAL_NUMBER, "")] = subentry_id
 
     def _call_interval(self) -> float:
         """Return the current spacing between OpenAPI calls.
@@ -866,10 +862,6 @@ class AlphaESSDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, An
         only substitutes when the key is absent.
         """
         self.number_settings.get(serial, {}).pop(key, None)
-
-    def get_ev_charger_subentry_id(self, ev_serial: str) -> str | None:
-        """Get the subentry ID for an EV charger by its serial number."""
-        return self._ev_charger_subentry_map.get(ev_serial)
 
     async def set_ev_charger_current(self, serial: str, value: int) -> None:
         """Set EV charger current setting."""

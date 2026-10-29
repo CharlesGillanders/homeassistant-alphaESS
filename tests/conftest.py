@@ -10,8 +10,12 @@ from unittest.mock import AsyncMock, MagicMock, create_autospec
 import homeassistant  # noqa: F401 - initialize Probatio's voluptuous alias before the API client
 import pytest
 from alphaess.alphaess import alphaess as AlphaESSApiClient
+from homeassistant.helpers.device_registry import ChildDeviceInfo
 
 from custom_components.alphaess.coordinator import AlphaESSDataUpdateCoordinator
+
+# What setup's charger migration hands the platforms for a nested charger.
+CHARGER_INFO = ChildDeviceInfo(identifiers={("alphaess", "EV123")}, parent_device_id="inverter-device")
 
 
 class FakeEntry:

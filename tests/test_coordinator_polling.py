@@ -92,9 +92,7 @@ class TestCoordinatorInit:
         entry = _make_entry_with_subentries()
         coordinator = make_coordinator(entry=entry)
         assert coordinator.get_inverter_subentry_id(SERIAL) == "sub1"
-        assert coordinator.get_ev_charger_subentry_id("EV123") == "sub2"
         assert coordinator.get_inverter_subentry_id("missing") is None
-        assert coordinator.get_ev_charger_subentry_id("missing") is None
 
     def test_default_intervals(self, mock_hass, mock_api):
         from custom_components.alphaess.coordinator import AlphaESSDataUpdateCoordinator

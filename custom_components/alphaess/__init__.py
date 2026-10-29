@@ -450,14 +450,8 @@ def _resolve_entry_for_export(hass: HomeAssistant, data: Mapping[str, Any]) -> C
         )
         if device is None:
             # Core 2026.9's domain helper only resolves main devices.
-            child = dr.async_get(hass).async_get(
-                device_id, include_main_devices=False, include_composite_devices=False,
-            )
-            if isinstance(child, dr.ChildDeviceEntry):
-                device = child
-                entry = hass.config_entries.async_get_entry(child.config_entry_id)
-                if entry is not None and entry.domain != DOMAIN:
-                    entry = None
+            device = dr.async_get(hass).async_get(device_id, include_main_devices=False)
+            entry = device and hass.config_entries.async_get_entry(device.config_entry_id)
         if device is None:
             raise ServiceValidationError(f"No device has id {device_id}")
         if entry is not None and entry in entries:
@@ -649,7 +643,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlphaESSConfigEntry) -> 
 
     # Chargers share the inverter subentry so the integration page can nest
     # their device rows. Registry conversion retains existing device/entity IDs.
-    _coordinator.deferred_charger_serials = async_migrate_charger_devices(
+    _coordinator.charger_device_info = async_migrate_charger_devices(
         hass, entry, _coordinator.data,
     )
 

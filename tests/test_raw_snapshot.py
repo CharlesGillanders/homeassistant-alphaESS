@@ -489,9 +489,7 @@ class TestTheServicePicksTheRightEntry:
         else:
             with pytest.raises(ServiceValidationError, match="does not belong"):
                 init_mod._resolve_entry_for_export(mock_hass, {"device_id": child.id})
-        registry.async_get.assert_called_once_with(
-            child.id, include_main_devices=False, include_composite_devices=False,
-        )
+        registry.async_get.assert_called_once_with(child.id, include_main_devices=False)
 
     def test_a_serial_selects_the_entry_that_manages_it(self, mock_hass, make_coordinator):
         first, second = make_coordinator(), make_coordinator()
@@ -561,6 +559,9 @@ class TestTheServicePicksTheRightEntry:
             init_mod.dr, "async_get_device_and_config_entry_for_domain",
             MagicMock(return_value=(None, None)), raising=False,
         )
+        registry = MagicMock()
+        registry.async_get.return_value = None
+        monkeypatch.setattr(init_mod.dr, "async_get", lambda hass: registry)
 
         with pytest.raises(ServiceValidationError, match="No device has id dev"):
             init_mod._resolve_entry_for_export(mock_hass, {"device_id": "dev"})

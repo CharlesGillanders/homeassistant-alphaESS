@@ -922,12 +922,12 @@ class TestAsyncSetupEntry:
             options={"_ev_entity_cleanup_done": True},
         )
         mock_api.getESSList.return_value = [{"sysSn": SERIAL, "minv": "SMILE5-INV"}]
-        migrate = MagicMock(return_value={"DEFERRED-EV"})
+        migrate = MagicMock(return_value={SERIAL: "charger-info"})
         monkeypatch.setattr(init_mod, "async_migrate_charger_devices", migrate)
 
         async def forward(config, platforms):
             migrate.assert_called_once_with(mock_hass, config, config.runtime_data.data)
-            assert config.runtime_data.deferred_charger_serials == {"DEFERRED-EV"}
+            assert config.runtime_data.charger_device_info == {SERIAL: "charger-info"}
 
         mock_hass.config_entries.async_forward_entry_setups.side_effect = forward
 

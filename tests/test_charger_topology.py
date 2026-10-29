@@ -20,9 +20,7 @@ from custom_components.alphaess.const import (
     SUBENTRY_TYPE_INVERTER,
 )
 from custom_components.alphaess.device import (
-    async_get_inverter_device_id,
     async_migrate_charger_devices,
-    build_ev_charger_device_info,
     build_inverter_device_info,
 )
 from custom_components.alphaess.enums import AlphaESSNames
@@ -125,6 +123,10 @@ def _register(hass, entry, subentry_id, info):
         config_subentry_id=subentry_id,
         **fields,
     )
+
+
+def _parent_id(hass, entry, serial=SERIAL):
+    return dr.async_get(hass).async_get_device_by_identifier((DOMAIN, serial.upper()), entry.entry_id).id
 
 
 def _legacy_charger(hass, entry, *, subentry_id="charger", serial=EV_SERIAL):
@@ -241,10 +243,10 @@ async def test_entry_level_inverter_defers_charger_until_parent_subentry_is_read
     await hass.async_block_till_done()
     registry.async_config_entry_unloaded(entry.entry_id)
 
-    deferred = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
+    nested = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
     await hass.async_block_till_done()
 
-    assert deferred == {EV_SERIAL}
+    assert nested == {}
     assert registry.async_get(parent.id) == parent
     assert registry.async_get(charger.id) == charger
     assert entities.async_get(entity.entity_id) == entity
@@ -260,7 +262,7 @@ async def test_entry_level_inverter_defers_charger_until_parent_subentry_is_read
     assert repaired.id == parent.id
     assert repaired.config_subentry_id == "inverter"
     registry.async_config_entry_unloaded(entry.entry_id)
-    assert async_migrate_charger_devices(hass, entry, {SERIAL: _data()}) == set()
+    assert SERIAL in async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
     await hass.async_block_till_done()
     child = registry.async_get(charger.id)
     assert isinstance(child, dr.ChildDeviceEntry)
@@ -283,7 +285,7 @@ async def test_fresh_discovery_creates_one_parent_and_child_without_an_ev_subent
     assert child.identifiers == {(DOMAIN, EV_SERIAL)}
     assert child.name == "EV Charger (SMILE-EVCT11)"
     assert child.config_subentry_id == "inverter"
-    assert child.parent_device_id == async_get_inverter_device_id(hass, entry, SERIAL)
+    assert child.parent_device_id == _parent_id(hass, entry)
 
     async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
     assert [device.id for device in dev_reg.child_devices] == [child.id]
@@ -324,7 +326,7 @@ async def test_missing_discovery_uses_saved_parent_and_later_enriches_parent_met
     assert enriched.configuration_url == "http://192.168.1.5"
     assert enriched.sw_version == "1.2.3"
     assert enriched.hw_version == "A1"
-    assert async_get_inverter_device_id(hass, entry, SERIAL) == parent_id
+    assert _parent_id(hass, entry) == parent_id
     assert "charger" not in entry.subentries
     assert len(dev_reg.devices) == len(dev_reg.child_devices) == 1
 
@@ -355,7 +357,8 @@ async def test_charger_name_uses_best_available_model_and_preserves_custom_name(
     registry.async_config_entry_unloaded(entry.entry_id)
     data = {SERIAL: {**_data(), AlphaESSNames.evchargermodel: fresh_model}} if discovered else {}
 
-    assert async_migrate_charger_devices(hass, entry, data) == set()
+    nested = async_migrate_charger_devices(hass, entry, data)
+    assert set(nested) == ({SERIAL} if discovered else set())
     await hass.async_block_till_done()
 
     child = registry.async_get(charger.id)
@@ -366,11 +369,11 @@ async def test_charger_name_uses_best_available_model_and_preserves_custom_name(
     assert child.parent_device_id == parent.id
     if discovered:
         registered = _register(
-            hass, entry, "inverter", build_ev_charger_device_info(data[SERIAL], parent_device_id=parent.id),
+            hass, entry, "inverter", nested[SERIAL],
         )
         assert registered.id == child.id
         assert registered.name == expected_name
-    assert async_migrate_charger_devices(hass, entry, data) == set()
+    assert set(async_migrate_charger_devices(hass, entry, data)) == set(nested)
     assert registry.async_get(child.id).name == expected_name
     assert registry.async_get(child.id).name_by_user == "My charger"
 
@@ -380,23 +383,19 @@ async def test_existing_child_keeps_model_name_during_missing_metadata_and_accep
     entry = _entry("account", [_inverter()])
     entries[entry.entry_id] = entry
     registry = dr.async_get(hass)
-    assert async_migrate_charger_devices(hass, entry, {SERIAL: _data()}) == set()
+    assert SERIAL in async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
     child = next(iter(registry.child_devices))
     registry.async_update_child_device(child.id, name_by_user="Garage charger")
     missing_model = {SERIAL: {**_data(), AlphaESSNames.evchargermodel: None}}
 
-    assert async_migrate_charger_devices(hass, entry, missing_model) == set()
-    registered = _register(
-        hass, entry, "inverter",
-        build_ev_charger_device_info(missing_model[SERIAL], parent_device_id=child.parent_device_id),
-    )
+    nested = async_migrate_charger_devices(hass, entry, missing_model)
+    registered = _register(hass, entry, "inverter", nested[SERIAL])
     assert registered.id == child.id
     assert registered.name == "EV Charger (SMILE-EVCT11)"
     assert registered.name_by_user == "Garage charger"
-    assert missing_model[SERIAL][AlphaESSNames.evchargermodel] == "SMILE-EVCT11"
 
     updated = {SERIAL: {**_data(), AlphaESSNames.evchargermodel: "SMILE-G3-EVCT11"}}
-    assert async_migrate_charger_devices(hass, entry, updated) == set()
+    assert SERIAL in async_migrate_charger_devices(hass, entry, updated)
     refreshed = registry.async_get(child.id)
     assert refreshed.name == "EV Charger (SMILE-G3-EVCT11)"
     assert refreshed.name_by_user == "Garage charger"
@@ -443,10 +442,10 @@ async def test_unresolved_parent_preserves_legacy_device_and_pending_subentry(na
     dev_reg = dr.async_get(hass)
     dev_reg.async_config_entry_unloaded(entry.entry_id)
 
-    deferred = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
+    nested = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
     await hass.async_block_till_done()
 
-    assert deferred == {EV_SERIAL}
+    assert nested == {}
     assert dev_reg.async_get(charger.id) == charger
     assert "charger" in entry.subentries
     assert len(dev_reg.devices) == 1
@@ -463,10 +462,10 @@ async def test_ambiguous_case_variants_preserve_both_legacy_devices(native_regis
     dev_reg = dr.async_get(hass)
     dev_reg.async_config_entry_unloaded(entry.entry_id)
 
-    deferred = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
+    nested = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
     await hass.async_block_till_done()
 
-    assert deferred == {EV_SERIAL}
+    assert nested == {}
     assert dev_reg.async_get(original.id) == original
     assert dev_reg.async_get(case_variant.id) == case_variant
     assert not dev_reg.child_devices
@@ -493,10 +492,10 @@ async def test_inverter_with_a_charger_alias_defers_before_mutating_any_entity(n
     await hass.async_block_till_done()
     dev_reg.async_config_entry_unloaded(entry.entry_id)
 
-    deferred = async_migrate_charger_devices(hass, entry, {SERIAL: _data(EV_SERIAL.lower())})
+    nested = async_migrate_charger_devices(hass, entry, {SERIAL: _data(EV_SERIAL.lower())})
     await hass.async_block_till_done()
 
-    assert deferred == {EV_SERIAL}
+    assert nested == {}
     assert dev_reg.async_get(parent.id) == parent
     assert ent_reg.async_get(inverter_entity.entity_id) == inverter_entity
     assert ent_reg.async_get(legacy_charger_entity.entity_id) == legacy_charger_entity
@@ -519,10 +518,10 @@ async def test_legacy_charger_with_children_is_preserved_instead_of_becoming_a_g
     )
     dev_reg.async_config_entry_unloaded(entry.entry_id)
 
-    deferred = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
+    nested = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
     await hass.async_block_till_done()
 
-    assert deferred == {EV_SERIAL}
+    assert nested == {}
     assert dev_reg.async_get(charger.id) == charger
     assert dev_reg.async_get(connector.id) == connector
     assert "charger" in entry.subentries
@@ -536,17 +535,17 @@ async def test_existing_child_is_not_reparented_by_changed_or_ambiguous_discover
     entries[entry.entry_id] = entry
     parent = _register(hass, entry, "inverter", build_inverter_device_info(SERIAL, _data()))
     child = _register(
-        hass, entry, "inverter", build_ev_charger_device_info(_data(), parent_device_id=parent.id),
+        hass, entry, "inverter", {"identifiers": {(DOMAIN, EV_SERIAL)}, "parent_device_id": parent.id},
     )
     dr.async_get(hass).async_config_entry_unloaded(entry.entry_id)
     data = {OTHER_SERIAL: _data()}
     if problem == "ambiguous_discovery":
         data[SERIAL] = _data()
 
-    deferred = async_migrate_charger_devices(hass, entry, data)
+    nested = async_migrate_charger_devices(hass, entry, data)
     await hass.async_block_till_done()
 
-    assert deferred == {EV_SERIAL}
+    assert nested == {}
     retained = dr.async_get(hass).async_get(child.id)
     assert retained.id == child.id
     assert retained.parent_device_id == parent.id
@@ -563,10 +562,10 @@ async def test_registry_refusal_defers_the_charger_instead_of_failing_setup(nati
     # Still registered as a main device in this run, so Core refuses to convert it.
     charger = _legacy_charger(hass, entry, subentry_id="inverter")
 
-    deferred = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
+    nested = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
     await hass.async_block_till_done()
 
-    assert deferred == {EV_SERIAL}
+    assert nested == {}
     retained = dr.async_get(hass).async_get(charger.id)
     assert isinstance(retained, dr.DeviceEntry)
     assert not dr.async_get(hass).child_devices
@@ -611,6 +610,7 @@ async def test_all_ev_platforms_use_children_and_parent_subentries(native_regist
     coordinator = make_coordinator(entry=entry)
     coordinator.data = {SERIAL: _data(), OTHER_SERIAL: _data(other_ev)}
     entry.runtime_data = coordinator
+    coordinator.charger_device_info = async_migrate_charger_devices(hass, entry, coordinator.data)
     expected = {EV_SERIAL: (SERIAL, "inverter"), other_ev: (OTHER_SERIAL, "other-inverter")}
     ev_entities = []
 
@@ -634,7 +634,7 @@ async def test_all_ev_platforms_use_children_and_parent_subentries(native_regist
     for ev_serial, (inverter_serial, inverter_subentry_id) in expected.items():
         charger_entities = [item for item in ev_entities if (DOMAIN, ev_serial) in item[1].identifiers]
         assert {item[0] for item in charger_entities} == {"sensor", "binary_sensor", "button", "number"}
-        parent_id = async_get_inverter_device_id(hass, entry, inverter_serial)
+        parent_id = _parent_id(hass, entry, inverter_serial)
         for _, device, registered, subentry_id, _ in charger_entities:
             assert device.parent_device_id == parent_id
             assert device.identifiers == {(DOMAIN, ev_serial)}

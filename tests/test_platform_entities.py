@@ -37,7 +37,7 @@ from custom_components.alphaess.switch import async_setup_entry as switch_setup
 from custom_components.alphaess.time import AlphaTime
 from custom_components.alphaess.time import async_setup_entry as time_setup
 
-from .conftest import FakeEntry
+from .conftest import CHARGER_INFO, FakeEntry
 
 SERIAL = "AL1000021000123"
 
@@ -126,6 +126,7 @@ class TestBinarySensorSetup:
                 AlphaESSNames.evchargermodel: "SMILE-EVCT11",
             }
         }
+        coordinator.charger_device_info = {SERIAL: CHARGER_INFO}
         entry = _entry_for([_inverter_subentry()], coordinator)
 
         await binary_setup(mock_hass, entry, add_entities)
@@ -165,96 +166,33 @@ class TestBinarySensorSetup:
         await binary_setup(mock_hass, entry, add_entities)
         assert add_entities.entities == []
 
-    async def test_ev_with_subentry_not_duplicated_on_inverter(
-        self, mock_hass, make_coordinator, add_entities
-    ):
-        coordinator = make_coordinator()
-        coordinator.data = {
-            SERIAL: {
-                "Model": "SMILE5-INV",
-                AlphaESSNames.evchargersn: "EV123",
-                AlphaESSNames.evchargermodel: "SMILE-EVCT11",
-            }
-        }
-        inverter = _inverter_subentry()
-        entry = _entry_for([inverter, _ev_subentry()], coordinator)
-
-        await binary_setup(mock_hass, entry, add_entities)
-        # inverter path adds only the schedule sensor; EV sensors come via
-        # the EV subentry path without duplication
-        assert len(add_entities.calls) == 2
-        assert all(
-            kwargs["config_subentry_id"] == inverter.subentry_id
-            for _entities, kwargs in add_entities.calls
-        )
-        ev_entities = [
-            entity
-            for call_entities, _kwargs in add_entities.calls
-            for entity in call_entities
-            if isinstance(entity, AlphaEVReadinessBinarySensor)
-        ]
-        assert len(ev_entities) == len(EV_CHARGER_BINARY_SENSORS)
-
-    async def test_ev_subentry_missing_parent(self, mock_hass, make_coordinator, add_entities):
-        coordinator = make_coordinator()
-        coordinator.data = {}
-        entry = _entry_for([_ev_subentry(parent="GONE")], coordinator)
-
-        await binary_setup(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
-
-    async def test_ev_subentry_parent_without_charger(
-        self, mock_hass, make_coordinator, add_entities
-    ):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
-        entry = _entry_for([_ev_subentry()], coordinator)
-
-        await binary_setup(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
-
-
 @pytest.mark.parametrize("platform_name", ["sensor", "binary_sensor", "button", "number"])
-@pytest.mark.parametrize(
-    "case",
-    ["missing_inverter_subentry", "unresolved_parent", "unresolved_discovery", "missing_charger", "deferred_charger"],
-)
-async def test_ev_platforms_skip_unresolved_child_devices(
-    mock_hass, make_coordinator, add_entities, monkeypatch, platform_name, case,
+@pytest.mark.parametrize("nested", [True, False], ids=["nested", "not_nested"])
+async def test_ev_platforms_add_chargers_only_when_nested(
+    mock_hass, make_coordinator, add_entities, platform_name, nested,
 ):
-    """Never register a standalone charger or attach it to the wrong subentry."""
+    """Charger entities need the migration's child-device info, never a device of their own."""
     platform = import_module(f"custom_components.alphaess.{platform_name}")
-    data = {"Model": "SMILE5-INV"}
-    if case != "missing_charger":
-        data.update({
-            AlphaESSNames.evchargersn: "EV123",
-            AlphaESSNames.evchargermodel: "SMILE-EVCT11",
-        })
     coordinator = make_coordinator()
-    coordinator.data = {SERIAL: data}
-    if case == "deferred_charger":
-        coordinator.deferred_charger_serials = {"EV123"}
-        data[AlphaESSNames.evchargersn] = "ev123"
+    coordinator.data = {SERIAL: {
+        "Model": "SMILE5-INV",
+        AlphaESSNames.evchargersn: "EV123",
+        AlphaESSNames.evchargermodel: "SMILE-EVCT11",
+    }}
+    if nested:
+        coordinator.charger_device_info = {SERIAL: CHARGER_INFO}
     inverter = _inverter_subentry()
-    subentries = [] if case == "missing_inverter_subentry" else [inverter]
-    if case != "unresolved_discovery":
-        subentries.append(_ev_subentry())
-    entry = _entry_for(subentries, coordinator)
-    if case.startswith("unresolved"):
-        monkeypatch.setattr(
-            "custom_components.alphaess.device.async_get_inverter_device_id", lambda *_args: None,
-        )
+    # A leftover legacy EV subentry is the migration's concern, not the platforms'.
+    entry = _entry_for([inverter, _ev_subentry()], coordinator)
 
     await platform.async_setup_entry(mock_hass, entry, add_entities)
 
-    if case == "deferred_charger":
-        assert add_entities.entities
+    assert any(entity.device_info is CHARGER_INFO for entity in add_entities.entities) is nested
     for entity in add_entities.entities:
         info = entity.device_info
         fields = asdict(info) if is_dataclass(info) else info
-        assert (DOMAIN, "EV123") not in {
-            (domain, identifier.upper()) for domain, identifier in fields["identifiers"]
-        }
+        if info is not CHARGER_INFO:
+            assert (DOMAIN, "EV123") not in fields["identifiers"]
     for _entities, kwargs in add_entities.calls:
         assert kwargs["config_subentry_id"] == inverter.subentry_id
 

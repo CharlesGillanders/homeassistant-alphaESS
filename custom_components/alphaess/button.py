@@ -10,10 +10,8 @@ from alphaess.alphaess import AlphaESSApiError
 from .const import (
     ALPHA_POST_REQUEST_RESTRICTION,
     CONF_DISABLE_NOTIFICATIONS,
-    CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
     INVERTER_SETTING_BLACKLIST,
-    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import (
@@ -21,12 +19,7 @@ from .coordinator import (
     SchedulePartialWriteError,
     ScheduleWriteUnknownError,
 )
-from .device import (
-    async_get_charger_device_info,
-    build_inverter_device_info,
-    get_inverter_subentry,
-    legacy_charger_serials,
-)
+from .device import build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import EV_DISCHARGE_AND_CHARGE_BUTTONS, SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
 
@@ -56,11 +49,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
     }
 
-    ev_charging_supported_states = {
-        description.key: description for description in EV_DISCHARGE_AND_CHARGE_BUTTONS
-    }
-
-    legacy_serials = legacy_charger_serials(entry)
     for subentry in entry.subentries.values():
         if subentry.subentry_type == SUBENTRY_TYPE_INVERTER:
             serial = subentry.data.get(CONF_SERIAL_NUMBER)
@@ -84,18 +72,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         )
                     )
 
-            # Auto-discovered EV charger buttons (no dedicated EV subentry)
-            ev_charger = data.get(AlphaESSNames.evchargersn)
-            if (
-                ev_charger
-                and ev_charger.upper() not in legacy_serials
-                and (ev_device_info := async_get_charger_device_info(hass, entry, coordinator, serial)) is not None
-            ):
-                for description in ev_charging_supported_states:
+            # The charger's buttons live on its child device beneath this inverter
+            if (ev_device_info := coordinator.charger_device_info.get(serial)) is not None:
+                ev_charger = data[AlphaESSNames.evchargersn]
+                for description in EV_DISCHARGE_AND_CHARGE_BUTTONS:
                     inverter_buttons.append(
                         AlphaESSBatteryButton(
                             coordinator, entry, serial,
-                            ev_charging_supported_states[description],
+                            description,
                             ev_charger=True,
                             ev_serial=ev_charger,
                             device_info=ev_device_info,
@@ -107,34 +91,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 async_add_entities(
                     inverter_buttons,
                     config_subentry_id=subentry.subentry_id,
-                )
-
-        elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
-            parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
-            if not parent_serial or parent_serial not in coordinator.data:
-                continue
-            parent_subentry = get_inverter_subentry(entry, parent_serial)
-            ev_device_info = async_get_charger_device_info(hass, entry, coordinator, parent_serial)
-            if parent_subentry is None or ev_device_info is None:
-                continue
-
-            ev_charger = coordinator.data[parent_serial][AlphaESSNames.evchargersn]
-            ev_buttons: list[ButtonEntity] = []
-            for description in ev_charging_supported_states:
-                ev_buttons.append(
-                    AlphaESSBatteryButton(
-                        coordinator, entry, parent_serial,
-                        ev_charging_supported_states[description],
-                        ev_charger=True,
-                        ev_serial=ev_charger,
-                        device_info=ev_device_info,
-                    )
-                )
-
-            if ev_buttons:
-                async_add_entities(
-                    ev_buttons,
-                    config_subentry_id=parent_subentry.subentry_id,
                 )
 
 

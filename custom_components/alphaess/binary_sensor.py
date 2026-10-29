@@ -5,19 +5,12 @@ from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
     INVERTER_SETTING_BLACKLIST,
-    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
-from .device import (
-    async_get_charger_device_info,
-    build_inverter_device_info,
-    get_inverter_subentry,
-    legacy_charger_serials,
-)
+from .device import build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import EV_CHARGER_BINARY_SENSORS, INVERTER_BINARY_SENSORS
 
@@ -30,11 +23,6 @@ PARALLEL_UPDATES = 0
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up EV charger readiness binary sensors."""
     coordinator: AlphaESSDataUpdateCoordinator = entry.runtime_data
-
-    ev_binary_supported_states = {
-        description.key: description for description in EV_CHARGER_BINARY_SENSORS
-    }
-    legacy_serials = legacy_charger_serials(entry)
 
     for subentry in entry.subentries.values():
         if subentry.subentry_type == SUBENTRY_TYPE_INVERTER:
@@ -58,13 +46,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         )
                     )
 
-            ev_charger = data.get(AlphaESSNames.evchargersn)
-            if (
-                ev_charger
-                and ev_charger.upper() not in legacy_serials
-                and (ev_device_info := async_get_charger_device_info(hass, entry, coordinator, serial)) is not None
-            ):
-                for description in ev_binary_supported_states.values():
+            if (ev_device_info := coordinator.charger_device_info.get(serial)) is not None:
+                ev_charger = data[AlphaESSNames.evchargersn]
+                for description in EV_CHARGER_BINARY_SENSORS:
                     entities.append(
                         AlphaEVReadinessBinarySensor(
                             coordinator,
@@ -78,32 +62,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
             if entities:
                 async_add_entities(entities, config_subentry_id=subentry.subentry_id)
-
-        elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
-            parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
-            if not parent_serial or parent_serial not in coordinator.data:
-                continue
-            parent_subentry = get_inverter_subentry(entry, parent_serial)
-            ev_device_info = async_get_charger_device_info(hass, entry, coordinator, parent_serial)
-            if parent_subentry is None or ev_device_info is None:
-                continue
-
-            ev_charger = coordinator.data[parent_serial][AlphaESSNames.evchargersn]
-            ev_entities: list[BinarySensorEntity] = []
-            for description in ev_binary_supported_states.values():
-                ev_entities.append(
-                    AlphaEVReadinessBinarySensor(
-                        coordinator,
-                        parent_serial,
-                        entry,
-                        description,
-                        ev_serial=ev_charger,
-                        device_info=ev_device_info,
-                    )
-                )
-
-            if ev_entities:
-                async_add_entities(ev_entities, config_subentry_id=parent_subentry.subentry_id)
 
 
 class AlphaScheduleControlBinarySensor(CoordinatorEntity, BinarySensorEntity):

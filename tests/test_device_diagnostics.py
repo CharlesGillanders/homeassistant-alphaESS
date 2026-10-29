@@ -3,13 +3,10 @@ import time as time_mod
 from dataclasses import dataclass
 
 import pytest
-from homeassistant.helpers.device_registry import ChildDeviceInfo, DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import UNDEFINED, UndefinedType
 
-from custom_components.alphaess.device import (
-    build_ev_charger_device_info,
-    build_inverter_device_info,
-)
+from custom_components.alphaess.device import build_inverter_device_info
 from custom_components.alphaess.diagnostics import async_get_config_entry_diagnostics
 from custom_components.alphaess.enums import AlphaESSNames
 
@@ -33,26 +30,10 @@ class DataclassDeviceInfo:
     configuration_url: str | None | UndefinedType = UNDEFINED
 
 
-@dataclass(kw_only=True, slots=True)
-class DataclassChildDeviceInfo:
-    """Child devices accept identity and a parent, without main-device metadata."""
-
-    identifiers: set[tuple[str, str]]
-    parent_device_id: str
-    name: str | None | UndefinedType = UNDEFINED
-
-
 @pytest.fixture(params=[DeviceInfo, DataclassDeviceInfo], ids=["native", "dataclass"])
 def device_info_type(request, monkeypatch):
     """Run builders against native DeviceInfo and a strict dataclass."""
     monkeypatch.setattr("custom_components.alphaess.device.DeviceInfo", request.param)
-    return request.param
-
-
-@pytest.fixture(params=[ChildDeviceInfo, DataclassChildDeviceInfo], ids=["native", "dataclass"])
-def child_device_info_type(request, monkeypatch):
-    """Exercise typed-dict and strict dataclass child constructors."""
-    monkeypatch.setattr("custom_components.alphaess.device.ChildDeviceInfo", request.param)
     return request.param
 
 
@@ -133,26 +114,6 @@ class TestInverterDeviceInfo:
             sw_version=None,
             hw_version=None,
             configuration_url="http://192.168.1.5",
-        )
-
-
-class TestEvChargerDeviceInfo:
-    @pytest.mark.parametrize(("model", "expected_name"), [
-        ("SMILE-EVCT11", "EV Charger (SMILE-EVCT11)"),
-        (None, "EV Charger"),
-        ("", "EV Charger"),
-        ("Unknown", "EV Charger"),
-    ])
-    def test_basic(self, child_device_info_type, model, expected_name):
-        data = {
-            AlphaESSNames.evchargersn: "EV123",
-            AlphaESSNames.evchargermodel: model,
-        }
-        info = build_ev_charger_device_info(data, parent_device_id="inverter-device")
-        assert info == child_device_info_type(
-            identifiers={("alphaess", "EV123")},
-            name=expected_name,
-            parent_device_id="inverter-device",
         )
 
 
