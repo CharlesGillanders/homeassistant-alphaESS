@@ -476,6 +476,15 @@ land; that is reported as a partial-write error naming what already applied.
 
 ### EV charger controls
 
+A detected EV charger appears as a child device beneath its inverter/battery
+system in the integration page, named `EV Charger (SMILE-EVCT11)` when its model
+is known. Its controls, charging status, and current setting stay on the charger.
+Charger model and serial number remain available through its sensors. Home
+Assistant inherits the model subtitle and hardware information from the parent.
+Existing device and entity IDs, user names, areas, and disabled settings are
+preserved when upgrading. The charger follows its parent when it is disabled or
+removed.
+
 The integration exposes EV charger controls (start/stop and current setting) when
 an EV charger is detected. `Can Start Charging` and `Can Stop Charging` are
 advisory binary sensors based on the latest successful EV poll. Start and stop

@@ -6,10 +6,7 @@ import pytest
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import UNDEFINED, UndefinedType
 
-from custom_components.alphaess.device import (
-    build_ev_charger_device_info,
-    build_inverter_device_info,
-)
+from custom_components.alphaess.device import build_inverter_device_info
 from custom_components.alphaess.diagnostics import async_get_config_entry_diagnostics
 from custom_components.alphaess.enums import AlphaESSNames
 
@@ -23,6 +20,7 @@ class DataclassDeviceInfo:
     """Exercise the Core 2026.11 shape without its mapping compatibility layer."""
 
     identifiers: set[tuple[str, str]] | UndefinedType = UNDEFINED
+    entry_type: object | UndefinedType = UNDEFINED
     manufacturer: str | None | UndefinedType = UNDEFINED
     model: str | None | UndefinedType = UNDEFINED
     serial_number: str | None | UndefinedType = UNDEFINED
@@ -45,6 +43,7 @@ class TestInverterDeviceInfo:
         info = build_inverter_device_info(SERIAL, data)
         assert info == device_info_type(
             identifiers={("alphaess", SERIAL.upper())},
+            entry_type=None,
             manufacturer="AlphaESS",
             model=data.get("Model"),
             serial_number=SERIAL,
@@ -66,6 +65,7 @@ class TestInverterDeviceInfo:
         # available as its own diagnostic sensor.
         assert info == device_info_type(
             identifiers={("alphaess", SERIAL.upper())},
+            entry_type=None,
             manufacturer="AlphaESS",
             model="SMILE5-INV",
             serial_number=SERIAL,
@@ -91,6 +91,7 @@ class TestInverterDeviceInfo:
         info = build_inverter_device_info(SERIAL, data)
         assert info == device_info_type(
             identifiers={("alphaess", SERIAL.upper())},
+            entry_type=None,
             manufacturer="AlphaESS",
             model="SMILE5-INV",
             serial_number=SERIAL,
@@ -105,6 +106,7 @@ class TestInverterDeviceInfo:
         info = build_inverter_device_info(SERIAL, data)
         assert info == device_info_type(
             identifiers={("alphaess", SERIAL.upper())},
+            entry_type=None,
             manufacturer="AlphaESS",
             model=None,
             serial_number=SERIAL,
@@ -112,23 +114,6 @@ class TestInverterDeviceInfo:
             sw_version=None,
             hw_version=None,
             configuration_url="http://192.168.1.5",
-        )
-
-
-class TestEvChargerDeviceInfo:
-    @pytest.mark.parametrize("model", ["SMILE-EVCT11", None])
-    def test_basic(self, device_info_type, model):
-        data = {
-            AlphaESSNames.evchargersn: "EV123",
-            AlphaESSNames.evchargermodel: model,
-        }
-        info = build_ev_charger_device_info(data)
-        assert info == device_info_type(
-            identifiers={("alphaess", "EV123")},
-            manufacturer="AlphaESS",
-            model=model,
-            serial_number="EV123",
-            name="Alpha ESS Charger : EV123",
         )
 
 

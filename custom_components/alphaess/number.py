@@ -8,14 +8,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from alphaess.alphaess import AlphaESSApiError
 
 from .const import (
-    CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
     INVERTER_SETTING_BLACKLIST,
-    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator, describe_api_error
-from .device import build_ev_charger_device_info, build_inverter_device_info
+from .device import build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import DISCHARGE_AND_CHARGE_NUMBERS, EV_CHARGER_NUMBERS
 
@@ -53,10 +51,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in DISCHARGE_AND_CHARGE_NUMBERS
     }
 
-    ev_number_supported_states = {
-        description.key: description for description in EV_CHARGER_NUMBERS
-    }
-
     for subentry in entry.subentries.values():
         if subentry.subentry_type == SUBENTRY_TYPE_INVERTER:
             serial = subentry.data.get(CONF_SERIAL_NUMBER)
@@ -79,20 +73,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         )
                     )
 
-            # Auto-discovered EV charger numbers (no dedicated EV subentry)
-            ev_charger = data.get(AlphaESSNames.evchargersn)
-            ev_subentry_serials = {
-                sub.data.get(CONF_SERIAL_NUMBER)
-                for sub in entry.subentries.values()
-                if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
-            }
-            if ev_charger and ev_charger not in ev_subentry_serials:
-                ev_device_info = build_ev_charger_device_info(data)
-                for description in ev_number_supported_states:
+            # The charger's numbers live on its child device beneath this inverter
+            if (ev_device_info := coordinator.charger_device_info.get(serial)) is not None:
+                ev_charger = data[AlphaESSNames.evchargersn]
+                for description in EV_CHARGER_NUMBERS:
                     number_entities.append(
                         AlphaEVNumber(
                             coordinator, serial, entry,
-                            ev_number_supported_states[description],
+                            description,
                             ev_serial=ev_charger,
                             device_info=ev_device_info,
                         )
@@ -101,34 +89,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if number_entities:
                 async_add_entities(
                     number_entities,
-                    config_subentry_id=subentry.subentry_id,
-                )
-
-        elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
-            parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
-            if not parent_serial or parent_serial not in coordinator.data:
-                continue
-
-            data = coordinator.data[parent_serial]
-            ev_charger = data.get(AlphaESSNames.evchargersn)
-            if not ev_charger:
-                continue
-
-            ev_device_info = build_ev_charger_device_info(data)
-            ev_entities: list[NumberEntity] = []
-            for description in ev_number_supported_states:
-                ev_entities.append(
-                    AlphaEVNumber(
-                        coordinator, parent_serial, entry,
-                        ev_number_supported_states[description],
-                        ev_serial=ev_charger,
-                        device_info=ev_device_info,
-                    )
-                )
-
-            if ev_entities:
-                async_add_entities(
-                    ev_entities,
                     config_subentry_id=subentry.subentry_id,
                 )
 

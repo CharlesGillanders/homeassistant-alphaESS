@@ -3,7 +3,8 @@
   "name": "Alpha ESS",
   "categories": [
     "energy.solar_batteries",
-    "energy.ev_charging"
+    "energy.ev_charging",
+    "energy.meters_monitoring"
   ],
   "codeowners": [
     "@CharlesGillanders",

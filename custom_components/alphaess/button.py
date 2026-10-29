@@ -10,10 +10,8 @@ from alphaess.alphaess import AlphaESSApiError
 from .const import (
     ALPHA_POST_REQUEST_RESTRICTION,
     CONF_DISABLE_NOTIFICATIONS,
-    CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
     INVERTER_SETTING_BLACKLIST,
-    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import (
@@ -21,7 +19,7 @@ from .coordinator import (
     SchedulePartialWriteError,
     ScheduleWriteUnknownError,
 )
-from .device import build_ev_charger_device_info, build_inverter_device_info
+from .device import build_inverter_device_info
 from .enums import AlphaESSNames
 from .sensorlist import EV_DISCHARGE_AND_CHARGE_BUTTONS, SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
 
@@ -51,10 +49,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         description.key: description for description in SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
     }
 
-    ev_charging_supported_states = {
-        description.key: description for description in EV_DISCHARGE_AND_CHARGE_BUTTONS
-    }
-
     for subentry in entry.subentries.values():
         if subentry.subentry_type == SUBENTRY_TYPE_INVERTER:
             serial = subentry.data.get(CONF_SERIAL_NUMBER)
@@ -78,20 +72,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                         )
                     )
 
-            # Auto-discovered EV charger buttons (no dedicated EV subentry)
-            ev_charger = data.get(AlphaESSNames.evchargersn)
-            ev_subentry_serials = {
-                sub.data.get(CONF_SERIAL_NUMBER)
-                for sub in entry.subentries.values()
-                if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
-            }
-            if ev_charger and ev_charger not in ev_subentry_serials:
-                ev_device_info = build_ev_charger_device_info(data)
-                for description in ev_charging_supported_states:
+            # The charger's buttons live on its child device beneath this inverter
+            if (ev_device_info := coordinator.charger_device_info.get(serial)) is not None:
+                ev_charger = data[AlphaESSNames.evchargersn]
+                for description in EV_DISCHARGE_AND_CHARGE_BUTTONS:
                     inverter_buttons.append(
                         AlphaESSBatteryButton(
                             coordinator, entry, serial,
-                            ev_charging_supported_states[description],
+                            description,
                             ev_charger=True,
                             ev_serial=ev_charger,
                             device_info=ev_device_info,
@@ -102,35 +90,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if inverter_buttons:
                 async_add_entities(
                     inverter_buttons,
-                    config_subentry_id=subentry.subentry_id,
-                )
-
-        elif subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER:
-            parent_serial = subentry.data.get(CONF_PARENT_INVERTER)
-            if not parent_serial or parent_serial not in coordinator.data:
-                continue
-
-            data = coordinator.data[parent_serial]
-            ev_charger = data.get(AlphaESSNames.evchargersn)
-            if not ev_charger:
-                continue
-
-            ev_device_info = build_ev_charger_device_info(data)
-            ev_buttons: list[ButtonEntity] = []
-            for description in ev_charging_supported_states:
-                ev_buttons.append(
-                    AlphaESSBatteryButton(
-                        coordinator, entry, parent_serial,
-                        ev_charging_supported_states[description],
-                        ev_charger=True,
-                        ev_serial=ev_charger,
-                        device_info=ev_device_info,
-                    )
-                )
-
-            if ev_buttons:
-                async_add_entities(
-                    ev_buttons,
                     config_subentry_id=subentry.subentry_id,
                 )
 

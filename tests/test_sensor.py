@@ -11,9 +11,7 @@ from homeassistant.const import CURRENCY_DOLLAR
 from custom_components.alphaess.const import (
     CONF_INVERTER_MODEL,
     CONF_IP_ADDRESS,
-    CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
-    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
 from custom_components.alphaess.enums import AlphaESSNames
@@ -25,7 +23,7 @@ from custom_components.alphaess.sensorlist import (
     LOCAL_IP_SYSTEM_SENSORS,
 )
 
-from .conftest import FakeEntry
+from .conftest import CHARGER_INFO, FakeEntry
 
 SERIAL = "AL1000021000123"
 
@@ -49,17 +47,6 @@ def _inverter_subentry(serial=SERIAL, model="SMILE5-INV", ip=""):
         unique_id=f"{SUBENTRY_TYPE_INVERTER}_{serial}",
     )
 
-
-def _ev_subentry(ev_serial="EV123", parent=SERIAL):
-    return ConfigSubentry(
-        data={
-            CONF_SERIAL_NUMBER: ev_serial,
-            CONF_PARENT_INVERTER: parent,
-        },
-        subentry_type=SUBENTRY_TYPE_EV_CHARGER,
-        title=f"EV ({ev_serial})",
-        unique_id=f"{SUBENTRY_TYPE_EV_CHARGER}_{ev_serial}",
-    )
 
 
 def _entry_for(subentries, coordinator=None):
@@ -155,41 +142,6 @@ class TestSensorSetup:
         assert AlphaESSNames.pev in keys
         assert AlphaESSNames.ElectricVehiclePowerOne in keys
 
-    async def test_ev_subentry_entities(self, mock_hass, make_coordinator, add_entities):
-        coordinator = make_coordinator()
-        coordinator.data = {
-            SERIAL: {
-                "Model": "SMILE5-INV",
-                AlphaESSNames.evchargersn: "EV123",
-                AlphaESSNames.evchargermodel: "SMILE-EVCT11",
-            }
-        }
-        entry = _entry_for([_inverter_subentry(), _ev_subentry()], coordinator)
-
-        await async_setup_entry(mock_hass, entry, add_entities)
-        # second add_entities call is for the EV subentry
-        assert len(add_entities.calls) == 2
-
-    async def test_ev_subentry_missing_parent_skipped(
-        self, mock_hass, make_coordinator, add_entities
-    ):
-        coordinator = make_coordinator()
-        coordinator.data = {}
-        entry = _entry_for([_ev_subentry(parent="UNKNOWN")], coordinator)
-
-        await async_setup_entry(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
-
-    async def test_ev_subentry_without_charger_data_skipped(
-        self, mock_hass, make_coordinator, add_entities
-    ):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
-        entry = _entry_for([_ev_subentry()], coordinator)
-
-        await async_setup_entry(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
-
     async def test_auto_discovered_ev_without_subentry(
         self, mock_hass, make_coordinator, add_entities
     ):
@@ -201,11 +153,14 @@ class TestSensorSetup:
                 AlphaESSNames.evchargermodel: "SMILE-EVCS7",
             }
         }
+        coordinator.charger_device_info = {SERIAL: CHARGER_INFO}
         entry = _entry_for([_inverter_subentry()], coordinator)
 
         await async_setup_entry(mock_hass, entry, add_entities)
-        # inverter batch + auto-discovered EV batch
-        assert len(add_entities.calls) == 2
+        # The charger's sensors join the inverter's batch on its subentry.
+        assert len(add_entities.calls) == 1
+        charger_sensors = [e for e in add_entities.entities if e.device_info is CHARGER_INFO]
+        assert len(charger_sensors) == len(EV_CHARGING_DETAILS)
 
     async def test_inverter_subentry_without_serial(
         self, mock_hass, make_coordinator, add_entities

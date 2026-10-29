@@ -1,6 +1,8 @@
 """Tests for binary_sensor, switch and time platforms."""
 from copy import deepcopy
+from dataclasses import asdict, is_dataclass
 from datetime import time as dt_time
+from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -19,6 +21,7 @@ from custom_components.alphaess.const import (
     CONF_IP_ADDRESS,
     CONF_PARENT_INVERTER,
     CONF_SERIAL_NUMBER,
+    DOMAIN,
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_INVERTER,
 )
@@ -34,7 +37,7 @@ from custom_components.alphaess.switch import async_setup_entry as switch_setup
 from custom_components.alphaess.time import AlphaTime
 from custom_components.alphaess.time import async_setup_entry as time_setup
 
-from .conftest import FakeEntry
+from .conftest import CHARGER_INFO, FakeEntry
 
 SERIAL = "AL1000021000123"
 
@@ -123,6 +126,7 @@ class TestBinarySensorSetup:
                 AlphaESSNames.evchargermodel: "SMILE-EVCT11",
             }
         }
+        coordinator.charger_device_info = {SERIAL: CHARGER_INFO}
         entry = _entry_for([_inverter_subentry()], coordinator)
 
         await binary_setup(mock_hass, entry, add_entities)
@@ -162,48 +166,35 @@ class TestBinarySensorSetup:
         await binary_setup(mock_hass, entry, add_entities)
         assert add_entities.entities == []
 
-    async def test_ev_with_subentry_not_duplicated_on_inverter(
-        self, mock_hass, make_coordinator, add_entities
-    ):
-        coordinator = make_coordinator()
-        coordinator.data = {
-            SERIAL: {
-                "Model": "SMILE5-INV",
-                AlphaESSNames.evchargersn: "EV123",
-                AlphaESSNames.evchargermodel: "SMILE-EVCT11",
-            }
-        }
-        entry = _entry_for([_inverter_subentry(), _ev_subentry()], coordinator)
+@pytest.mark.parametrize("platform_name", ["sensor", "binary_sensor", "button", "number"])
+@pytest.mark.parametrize("nested", [True, False], ids=["nested", "not_nested"])
+async def test_ev_platforms_add_chargers_only_when_nested(
+    mock_hass, make_coordinator, add_entities, platform_name, nested,
+):
+    """Charger entities need the migration's child-device info, never a device of their own."""
+    platform = import_module(f"custom_components.alphaess.{platform_name}")
+    coordinator = make_coordinator()
+    coordinator.data = {SERIAL: {
+        "Model": "SMILE5-INV",
+        AlphaESSNames.evchargersn: "EV123",
+        AlphaESSNames.evchargermodel: "SMILE-EVCT11",
+    }}
+    if nested:
+        coordinator.charger_device_info = {SERIAL: CHARGER_INFO}
+    inverter = _inverter_subentry()
+    # A leftover legacy EV subentry is the migration's concern, not the platforms'.
+    entry = _entry_for([inverter, _ev_subentry()], coordinator)
 
-        await binary_setup(mock_hass, entry, add_entities)
-        # inverter path adds only the schedule sensor; EV sensors come via
-        # the EV subentry path without duplication
-        assert len(add_entities.calls) == 2
-        ev_entities = [
-            entity
-            for call_entities, _kwargs in add_entities.calls
-            for entity in call_entities
-            if isinstance(entity, AlphaEVReadinessBinarySensor)
-        ]
-        assert len(ev_entities) == len(EV_CHARGER_BINARY_SENSORS)
+    await platform.async_setup_entry(mock_hass, entry, add_entities)
 
-    async def test_ev_subentry_missing_parent(self, mock_hass, make_coordinator, add_entities):
-        coordinator = make_coordinator()
-        coordinator.data = {}
-        entry = _entry_for([_ev_subentry(parent="GONE")], coordinator)
-
-        await binary_setup(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
-
-    async def test_ev_subentry_parent_without_charger(
-        self, mock_hass, make_coordinator, add_entities
-    ):
-        coordinator = make_coordinator()
-        coordinator.data = {SERIAL: {"Model": "SMILE5-INV"}}
-        entry = _entry_for([_ev_subentry()], coordinator)
-
-        await binary_setup(mock_hass, entry, add_entities)
-        assert add_entities.entities == []
+    assert any(entity.device_info is CHARGER_INFO for entity in add_entities.entities) is nested
+    for entity in add_entities.entities:
+        info = entity.device_info
+        fields = asdict(info) if is_dataclass(info) else info
+        if info is not CHARGER_INFO:
+            assert (DOMAIN, "EV123") not in fields["identifiers"]
+    for _entities, kwargs in add_entities.calls:
+        assert kwargs["config_subentry_id"] == inverter.subentry_id
 
 
 class TestBinarySensorEntity:
