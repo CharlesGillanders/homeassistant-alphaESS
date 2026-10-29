@@ -21,7 +21,11 @@ from .coordinator import (
     SchedulePartialWriteError,
     ScheduleWriteUnknownError,
 )
-from .device import build_ev_charger_device_info, build_inverter_device_info
+from .device import (
+    async_get_inverter_device_id,
+    build_ev_charger_device_info,
+    build_inverter_device_info,
+)
 from .enums import AlphaESSNames
 from .sensorlist import EV_DISCHARGE_AND_CHARGE_BUTTONS, SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
 
@@ -86,7 +90,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
             }
             if ev_charger and ev_charger not in ev_subentry_serials:
-                ev_device_info = build_ev_charger_device_info(data)
+                ev_device_info = build_ev_charger_device_info(
+                    data, via_device_id=async_get_inverter_device_id(hass, entry, serial),
+                )
                 for description in ev_charging_supported_states:
                     inverter_buttons.append(
                         AlphaESSBatteryButton(
@@ -115,7 +121,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            ev_device_info = build_ev_charger_device_info(data)
+            ev_device_info = build_ev_charger_device_info(
+                data, via_device_id=async_get_inverter_device_id(hass, entry, parent_serial),
+            )
             ev_buttons: list[ButtonEntity] = []
             for description in ev_charging_supported_states:
                 ev_buttons.append(

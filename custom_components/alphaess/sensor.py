@@ -20,7 +20,11 @@ from .const import (
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .currency import normalize_currency_unit
-from .device import build_ev_charger_device_info, build_inverter_device_info
+from .device import (
+    async_get_inverter_device_id,
+    build_ev_charger_device_info,
+    build_inverter_device_info,
+)
 from .enums import AlphaESSNames
 from .sensorlist import (
     EV_CHARGING_DETAILS,
@@ -90,11 +94,13 @@ AU_MIGRATION_NULLABLE_KEYS = {
 
 
 
-def _add_ev_entities(coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
+def _add_ev_entities(hass, coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
     """Create and register EV charger sensor entities."""
     ev_charger = data.get(AlphaESSNames.evchargersn)
     ev_model = data.get(AlphaESSNames.evchargermodel)
-    ev_device_info = build_ev_charger_device_info(data)
+    ev_device_info = build_ev_charger_device_info(
+        data, via_device_id=async_get_inverter_device_id(hass, entry, serial),
+    )
     _LOGGER.info("New EV Charger: Serial: %s, Model: %s", ev_charger, ev_model)
 
     ev_entities: list[AlphaESSSensor] = []
@@ -231,7 +237,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             _LOGGER.info("New EV Charger: Serial: %s, Model: %s", ev_charger, ev_model)
 
             _add_ev_entities(
-                coordinator, entry, parent_serial, data, currency,
+                hass, coordinator, entry, parent_serial, data, currency,
                 ev_charging_supported_states, subentry.subentry_id, async_add_entities,
             )
 
@@ -261,7 +267,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         )
 
         _add_ev_entities(
-            coordinator, entry, serial, data, currency,
+            hass, coordinator, entry, serial, data, currency,
             ev_charging_supported_states, subentry.subentry_id, async_add_entities,
         )
 

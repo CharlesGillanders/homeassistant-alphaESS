@@ -30,6 +30,7 @@ class DataclassDeviceInfo:
     sw_version: str | None | UndefinedType = UNDEFINED
     hw_version: str | None | UndefinedType = UNDEFINED
     configuration_url: str | None | UndefinedType = UNDEFINED
+    via_device_id: str | UndefinedType = UNDEFINED
 
 
 @pytest.fixture(params=[DeviceInfo, DataclassDeviceInfo], ids=["native", "dataclass"])
@@ -117,18 +118,20 @@ class TestInverterDeviceInfo:
 
 class TestEvChargerDeviceInfo:
     @pytest.mark.parametrize("model", ["SMILE-EVCT11", None])
-    def test_basic(self, device_info_type, model):
+    @pytest.mark.parametrize("parent_id", [None, "inverter-device"])
+    def test_basic(self, device_info_type, model, parent_id):
         data = {
             AlphaESSNames.evchargersn: "EV123",
             AlphaESSNames.evchargermodel: model,
         }
-        info = build_ev_charger_device_info(data)
+        info = build_ev_charger_device_info(data, via_device_id=parent_id)
         assert info == device_info_type(
             identifiers={("alphaess", "EV123")},
             manufacturer="AlphaESS",
             model=model,
             serial_number="EV123",
             name="Alpha ESS Charger : EV123",
+            **({"via_device_id": parent_id} if parent_id is not None else {}),
         )
 
 

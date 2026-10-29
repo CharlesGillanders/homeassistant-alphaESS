@@ -476,6 +476,11 @@ land; that is reported as a partial-write error naming what already applied.
 
 ### EV charger controls
 
+A detected EV charger appears as a separate device connected to its
+inverter/battery system. It keeps its own model and serial number, with its
+controls, charging status, and current setting on the charger device. Upgrading
+preserves existing device and entity IDs and settings.
+
 The integration exposes EV charger controls (start/stop and current setting) when
 an EV charger is detected. `Can Start Charging` and `Can Stop Charging` are
 advisory binary sensors based on the latest successful EV poll. Start and stop

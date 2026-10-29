@@ -12,7 +12,11 @@ from .const import (
     SUBENTRY_TYPE_INVERTER,
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
-from .device import build_ev_charger_device_info, build_inverter_device_info
+from .device import (
+    async_get_inverter_device_id,
+    build_ev_charger_device_info,
+    build_inverter_device_info,
+)
 from .enums import AlphaESSNames
 from .sensorlist import EV_CHARGER_BINARY_SENSORS, INVERTER_BINARY_SENSORS
 
@@ -59,7 +63,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
             }
             if ev_charger and ev_charger not in ev_subentry_serials:
-                ev_device_info = build_ev_charger_device_info(data)
+                ev_device_info = build_ev_charger_device_info(
+                    data, via_device_id=async_get_inverter_device_id(hass, entry, serial),
+                )
                 for description in ev_binary_supported_states.values():
                     entities.append(
                         AlphaEVReadinessBinarySensor(
@@ -85,7 +91,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             if not ev_charger:
                 continue
 
-            ev_device_info = build_ev_charger_device_info(data)
+            ev_device_info = build_ev_charger_device_info(
+                data, via_device_id=async_get_inverter_device_id(hass, entry, parent_serial),
+            )
             ev_entities: list[BinarySensorEntity] = []
             for description in ev_binary_supported_states.values():
                 ev_entities.append(
