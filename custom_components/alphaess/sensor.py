@@ -21,10 +21,10 @@ from .const import (
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .currency import normalize_currency_unit
 from .device import (
-    async_get_inverter_device_id,
-    build_ev_charger_device_info,
+    async_get_charger_device_info,
     build_inverter_device_info,
     get_inverter_subentry,
+    legacy_charger_serials,
 )
 from .enums import AlphaESSNames
 from .sensorlist import (
@@ -97,16 +97,11 @@ AU_MIGRATION_NULLABLE_KEYS = {
 
 def _add_ev_entities(hass, coordinator, entry, serial, data, currency, ev_charging_supported_states, subentry_id, async_add_entities):
     """Create and register EV charger sensor entities."""
+    ev_device_info = async_get_charger_device_info(hass, entry, coordinator, serial)
+    if ev_device_info is None:
+        return
     ev_charger = data.get(AlphaESSNames.evchargersn)
-    if ev_charger.upper() in getattr(coordinator, "deferred_charger_serials", ()):
-        return
-    parent_device_id = async_get_inverter_device_id(hass, entry, serial)
-    if parent_device_id is None:
-        return
     ev_model = data.get(AlphaESSNames.evchargermodel)
-    ev_device_info = build_ev_charger_device_info(
-        data, parent_device_id=parent_device_id,
-    )
     _LOGGER.info("New EV Charger: Serial: %s, Model: %s", ev_charger, ev_model)
 
     ev_entities: list[AlphaESSSensor] = []
@@ -242,9 +237,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 hass.config.currency,
             )
 
-            ev_model = data.get(AlphaESSNames.evchargermodel)
-            _LOGGER.info("New EV Charger: Serial: %s, Model: %s", ev_charger, ev_model)
-
             _add_ev_entities(
                 hass, coordinator, entry, parent_serial, data, currency,
                 ev_charging_supported_states, parent_subentry.subentry_id, async_add_entities,
@@ -252,11 +244,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
     # Handle inverters with EV chargers that don't have a dedicated EV subentry
     # (auto-discovered EV chargers without explicit subentries)
-    ev_subentry_serials = {
-        sub.data.get(CONF_SERIAL_NUMBER)
-        for sub in entry.subentries.values()
-        if sub.subentry_type == SUBENTRY_TYPE_EV_CHARGER
-    }
+    legacy_serials = legacy_charger_serials(entry)
 
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_TYPE_INVERTER:
@@ -267,7 +255,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
         data = coordinator.data[serial]
         ev_charger = data.get(AlphaESSNames.evchargersn)
-        if not ev_charger or ev_charger in ev_subentry_serials:
+        if not ev_charger or ev_charger.upper() in legacy_serials:
             continue
 
         currency = normalize_currency_unit(

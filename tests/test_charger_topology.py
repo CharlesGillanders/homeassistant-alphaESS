@@ -555,6 +555,25 @@ async def test_existing_child_is_not_reparented_by_changed_or_ambiguous_discover
     hass.config_entries.async_remove_subentry.assert_not_called()
 
 
+async def test_registry_refusal_defers_the_charger_instead_of_failing_setup(native_registry, caplog):
+    hass, entries = native_registry
+    entry = _entry("account", [_inverter()])
+    entries[entry.entry_id] = entry
+    _register(hass, entry, "inverter", build_inverter_device_info(SERIAL, _data()))
+    # Still registered as a main device in this run, so Core refuses to convert it.
+    charger = _legacy_charger(hass, entry, subentry_id="inverter")
+
+    deferred = async_migrate_charger_devices(hass, entry, {SERIAL: _data()})
+    await hass.async_block_till_done()
+
+    assert deferred == {EV_SERIAL}
+    retained = dr.async_get(hass).async_get(charger.id)
+    assert isinstance(retained, dr.DeviceEntry)
+    assert not dr.async_get(hass).child_devices
+    assert f"Skipping EV charger {EV_SERIAL} until it can be nested" in caplog.text
+    assert "the device registry refused it" in caplog.text
+
+
 async def test_subentry_with_residual_records_is_not_removed(native_registry):
     hass, entries = native_registry
     entry = _entry("account", [_inverter(), _charger()])

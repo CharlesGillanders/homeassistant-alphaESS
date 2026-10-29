@@ -241,7 +241,9 @@ async def test_ev_platforms_skip_unresolved_child_devices(
         subentries.append(_ev_subentry())
     entry = _entry_for(subentries, coordinator)
     if case.startswith("unresolved"):
-        monkeypatch.setattr(platform, "async_get_inverter_device_id", lambda *_args: None)
+        monkeypatch.setattr(
+            "custom_components.alphaess.device.async_get_inverter_device_id", lambda *_args: None,
+        )
 
     await platform.async_setup_entry(mock_hass, entry, add_entities)
 
