@@ -142,6 +142,7 @@ class TestMigrateDevicesToSubentries:
             }],
         )
         hass.config_entries = MagicMock()
+        hass.config_entries.async_wait_initialized = AsyncMock(return_value=None)
         hass.config_entries.async_get_entry.return_value = entry
         dr.async_setup(hass)
         await dr.async_load(hass, load_empty=True)

@@ -1,7 +1,7 @@
 """Charger connections retain separate devices, subentries and user settings."""
 
 from types import MappingProxyType
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.config_entries import ConfigEntry
@@ -71,6 +71,7 @@ async def native_registry(tmp_path):
     hass = HomeAssistant(str(tmp_path))
     entries = {}
     hass.config_entries = MagicMock()
+    hass.config_entries.async_wait_initialized = AsyncMock(return_value=None)
     hass.config_entries.async_get_entry.side_effect = entries.get
     try:
         dr.async_setup(hass)
