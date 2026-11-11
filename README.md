@@ -1,49 +1,79 @@
 # homeassistant-alphaESS
 ![Project Stage](https://img.shields.io/badge/project%20stage-in%20production-green.svg?style=for-the-badge)
-![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)
+![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)
 
 
 Monitor your energy generation, storage, usage data and electric vehicle using the official Open API from Alpha ESS
 
-Requires **Home Assistant 2026.9.0 or newer**.
+Requires **Home Assistant 2026.11.0 or newer**.
 
 ## AlphaESS OpenAPI
 
-In November 2023, AlphaESS introduced a new web API for their own web client and developers were officially encouraged to migrate to using the AlphaESS Open API published at [https://open.alphaess.com/](https://open.alphaess.com/).  This component has been updated to use that Open API.  Anyone wanting to use this component in Home Assistant will first need to register their own inverter with the AlphaESS Open API developer portal.
+The integration uses the AlphaESS Open API at [https://open.alphaess.com/](https://open.alphaess.com/), so you first need a developer account there with your inverter registered to it.
 
-1. Navigate to [https://open.alphaess.com/](https://open.alphaess.com/) and chose the option to register an account.
-2. Once registered and logged in follow the instructions in your inverters manual to find your inverter SN and CheckCode, See example [here](https://imgur.com/a/Xm5t1s0)
-3. Add your inverter to the developer portal using your SN and CheckCode
+1. Navigate to [https://open.alphaess.com/](https://open.alphaess.com/) and choose the option to register an account.
+2. Once registered and logged in, follow the instructions in your inverter's manual to find its SN and check code. See an example [here](https://imgur.com/a/Xm5t1s0).
+3. Add your inverter to the developer portal using its SN and check code.
+4. Home Assistant asks for the AppID and AppSecret the developer portal shows for your account.
 
-## Modifying existing installs to use the new OpenAPI
+If registering a system does not work, see [Issues with registering systems to the AlphaESS OpenAPI](#issues-with-registering-systems-to-the-alphaess-openapi).
 
-If you had previously been using this custom component in Home Assistant you will need to change to use the new authentication mechanism required by the AlphaESS OpenAPI.  
+## Installation
 
-1. First upgrade the HomeAssistant component to at least version 0.4.0 and then restart your HomeAssistant
-2. In HomeAssistant navigate to Settings / Devices & Services / AlphaESS
-3. Look for the pane labeled Integration entries and click on the "3 dots" menu to the right of your existing AlphaESS service.
-4. Delete the existing AlphaESS service.
-5. Click Add Entry to add a new AlphaESS service
-6. Provide the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
-7. The new service will be created keeping the same entity/device names as before.
+### Marketplace
 
+The integration is in the default catalog of the Marketplace, which is built into Home Assistant from 2026.11 and replaces HACS.
 
-## Installation using HACS
+[![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=CharlesGillanders&repository=homeassistant-alphaESS&category=integration)
 
-1. Open [HACS](https://www.hacs.xyz/docs/use/repositories/dashboard/) in the Home Assistant sidebar. Select the top-right three-dot menu, then **Custom repositories**.
-2. Add [https://github.com/CharlesGillanders/homeassistant-alphaESS](https://github.com/CharlesGillanders/homeassistant-alphaESS), choose **Integration** as the type, then select **Add**.
-3. Search for **AlphaESS**, open the repository, and select **Download**.
-4. Restart Home Assistant.
-5. Go to **Settings > Devices & services > Add integration** and search for **Alpha ESS**.
-6. Enter the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
+1. Open **Settings > Marketplace** and search for **AlphaESS**, or use the button above.
+2. Open the repository and install it.
+3. Go to **Settings > Devices & services > Add integration** and search for **Alpha ESS**, or use this button:
 
-## Manual Installation
+   [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=alphaess)
+4. Enter the AppID and AppSecret from the AlphaESS OpenAPI developer portal.
+
+A first install can be set up straight away. Updates appear under **Settings > Updates**; after installing one, a repair offers to restart Home Assistant. An installation made through HACS before Home Assistant 2026.11 is taken over by the Marketplace on its first start, so there is nothing to reinstall.
+
+### Manual installation
 
 1. Make a `custom_components/alphaess` folder in your Home Assistant configuration directory.
 2. Copy the contents of this repository's `custom_components/alphaess` folder into it, including the `brand` folder.
 3. Restart Home Assistant.
 4. Go to **Settings > Devices & services > Add integration** and search for **Alpha ESS**.
 5. Enter the AppID and AppSecret for your account on the Alpha ESS OpenAPI developer portal.
+
+## Configuration
+
+Each system bound to your developer account when you set up the integration gets its own inverter entry, listed under the AlphaESS entry in **Settings > Devices & services > Alpha ESS**.
+
+### Integration options
+
+Select **Configure** (the cog) on the AlphaESS entry. Saving reloads the integration.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| Verify SSL Certificate | on | Verify the AlphaESS API's TLS certificate. |
+| Full poll interval (seconds) | 60 | How often everything is fetched: summary, energy, schedule and power. 10–3600. In alt polling mode this is the slow interval. |
+| Alt polling mode (split fast/slow) | off | Poll live power (SOC, PV, grid, battery, load) at the fast interval and everything else at the full interval. |
+| Fast poll interval (seconds) | 15 | The live power interval in alt polling mode. 10–300. |
+| Assume scheduled charging and discharging are enabled when unknown | off | See [The enable flags are write-only](#the-enable-flags-are-write-only). |
+
+### Inverter settings
+
+Select the pencil (**Reconfigure**) on an inverter's row under the AlphaESS entry:
+
+- **IP Address (optional)**: the local IP address of the inverter's dongle. See [Local Inverter Support](#local-inverter-support).
+- **Disable notifications on charge/discharge confirmation**: on by default. Turn it off to get a persistent notification for each duration button, schedule Apply or Discard, Reset and EV charger command, including the ones that fail. Failures are raised in Home Assistant either way.
+- **Unbind inverter from account**: unbinds the system from your AlphaESS developer account and removes it from Home Assistant.
+
+### Adding an inverter
+
+**Bind Inverter** on the AlphaESS entry adds a system to your developer account from Home Assistant. Enter its serial number (SN) and check code; AlphaESS sends a verification code to the email or phone registered for the system, and entering that code binds the system and reloads the integration.
+
+### Re-authentication
+
+If AlphaESS rejects the AppID and AppSecret, for example after the secret was regenerated in the developer portal, Home Assistant asks you to reauthenticate the AlphaESS entry with the new AppSecret.
 
 
 
@@ -158,10 +188,15 @@ them:
 Do not mix them on one inverter. A service write replaces the remote schedule,
 so a draft staged before it fails its next Apply as a conflict.
 
-Default entity IDs are `<domain>.<serial in lower case>_<name>`. Installs that
-predate the serial-prefixed rename keep their original IDs, which carry the
-device name as well (`sensor.home_alpha_ess_energy_statistics_<serial>_...`) —
-check the entity list rather than assuming the short form:
+New entities get the entity ID `<domain>.<serial in lower case>_<name>`; the EV
+charger's entities use the inverter's serial. An entity keeps the ID it was
+first registered with, so an existing install can differ: depending on when an
+entity was first added, its ID may also carry the device name and the device's
+area (`sensor.home_alpha_ess_energy_statistics_<serial>_...`,
+`sensor.alpha_ess_energy_statistics_<serial>_<serial>_...`). Check the entity
+list rather than assuming the short form. **Recreate entity IDs** on a device's
+page moves its entities to the short form; then update any automation, script
+or dashboard that used the old IDs.
 
 | Purpose | Entity |
 | --- | --- |
@@ -170,9 +205,9 @@ check the entity list rather than assuming the short form:
 | Enable flags | `switch.<sn>_scheduled_charging`, `switch.<sn>_scheduled_discharging` |
 | Cutoff SOC | `number.<sn>_charge_cut_off_soc`, `number.<sn>_discharge_to_soc` |
 | Per-period power (periodic systems only) | `number.<sn>_charge_power_1`, `number.<sn>_discharge_power_1` |
-| Commit or abandon a draft | `button.<sn>_apply_charge_discharge_schedule`, `button.<sn>_discard_charge_discharge_schedule` |
+| Commit or abandon a draft | `button.<sn>_apply_charge_discharge_schedule`, `button.<sn>_discard_schedule_changes` |
 | Which store governs the system | `sensor.<sn>_periodic_schedule_read` |
-| Timed control running | `binary_sensor.<sn>_time_based_control_active` |
+| Last confirmed enable flags (not the working mode) | `binary_sensor.<sn>_recorded_schedule_flags_enabled` |
 
 #### Predbat
 
@@ -278,9 +313,11 @@ enable pair; it never consumes staged switch values before Apply.
 The diagnostic binary sensor **Recorded Schedule Flags Enabled** reports whether
 either flag in Home Assistant's last confirmed pair is on. Its unique ID remains
 compatible with the former **Time Based Control Active** entity so an existing
-registry entry is renamed in place. It is deliberately not a working-mode
-sensor: AlphaESS OpenAPI exposes no authoritative way to tell **Time Based
-Control** from **Self Consumption (Plus)**.
+registry entry is renamed in place and keeps its entity ID
+(`binary_sensor.<sn>_time_based_control_active` on such installs). It is
+deliberately not a working-mode sensor: AlphaESS OpenAPI exposes no
+authoritative way to tell **Time Based Control** from **Self Consumption
+(Plus)**.
 
 ### The enable flags are write-only
 
@@ -485,6 +522,11 @@ Existing device and entity IDs, user names, areas, and disabled settings are
 preserved when upgrading. The charger follows its parent when it is disabled or
 removed.
 
+The charger's entity IDs use the inverter's serial: `button.<sn>_start_charging`,
+`button.<sn>_stop_charging`, `number.<sn>_ev_charger_current_setting`,
+`sensor.<sn>_ev_charger_status` and so on, where `<sn>` is the inverter's
+serial in lower case.
+
 The integration exposes EV charger controls (start/stop and current setting) when
 an EV charger is detected. `Can Start Charging` and `Can Stop Charging` are
 advisory binary sensors based on the latest successful EV poll. Start and stop
@@ -542,71 +584,94 @@ prevents accidental double presses.
 
 ## Local Inverter Support
 
-To use the local inverter support, you will need to have a local inverter that is able to reach your HA instance (preferably on the same subnet). 
+Each inverter can be given the local IP address of its AlphaESS dongle, which
+Home Assistant must be able to reach (preferably on the same subnet). With an
+address set, the integration also reads the dongle directly:
 
-To add a local inverter to an existing AlphaESS integration, you will need to select the "Configure" option from the AlphaESS integration in Home Assistant, and then input your inverter's IP address, you can also do this if you need to reconfigure your inverter's IP address (due to DHCP changes, etc).
+- diagnostic sensors for that inverter: local IP, WiFi, ethernet, 4G and cloud
+  connection status, connected SSID, software and hardware version, device
+  serial number and register key;
+- the software and hardware version on the inverter's device, with a link to
+  the dongle's web page;
+- when the cloud API cannot be reached, the local sensors keep updating while
+  the cloud sensors become unavailable.
 
-To remove/reset the local inverter integration, you will need to go back to the configuration settings, and set it to 0. (this will "remove" all the sensors linked, and will need to be manually deleted)
-
-For now, if you have more than one inverter linked to your OpenAPI Account, the local inverter settings will only work on the first inverter that is linked to your account. support for setting it to be a custom one is coming.
-
-![](https://i.imgur.com/rHWI2gh.png)
+To set or change the address, for example after a DHCP change, select the
+pencil (**Reconfigure**) on the inverter's row under the AlphaESS entry and fill
+in **IP Address (optional)**. Clear the field, or enter `0`, to stop using it;
+the local sensors are then left unavailable and can be deleted from the entity
+list.
 
 
 ## Issues with registering systems to the AlphaESS OpenAPI
 
-There has been a few issues regarding registering systems to the AlphaESS OpenAPI.  The following are some of the issues that have been reported and how to resolve them.
+There have been a few issues registering systems to the AlphaESS OpenAPI. These are the ones reported so far, and how to resolve them.
 
-### Issue: Unable to register system to AlphaESS OpenAPI (not receiving verification code) 
+### Issue: Unable to register system to AlphaESS OpenAPI (not receiving verification code)
 
 If you are unable to register your system to the AlphaESS OpenAPI because you are not receiving the verification code, you can try the following steps to resolve the issue:
 1. Access the current postman collection library for the AlphaESS OpenAPI [here](https://www.postman.com/poshy163/alphaess/collection/tsy43t1/alphaess-open-api?action=share&creator=11219653) (you will need to fork the collection)
-2. Clicking on the root of the list of API calls (should be called AlphaESS Open API) and then click on the variables tab and fill in your AppID, AppSecret, systemSN and CheckCode into the initial and current value fields. 
-3. Click on the getVerificationCode GET API call followed by the send button to send the request.  You should receive a verification code either in the response body or by email.
+2. Click on the root of the list of API calls (it should be called AlphaESS Open API), then click on the variables tab and fill in your AppID, AppSecret, systemSN and CheckCode into the initial and current value fields.
+3. Click on the getVerificationCode GET API call followed by the send button to send the request. You should receive a verification code either in the response body or by email.
 
 ### Issue: Entities becoming unavailable/not working and/or defaulting to 0
 
-Newer AlphaESS Inverters have a firmware that can introduce incompatibilities with the current iteration of the integration. This new inverters has caused issues with the API calls that are currently supported and the data currently sent.
+Newer AlphaESS inverter firmware can return data the integration does not
+handle yet, or nothing at all from some endpoints. To help add support for your
+inverter, open an issue and attach:
 
-If you would like to help improve it for your specie inverter, please open an issue with the following information:
+1. The diagnostics download: **Settings > Devices & services > Alpha ESS > ⋮ >
+   Download diagnostics**.
+2. The response of the `alphaess.export_raw_snapshot` action, which is what the
+   API last returned from every endpoint (see
+   [Exporting the raw API responses](#exporting-the-raw-api-responses)).
 
-Use the postman collection found [here](https://github.com/CharlesGillanders/alphaess-openAPI/blob/main/AlphaESS%20Open%20API.postman_collection.json) you will need an account here: https://www.postman.com/
-
-In the variables tab you need to edit the Initial Value and Current Value fields for AppID, AppSecret, and SysSN. (found within the openAPI developer portal) and the AppID and AppSecret from https://open.alphaess.com/
-
-The SysSN is the serial number of your invertor and the AppID and AppSecret are your AppID and AppSecret from https://open.alphaess.com/, once you have set all three variables in both current and initial value hit the save button.
-
-Then you should run each of the API calls in turn - one after the other and paste the results here, removing your SysSN for confidentiality.
+Both replace serial numbers with `inverter_1`, `ev_charger_1` and so on, and
+redact credentials, keys and addresses. To query the API outside Home Assistant
+instead, use the
+[Postman collection](https://github.com/CharlesGillanders/alphaess-openAPI/blob/main/AlphaESS%20Open%20API.postman_collection.json)
+with your AppID, AppSecret and system serial, and remove the serial before
+posting the results.
 
 ## Services
 
-Schedule services are immediate from Home Assistant's point of view: they perform
-one fresh read/modify/write operation and do not use the staged entity draft or
-the Apply/Discard buttons. The two AlphaESS schedule APIs are still separate
-server operations, so the periodic limitations and partial-mirror behavior
-described above apply. In particular, a one-sided service cannot bootstrap an
-empty periodic resource because AlphaESS requires both lists in the same request.
+`alphaess.setbatterycharge` and `alphaess.setbatterydischarge` are immediate:
+each call reads the store that governs the system, replaces the two slots of
+its side and writes it back in one transaction, without using or consuming a
+staged draft. Everything in
+[Charge and discharge schedules](#charge-and-discharge-schedules) applies to
+them, in particular:
 
-This project allows you to use the following services in Home Assistant:<br>
+- Times are rounded to the nearest quarter hour and zero-padded, since the API
+  rejects anything else. A slot given as `00:00`–`00:00` is turned off; on a
+  periodic schedule that removes the period.
+- On a periodic schedule both enable flags must be known, from the Scheduled
+  Charging and Scheduled Discharging switches or the *assume* option (see
+  [The enable flags are write-only](#the-enable-flags-are-write-only)), and a
+  one-sided call cannot create an empty schedule.
+- Power fields exist only on the periodic schedule; in backup mode a call that
+  passes one is refused and nothing is changed.
+- A call AlphaESS rejects fails with its return code instead of passing
+  silently.
 
-### Alpha ESS: Set Battery Charge<br>
- 
-  This service call allows you to set the grid charge settings for your system. <br>
-  Times are rounded to the nearest quarter hour and zero-padded before being sent, since the API rejects anything else. <br>
-  Data needed:<br>
-    - serial = The serial of your system. <br>
-    - enabled = True or False <br>
-    - cp1start = Charging Period 1 Start Time <br>
-    - cp1end = Charging Period 1 End Time <br>
-    - cp2start = Charging Period 2 Start Time <br>
-    - cp2end = Charging Period 2 End Time <br>
+### Alpha ESS: Set Battery Charge
 
-example:
+`alphaess.setbatterycharge`
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `serial` | yes | The system's serial number. |
+| `enabled` | yes | Scheduled charging on (`true`) or off (`false`). |
+| `cp1start`, `cp1end` | yes | Charge period 1, `HH:MM`. |
+| `cp2start`, `cp2end` | yes | Charge period 2, `HH:MM`. |
+| `chargestopsoc` | yes | Stop charging at this state of charge, 10–100 %. |
+| `cp1power`, `cp2power` | no | Charge power for each period in W. Required when the call creates a new period. |
+
 ```yaml
-service: alphaess.setbatterycharge
+action: alphaess.setbatterycharge
 data:
   serial: AA123456789
-  enabled: True
+  enabled: true
   cp1start: "01:00"
   cp1end: "04:00"
   cp2start: "13:00"
@@ -614,45 +679,47 @@ data:
   chargestopsoc: 100
 ```
 
-### Alpha ESS: Export Raw Snapshot<br>
+### Alpha ESS: Set Battery Discharge
 
-  Returns the last response received from every AlphaESS endpoint the integration
-  uses, redacted so it can be attached to an issue. It makes no API request. See
-  *Exporting the raw API responses* above. <br>
-  Data (all optional, needed only with more than one AlphaESS entry):<br>
-    - serial = A system serial managed by the entry to export <br>
-    - config_entry_id = The entry to export <br>
-    - device_id = An inverter or EV charger device of the entry to export <br>
+`alphaess.setbatterydischarge`
 
-example:
+| Field | Required | Description |
+| --- | --- | --- |
+| `serial` | yes | The system's serial number. |
+| `enabled` | yes | Scheduled discharging on (`true`) or off (`false`). |
+| `dp1start`, `dp1end` | yes | Discharge period 1, `HH:MM`. |
+| `dp2start`, `dp2end` | yes | Discharge period 2, `HH:MM`. |
+| `dischargecutoffsoc` | yes | Stop discharging at this state of charge, 10–100 %. |
+| `dp1power`, `dp2power` | no | Discharge power for each period in W. Required when the call creates a new period. |
+
+```yaml
+action: alphaess.setbatterydischarge
+data:
+  serial: AA123456789
+  enabled: true
+  dp1start: "17:00"
+  dp1end: "21:00"
+  dp2start: "00:00"
+  dp2end: "00:00"
+  dischargecutoffsoc: 10
+```
+
+### Alpha ESS: Export Raw Snapshot
+
+`alphaess.export_raw_snapshot` returns the last response received from every
+AlphaESS endpoint the integration uses, redacted so it can be attached to an
+issue. It makes no API request; see
+[Exporting the raw API responses](#exporting-the-raw-api-responses). With one
+AlphaESS entry no field is needed; with more, pass one of:
+
+| Field | Description |
+| --- | --- |
+| `serial` | A system serial managed by the entry to export. |
+| `config_entry_id` | The entry to export. |
+| `device_id` | An inverter or EV charger device of the entry to export. |
+
 ```yaml
 action: alphaess.export_raw_snapshot
 data: {}
 response_variable: snapshot
-```
-
-### Alpha ESS: Set Battery Discharge<br>
- 
-  This service call allows you to set the battery discharge settings for your system. <br>
-  Times are rounded to the nearest quarter hour and zero-padded before being sent, since the API rejects anything else. <br>
-  Data needed:<br>
-    - serial = The serial of your system. <br>
-    - enabled = True or False <br>
-    - dp1start = Discharging Period 1 Start Time <br>
-    - dp1end = Discharging Period 1 End Time <br>
-    - dp2start = Discharging Period 2 Start Time <br>
-    - dp2end = Discharging Period 2 End Time <br>
-
-
-example:
-```yaml
-service: alphaess.setbatterydischarge
-data:
-  serial: AA123456789
-  enabled: True
-  dp1start: "01:00"
-  dp1end: "04:00"
-  dp2start: "13:00"
-  dp2end: "16:00"
-  dischargecutoffsoc: 10
 ```
