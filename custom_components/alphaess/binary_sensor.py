@@ -1,7 +1,7 @@
 """Binary sensor platform for AlphaESS integration."""
 import logging
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import ENTITY_ID_FORMAT, BinarySensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -11,6 +11,7 @@ from .const import (
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .device import build_inverter_device_info
+from .entity import default_object_id
 from .enums import AlphaESSNames
 from .sensorlist import EV_CHARGER_BINARY_SENSORS, INVERTER_BINARY_SENSORS
 
@@ -85,6 +86,7 @@ class AlphaScheduleControlBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._name = description.name
         self._icon = description.icon
         self._entity_category = description.entity_category
+        self.entity_id = ENTITY_ID_FORMAT.format(default_object_id(serial, self._name))
 
         if device_info is not None:
             self._attr_device_info = device_info
@@ -119,10 +121,6 @@ class AlphaScheduleControlBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return f"{self._name}"
 
     @property
-    def suggested_object_id(self):
-        return f"{self._serial} {self._name}"
-
-    @property
     def entity_category(self):
         return self._entity_category
 
@@ -145,6 +143,7 @@ class AlphaEVReadinessBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._icon = description.icon
         self._entity_category = description.entity_category
         self._direction = description.direction
+        self.entity_id = ENTITY_ID_FORMAT.format(default_object_id(serial, self._name))
 
         if device_info is not None:
             self._attr_device_info = device_info
@@ -178,10 +177,6 @@ class AlphaEVReadinessBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def name(self):
         return f"{self._name}"
-
-    @property
-    def suggested_object_id(self):
-        return f"{self._serial} {self._name}"
 
     @property
     def entity_category(self):

@@ -8,7 +8,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import ChildDeviceInfo, DeviceInfo
-from homeassistant.helpers.typing import UNDEFINED
 
 from .const import (
     CONF_EV_CHARGER_MODEL,
@@ -36,8 +35,8 @@ def build_inverter_device_info(
     """Build DeviceInfo for an inverter."""
     serial_upper = serial.upper()
 
-    # Supply optional fields at construction so older TypedDict-based Home
-    # Assistant versions and the DeviceInfo dataclass receive the same metadata.
+    # Pass optional fields only when known: DeviceInfo hands the registry only
+    # the fields that are set, so a missing value leaves the device unchanged.
     local_metadata = {}
     local_ip = data.get(AlphaESSNames.localIP)
     if local_ip and local_ip != "0" and data.get(AlphaESSNames.deviceStatus) is not None:
@@ -162,8 +161,9 @@ def async_migrate_charger_devices(
         model = charger_models.get(key)
         if model is None and device is not None and not is_child:
             model = _known_charger_model(device.model)
-        # An existing child keeps its name while discovery lacks the model.
-        name = f"EV Charger ({model})" if model else UNDEFINED if is_child else "EV Charger"
+        # An existing child keeps its name while discovery lacks the model:
+        # leaving the argument out leaves the registry's value alone.
+        naming = {"name": f"EV Charger ({model})"} if model else {} if is_child else {"name": "EV Charger"}
 
         old_subentry_ids = legacy_subentry_ids.get(key, set())
         # A device subentry move clears entities left on the previous subentry.
@@ -181,8 +181,8 @@ def async_migrate_charger_devices(
                 config_entry_id=entry.entry_id,
                 config_subentry_id=target_subentry,
                 identifiers={(DOMAIN, charger_serials[key]), *(device.identifiers if device else ())},
-                name=name,
                 parent_device_id=parent.id,
+                **naming,
             )
         except HomeAssistantError as err:
             # Runs on every start: a registry refusal must cost only the

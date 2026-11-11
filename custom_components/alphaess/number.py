@@ -1,6 +1,6 @@
 import logging
 
-from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
+from homeassistant.components.number import ENTITY_ID_FORMAT, NumberEntity, NumberMode, RestoreNumber
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -14,6 +14,7 @@ from .const import (
 )
 from .coordinator import AlphaESSDataUpdateCoordinator, describe_api_error
 from .device import build_inverter_device_info
+from .entity import default_object_id
 from .enums import AlphaESSNames
 from .sensorlist import DISCHARGE_AND_CHARGE_NUMBERS, EV_CHARGER_NUMBERS
 
@@ -106,6 +107,7 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         self._native_unit_of_measurement = full_number_supported_states.native_unit_of_measurement
         self._icon = full_number_supported_states.icon
         self._name = full_number_supported_states.name
+        self.entity_id = ENTITY_ID_FORMAT.format(default_object_id(serial, self._name))
         self._attr_native_min_value = full_number_supported_states.native_min_value
         self._attr_native_max_value = full_number_supported_states.native_max_value
         self._attr_native_step = full_number_supported_states.native_step
@@ -236,11 +238,6 @@ class AlphaNumber(CoordinatorEntity, RestoreNumber):
         return f"{self._name}"
 
     @property
-    def suggested_object_id(self):
-        """Return suggested object id."""
-        return f"{self._serial} {self._name}"
-
-    @property
     def mode(self) -> NumberMode:
         return NumberMode.BOX
 
@@ -274,6 +271,7 @@ class AlphaEVNumber(CoordinatorEntity, NumberEntity):
         self._name = description.name
         self._icon = description.icon
         self._entity_category = description.entity_category
+        self.entity_id = ENTITY_ID_FORMAT.format(default_object_id(serial, self._name))
         self._attr_native_min_value = description.native_min_value
         self._attr_native_max_value = description.native_max_value
         self._attr_native_step = description.native_step
@@ -323,11 +321,6 @@ class AlphaEVNumber(CoordinatorEntity, NumberEntity):
     @property
     def name(self):
         return f"{self._name}"
-
-    @property
-    def suggested_object_id(self):
-        """Return suggested object id."""
-        return f"{self._serial} {self._name}"
 
     @property
     def native_unit_of_measurement(self):

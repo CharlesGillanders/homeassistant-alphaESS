@@ -825,7 +825,7 @@ class TestButtonPress:
         assert button.device_class is None
         assert button.entity_category is not None
         assert button.name == "60 Minute Discharge"
-        assert button.suggested_object_id == f"{SERIAL} 60 Minute Discharge"
+        assert button.entity_id == f"button.{SERIAL.lower()}_60_minute_discharge"
         assert button.icon
 
     def test_button_with_device_info(self, make_coordinator, mock_hass):
@@ -1143,7 +1143,7 @@ class TestAlphaNumber:
 
         assert entity.native_value == 10.0
         assert entity.name == "Discharge To SOC"
-        assert entity.suggested_object_id == f"{SERIAL} Discharge To SOC"
+        assert entity.entity_id == f"number.{SERIAL.lower()}_discharge_to_soc"
         assert entity.mode == "box"
         assert entity.native_unit_of_measurement == "%"
         assert SERIAL in entity.unique_id
@@ -1236,7 +1236,7 @@ class TestAlphaEVNumber:
         assert entity.available is True
 
         assert entity.name
-        assert entity.suggested_object_id.startswith(SERIAL)
+        assert entity.entity_id == f"number.{SERIAL.lower()}_ev_charger_current_setting"
         assert entity.native_unit_of_measurement == "A"
         assert SERIAL in entity.unique_id
         assert entity.entity_category is not None

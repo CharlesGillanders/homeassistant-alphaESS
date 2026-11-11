@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 import pytest
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.typing import UNDEFINED, UndefinedType
 
 from custom_components.alphaess.device import build_inverter_device_info
 from custom_components.alphaess.diagnostics import async_get_config_entry_diagnostics
@@ -14,20 +13,24 @@ from .conftest import FakeEntry
 
 SERIAL = "al1000021000123"
 
+# Stands in for Core's unset-field sentinel; both sides of each comparison
+# build the same class, so any sentinel will do.
+_UNSET = object()
+
 
 @dataclass(kw_only=True, slots=True)
 class DataclassDeviceInfo:
-    """Exercise the Core 2026.11 shape without its mapping compatibility layer."""
+    """Exercise DeviceInfo as a plain dataclass, without its mapping compatibility layer."""
 
-    identifiers: set[tuple[str, str]] | UndefinedType = UNDEFINED
-    entry_type: object | UndefinedType = UNDEFINED
-    manufacturer: str | None | UndefinedType = UNDEFINED
-    model: str | None | UndefinedType = UNDEFINED
-    serial_number: str | None | UndefinedType = UNDEFINED
-    name: str | None | UndefinedType = UNDEFINED
-    sw_version: str | None | UndefinedType = UNDEFINED
-    hw_version: str | None | UndefinedType = UNDEFINED
-    configuration_url: str | None | UndefinedType = UNDEFINED
+    identifiers: object = _UNSET
+    entry_type: object = _UNSET
+    manufacturer: object = _UNSET
+    model: object = _UNSET
+    serial_number: object = _UNSET
+    name: object = _UNSET
+    sw_version: object = _UNSET
+    hw_version: object = _UNSET
+    configuration_url: object = _UNSET
 
 
 @pytest.fixture(params=[DeviceInfo, DataclassDeviceInfo], ids=["native", "dataclass"])

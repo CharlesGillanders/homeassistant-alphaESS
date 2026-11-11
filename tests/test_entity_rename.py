@@ -54,10 +54,9 @@ def test_entity_id_changed_preserves_pending_schedule(kind, make_coordinator, mo
         coordinator.number_settings,
     ))
 
-    # The Core callback is introduced in 2026.11. Earlier supported versions
-    # never invoke it; provide the base callback to exercise that future path.
+    # Stand in for Core's own callback to see that the entity forwards to it.
     base_callback = MagicMock()
-    monkeypatch.setattr(CoordinatorEntity, "async_entity_id_changed", base_callback, raising=False)
+    monkeypatch.setattr(CoordinatorEntity, "async_entity_id_changed", base_callback)
     entity.async_entity_id_changed(old_entity_id)
 
     base_callback.assert_called_once_with(old_entity_id)
