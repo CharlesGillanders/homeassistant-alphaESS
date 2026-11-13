@@ -28,7 +28,7 @@ jobs:
     name: Pytest (HA ${{ matrix.homeassistant }})
     strategy:
       matrix:
-        homeassistant: ["2026.9.0", "latest"]
+        homeassistant: ["2026.11.0", "latest"]
     steps:
       - uses: actions/checkout@v4
 

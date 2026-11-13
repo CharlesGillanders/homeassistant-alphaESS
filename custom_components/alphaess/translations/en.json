@@ -3,7 +3,7 @@
   "config": {
     "step": {
       "user": {
-        "description": "Enter your AppID and AppSecret from the AlphaESS OpenAPI developer portal.\n\nAfter setup, you can configure a local IP address for each inverter via its sub-entry options to enable access to local entities.\n\nIf you have any issues with the OpenAPI, read a list of potential fixes [here]({issues_url}).",
+        "description": "Enter the AppID and AppSecret from your [AlphaESS OpenAPI developer account]({open_api_url}).\n\nAfter setup, each inverter can be given a local IP address with the Reconfigure option on its row, for local diagnostics and a fallback when the cloud API is unavailable.\n\nIf registering with the OpenAPI fails, read the [list of known fixes]({issues_url}).",
         "data": {
           "AppID": "AppID",
           "AppSecret": "AppSecret",

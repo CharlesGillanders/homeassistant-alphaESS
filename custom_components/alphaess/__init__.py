@@ -27,7 +27,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_integration
-from homeassistant.util import slugify
 
 from alphaess import alphaess
 from alphaess.alphaess import AlphaESSApiError
@@ -55,6 +54,7 @@ from .const import (
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .device import async_migrate_charger_devices
+from .entity import default_object_id
 from .enums import AlphaESSNames
 from .snapshot import build_raw_snapshot
 
@@ -196,8 +196,8 @@ def _migrate_renamed_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None
 def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Rename entity IDs to include inverter serial prefix.
 
-    Parses unique_id format '{entry_id}_{serial} - {name}' to compute
-    desired entity_id '{domain}.{serial_lower}_{slugified_name}'.
+    Parses unique_id format '{entry_id}_{serial} - {name}' to compute the
+    entity_id new entities are given, '{domain}.{serial_lower}_{slugified_name}'.
     Skips if entity already has the correct ID or if target ID is taken.
     """
     ent_reg = er.async_get(hass)
@@ -215,7 +215,7 @@ def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
             continue
 
         serial, name = remainder.split(" - ", 1)
-        desired_id = f"{entity_entry.domain}.{serial.lower()}_{slugify(name)}"
+        desired_id = f"{entity_entry.domain}.{default_object_id(serial, name)}"
 
         if entity_entry.entity_id == desired_id:
             continue
@@ -445,13 +445,10 @@ def _resolve_entry_for_export(hass: HomeAssistant, data: Mapping[str, Any]) -> C
 
     device_id = data.get("device_id")
     if device_id:
+        # Resolves a charger's child device as well as an inverter.
         device, entry = dr.async_get_device_and_config_entry_for_domain(
             hass, device_id, domain=DOMAIN,
         )
-        if device is None:
-            # Core 2026.9's domain helper only resolves main devices.
-            device = dr.async_get(hass).async_get(device_id, include_main_devices=False)
-            entry = device and hass.config_entries.async_get_entry(device.config_entry_id)
         if device is None:
             raise ServiceValidationError(f"No device has id {device_id}")
         if entry is not None and entry in entries:

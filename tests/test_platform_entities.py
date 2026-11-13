@@ -37,9 +37,34 @@ from custom_components.alphaess.switch import async_setup_entry as switch_setup
 from custom_components.alphaess.time import AlphaTime
 from custom_components.alphaess.time import async_setup_entry as time_setup
 
-from .conftest import CHARGER_INFO, FakeEntry
+from .conftest import CHARGER_INFO, FakeAddEntities, FakeEntry
 
 SERIAL = "AL1000021000123"
+
+# The IDs the README's schedule table, Predbat example and EV section name.
+DOCUMENTED_ENTITY_IDS = {
+    "time.{sn}_charge_start_time_1",
+    "time.{sn}_charge_end_time_1",
+    "time.{sn}_discharge_start_time_1",
+    "time.{sn}_discharge_end_time_1",
+    "switch.{sn}_scheduled_charging",
+    "switch.{sn}_scheduled_discharging",
+    "number.{sn}_charge_cut_off_soc",
+    "number.{sn}_discharge_to_soc",
+    "number.{sn}_charge_power_1",
+    "number.{sn}_discharge_power_1",
+    "button.{sn}_apply_charge_discharge_schedule",
+    "button.{sn}_discard_schedule_changes",
+    "sensor.{sn}_periodic_schedule_read",
+    "binary_sensor.{sn}_recorded_schedule_flags_enabled",
+    "sensor.{sn}_instantaneous_battery_soc",
+    "sensor.{sn}_installed_capacity",
+    "sensor.{sn}_inverter_nominal_power",
+    "button.{sn}_start_charging",
+    "button.{sn}_stop_charging",
+    "number.{sn}_ev_charger_current_setting",
+    "sensor.{sn}_ev_charger_status",
+}
 
 
 def _complete_schedule_data() -> dict:
@@ -197,6 +222,30 @@ async def test_ev_platforms_add_chargers_only_when_nested(
         assert kwargs["config_subentry_id"] == inverter.subentry_id
 
 
+async def test_new_entities_get_the_documented_entity_ids(mock_hass, make_coordinator):
+    """Every entity suggests <domain>.<serial>_<name>, with no device or area name in it."""
+    coordinator = make_coordinator()
+    coordinator.data = {SERIAL: {
+        "Model": "SMILE5-INV",
+        AlphaESSNames.evchargersn: "EV123",
+        AlphaESSNames.evchargermodel: "SMILE-EVCT11",
+    }}
+    coordinator.charger_device_info = {SERIAL: CHARGER_INFO}
+    entry = _entry_for([_inverter_subentry()], coordinator)
+    entity_ids = []
+
+    for platform_name in ("sensor", "binary_sensor", "button", "number", "switch", "time"):
+        platform = import_module(f"custom_components.alphaess.{platform_name}")
+        add_entities = FakeAddEntities()
+        await platform.async_setup_entry(mock_hass, entry, add_entities)
+        for entity in add_entities.entities:
+            assert entity.entity_id.startswith(f"{platform_name}.{SERIAL.lower()}_")
+            entity_ids.append(entity.entity_id)
+
+    assert len(entity_ids) == len(set(entity_ids))
+    assert {pattern.format(sn=SERIAL.lower()) for pattern in DOCUMENTED_ENTITY_IDS} <= set(entity_ids)
+
+
 class TestBinarySensorEntity:
     def _make(self, coordinator, direction_index=0, device_info=None):
         return AlphaEVReadinessBinarySensor(
@@ -252,7 +301,7 @@ class TestBinarySensorEntity:
         sensor = self._make(coordinator)
         assert SERIAL in sensor.unique_id
         assert sensor.name == "Can Start Charging"
-        assert sensor.suggested_object_id == f"{SERIAL} Can Start Charging"
+        assert sensor.entity_id == f"binary_sensor.{SERIAL.lower()}_can_start_charging"
         assert sensor.entity_category is not None
         assert sensor.icon
 
@@ -729,7 +778,8 @@ class TestRecordedScheduleFlagsBinarySensor:
             f"test_entry_{SERIAL} - Time Based Control Active"
         )
         assert entity.name == description.name
-        assert entity.suggested_object_id == f"{SERIAL} {description.name}"
+        # A new install gets the current name; registered entities keep their ID.
+        assert entity.entity_id == f"binary_sensor.{SERIAL.lower()}_recorded_schedule_flags_enabled"
         assert entity.entity_category == description.entity_category
         assert entity.icon == description.icon
 

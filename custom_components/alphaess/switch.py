@@ -2,7 +2,7 @@
 import logging
 from typing import Any
 
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.switch import ENTITY_ID_FORMAT, SwitchEntity
 from homeassistant.core import callback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -14,6 +14,7 @@ from .const import (
 )
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .device import build_inverter_device_info
+from .entity import default_object_id
 from .sensorlist import CHARGE_DISCHARGE_SWITCHES
 
 _LOGGER = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ class AlphaSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         self._entity_category = description.entity_category
         self._coordinator_key = description.coordinator_key
         self._optimistic_state: bool | None = None
+        self.entity_id = ENTITY_ID_FORMAT.format(default_object_id(serial, self._name))
 
         if device_info is not None:
             self._attr_device_info = device_info

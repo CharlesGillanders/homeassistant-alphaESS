@@ -193,7 +193,7 @@ class TestSensorEntity:
 
         assert sensor.unique_id == f"test_entry_{SERIAL} - Solar Production"
         assert sensor.name == "Solar Production"
-        assert sensor.suggested_object_id == f"{SERIAL} Solar Production"
+        assert sensor.entity_id == f"sensor.{SERIAL.lower()}_solar_production"
         assert sensor.native_value == 5.0
         assert sensor.device_class is not None
         assert sensor.state_class is not None

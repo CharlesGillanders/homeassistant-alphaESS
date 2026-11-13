@@ -2,12 +2,13 @@
 import logging
 from datetime import time
 
-from homeassistant.components.time import TimeEntity
+from homeassistant.components.time import ENTITY_ID_FORMAT, TimeEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_SERIAL_NUMBER, INVERTER_SETTING_BLACKLIST, SUBENTRY_TYPE_INVERTER
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .device import build_inverter_device_info
+from .entity import default_object_id
 from .sensorlist import CHARGE_DISCHARGE_TIMES
 
 _LOGGER = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ class AlphaTime(CoordinatorEntity, TimeEntity):
         self._entity_category = description.entity_category
         self._icon = description.icon
         self._name = description.name
+        self.entity_id = ENTITY_ID_FORMAT.format(default_object_id(serial, self._name))
 
         if device_info is not None:
             self._attr_device_info = device_info

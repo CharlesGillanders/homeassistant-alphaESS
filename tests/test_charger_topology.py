@@ -10,7 +10,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.alphaess import binary_sensor, button, number, sensor
+from custom_components.alphaess import _resolve_entry_for_export, binary_sensor, button, number, sensor
 from custom_components.alphaess.const import (
     CONF_EV_CHARGER_MODEL,
     CONF_PARENT_INVERTER,
@@ -647,3 +647,24 @@ async def test_all_ev_platforms_use_children_and_parent_subentries(native_regist
         assert sensors[AlphaESSNames.evchargerstatus].native_value == "charging"
     assert len(dr.async_get(hass).devices) == len(dr.async_get(hass).child_devices) == 2
     assert not er.async_get(hass).deleted_entities
+
+
+@pytest.mark.parametrize("target", ["charger", "inverter"])
+async def test_export_resolves_the_charger_child_device_through_core(native_registry, make_coordinator, target):
+    """export_raw_snapshot's device_id accepts the nested charger as well as its inverter."""
+    hass, entries = native_registry
+    entry = _entry("account", [_inverter()])
+    entries[entry.entry_id] = entry
+    coordinator = make_coordinator(entry=entry)
+    coordinator.data = {SERIAL: _data()}
+    entry.runtime_data = coordinator
+    hass.config_entries.async_entries.return_value = [entry]
+    coordinator.charger_device_info = async_migrate_charger_devices(hass, entry, coordinator.data)
+    registry = dr.async_get(hass)
+    if target == "charger":
+        device = next(iter(registry.child_devices))
+        assert device.identifiers == {(DOMAIN, EV_SERIAL)}
+    else:
+        device = registry.async_get_device_by_identifier((DOMAIN, SERIAL), entry.entry_id)
+
+    assert _resolve_entry_for_export(hass, {"device_id": device.id}) is entry

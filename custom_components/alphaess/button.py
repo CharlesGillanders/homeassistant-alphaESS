@@ -1,7 +1,7 @@
 import logging
 import time as time_mod
 
-from homeassistant.components.button import ButtonEntity
+from homeassistant.components.button import ENTITY_ID_FORMAT, ButtonEntity
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -20,6 +20,7 @@ from .coordinator import (
     ScheduleWriteUnknownError,
 )
 from .device import build_inverter_device_info
+from .entity import default_object_id
 from .enums import AlphaESSNames
 from .sensorlist import EV_DISCHARGE_AND_CHARGE_BUTTONS, SUPPORT_DISCHARGE_AND_CHARGE_BUTTON_DESCRIPTIONS
 
@@ -102,6 +103,7 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
         self._coordinator = coordinator
         self._name = key_supported_states.name
         self._key = key_supported_states.key
+        self.entity_id = ENTITY_ID_FORMAT.format(default_object_id(serial, self._name))
         schedule_action_keys = {
             AlphaESSNames.ButtonApplySchedule,
             AlphaESSNames.ButtonDiscardSchedule,
@@ -465,11 +467,6 @@ class AlphaESSBatteryButton(CoordinatorEntity, ButtonEntity):
     @property
     def name(self):
         return f"{self._name}"
-
-    @property
-    def suggested_object_id(self):
-        """Return suggested object id."""
-        return f"{self._serial} {self._name}"
 
     @property
     def icon(self):

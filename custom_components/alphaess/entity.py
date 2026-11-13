@@ -1,4 +1,4 @@
-"""Parent class for AlphaESS devices."""
+"""Entity descriptions and shared entity helpers for AlphaESS."""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -10,6 +10,18 @@ from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.sensor import SensorEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
 from homeassistant.components.time import TimeEntityDescription
+from homeassistant.util import slugify
+
+
+def default_object_id(serial: str, name: str) -> str:
+    """Return the object ID of the documented entity ID, ``<serial>_<name>``.
+
+    Left to itself, Core builds a new entity's ID from its area and device
+    names too, which puts the serial in twice. Entities set
+    ``<domain>.<serial>_<name>`` themselves instead; one that is already
+    registered keeps the ID it has.
+    """
+    return slugify(f"{serial} {name}")
 
 
 @dataclass(frozen=True)

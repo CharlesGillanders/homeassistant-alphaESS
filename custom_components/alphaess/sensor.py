@@ -1,7 +1,7 @@
 """Alpha ESS Sensor definitions."""
 import logging
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import ENTITY_ID_FORMAT, SensorDeviceClass, SensorEntity
 from homeassistant.const import CURRENCY_DOLLAR
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -19,6 +19,7 @@ from .const import (
 from .coordinator import AlphaESSDataUpdateCoordinator
 from .currency import normalize_currency_unit
 from .device import build_inverter_device_info
+from .entity import default_object_id
 from .enums import AlphaESSNames
 from .sensorlist import (
     EV_CHARGING_DETAILS,
@@ -214,6 +215,7 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
         self._state_class = key_supported_states.state_class
         self._serial = serial
         self._coordinator = coordinator
+        self.entity_id = ENTITY_ID_FORMAT.format(default_object_id(serial, self._name))
 
         if key_supported_states.native_unit_of_measurement == CURRENCY_DOLLAR:
             self._native_unit_of_measurement = currency
@@ -232,11 +234,6 @@ class AlphaESSSensor(CoordinatorEntity, SensorEntity):
     def name(self):
         """Return the name of the sensor."""
         return f"{self._name}"
-
-    @property
-    def suggested_object_id(self):
-        """Return suggested object id."""
-        return f"{self._serial} {self._name}"
 
     @property
     def available(self) -> bool:
